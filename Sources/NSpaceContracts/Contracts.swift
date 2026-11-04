@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - 目录投影（文件系统的只读投影，BG-5）
+// MARK: - Directory projection (read-only projection of the file system, BG-5)
 
 public struct FileItem: Sendable, Hashable {
     public let url: URL
@@ -9,13 +9,13 @@ public struct FileItem: Sendable, Hashable {
     public let isPackage: Bool
     public let isSymlink: Bool
     public let isHidden: Bool
-    /// 文件字节数；目录为 nil（FolderSize 胶囊按需回填）
+    /// File size in bytes; nil for directories (backfilled on demand by the FolderSize pod)
     public let size: Int64?
     public let modified: Date?
     public let created: Date?
-    /// 添加到所在目录的日期（列筛选用）
+    /// Date added to the containing directory (for column filters)
     public let added: Date?
-    /// UTType.identifier；kind 显示串按此缓存派生
+    /// UTType.identifier; the kind display string is cached and derived from it
     public let contentTypeID: String?
 
     public init(url: URL, name: String, isDirectory: Bool, isPackage: Bool,
@@ -32,7 +32,7 @@ public struct FileItem: Sendable, Hashable {
 
 public struct DirectorySnapshot: Sendable {
     public let directory: URL
-    /// 代际 token：过期的慢加载结果不得覆盖新导航（spec 3.2）
+    /// Generation token: stale slow-load results must not overwrite a newer navigation (spec 3.2)
     public let generation: UInt64
     public let items: [FileItem]
 
@@ -52,14 +52,14 @@ public struct SortSpec: Sendable, Hashable, Codable {
     }
 }
 
-// MARK: - 错误三分类（每胶囊 Error 必须归入其一，BG-4 / P6.4）
+// MARK: - Three error classes (every pod Error must fall into one, BG-4 / P6.4)
 
 public enum ErrorClass: Sendable, Equatable {
-    /// 内部逻辑错，禁重试
+    /// Internal logic error, do not retry
     case logic
-    /// 系统抖动，可重试
+    /// System hiccup, retryable
     case transient
-    /// 权限 / 卷不可用等外部依赖问题，提示用户
+    /// External dependency problem such as permissions or an unavailable volume; tell the user
     case external
 }
 
@@ -68,29 +68,29 @@ public protocol ClassifiedError: Error, Sendable {
     var localizedDescription: String { get }
 }
 
-// MARK: - 操作契约（展示层 → 内核的 Typed Command，BG-1）
+// MARK: - Operation contract (Typed Command from presentation layer → kernel, BG-1)
 
 public struct OperationSpec: Sendable {
     public enum Kind: String, Sendable {
         case copy, move, trash, duplicate, newFolder, newFile, rename
-        /// **永久删除（不可逆）**——Eraser 胶囊。必须带 destination 作为围栏根，
-        /// 每个 source 都要落在围栏内，否则整批拒绝（爆炸半径写进契约，不写进注释）
+        /// **Permanent deletion (irreversible)**: Eraser pod. Must carry destination as the fence root,
+        /// and every source must fall inside the fence, otherwise the whole batch is refused (blast radius written into the contract, not a comment)
         case delete
-        /// 压缩为归档包（ArchiveEngine）
+        /// Compress into an archive (ArchiveEngine)
         case compress
-        /// 从归档包解压（ArchiveEngine）
+        /// Extract from an archive (ArchiveEngine)
         case extract
     }
     public let kind: Kind
     public let sources: [URL]
     public let destination: URL?
-    /// rename / newFolder / newFile 用；compress 时可选：归档包基名（省扩展名，nil=节点从源推导）
+    /// For rename / newFolder / newFile; optional for compress: archive base name (no extension, nil = node derives it from the sources)
     public let newName: String?
-    /// compress / extract 专用选项（其余 kind 恒为 nil，向后兼容）
+    /// Options specific to compress / extract (always nil for other kinds, backward compatible)
     public let archiveOptions: ArchiveOptions?
-    /// `newFile` 专用：文件初始内容。nil = 建空文件（既有行为不变）。
-    /// 为「⌘V 把剪贴板内容粘成新文件」而加——展示层不许自己写盘（BG-1），
-    /// 内容只能随 Command 一起交给内核，由胶囊节点落地。
+    /// `newFile` only: initial file contents. nil = create an empty file (existing behaviour unchanged).
+    /// Added for "⌘V pastes clipboard contents as a new file": the presentation layer may not write to disk itself (BG-1),
+    /// so contents can only travel with the Command to the kernel and be landed by the pod node.
     public let contents: Data?
 
     public init(kind: Kind, sources: [URL], destination: URL? = nil, newName: String? = nil,
@@ -102,17 +102,17 @@ public struct OperationSpec: Sendable {
     }
 }
 
-/// 归档能力选项（compress / extract 用；Sendable 值类型）
+/// Archive options (for compress / extract; Sendable value type)
 public struct ArchiveOptions: Sendable, Equatable {
-    /// 归档格式："zip" / "tar.gz"（compress 用；extract 按压缩包扩展名自行分发，此字段忽略）
+    /// Archive format: "zip" / "tar.gz" (for compress; extract dispatches by the archive's extension and ignores this field)
     public let format: String
-    /// 加密口令；nil / 空 = 不加密。zip 走 ZipCrypto（弱加密，见 Contract 注释）
+    /// Encryption password; nil / empty = no encryption. zip uses ZipCrypto (weak encryption, see the Contract comment)
     public let password: String?
-    /// compress 后是否保留原文件（false = 打包成功后移到废纸篓／删除源，本 v1 恒保留由 UI 决策）
+    /// Whether compress keeps the originals (false = trash/delete the sources after packing; v1 always keeps them, the UI decides)
     public let keepOriginal: Bool
-    /// extract 目标目录；nil = 解到压缩包所在目录
+    /// extract target directory; nil = extract next to the archive
     public let extractInto: URL?
-    /// extract 是否确保创建"包裹文件夹"（顶层多于一个条目时先建同名文件夹再解；只有一个条目则忽略）
+    /// Whether extract ensures a "wrapper folder" (more than one top-level entry → create a same-named folder first; a single entry skips it)
     public let createWrapper: Bool
 
     public init(format: String = "zip", password: String? = nil, keepOriginal: Bool = true,
@@ -125,7 +125,7 @@ public struct ArchiveOptions: Sendable, Equatable {
     }
 }
 
-/// 操作 Run 状态机（spec 3.1；OperationKernel 唯一提交）
+/// Operation Run state machine (spec 3.1; committed only by OperationKernel)
 public enum RunState: Sendable, Equatable {
     case pending
     case scanning
@@ -155,7 +155,7 @@ public enum RunState: Sendable, Equatable {
     }
 }
 
-/// 内核 → 进度窗的只读投影（AsyncStream 推送）
+/// Read-only projection from kernel → progress window (pushed via AsyncStream)
 public struct OperationProjection: Sendable {
     public let id: UUID
     public let kind: OperationSpec.Kind
@@ -176,7 +176,7 @@ public struct OperationProjection: Sendable {
     }
 }
 
-// MARK: - 冲突裁决
+// MARK: - Conflict resolution
 
 public struct FileConflict: Sendable, Hashable {
     public let source: URL
@@ -190,11 +190,11 @@ public struct FileConflict: Sendable, Hashable {
 
 public enum ConflictDecision: Sendable {
     case replace, skip, keepBoth, mergeFolders
-    /// 重命名后共存：newName 为目标目录内的新文件名（含扩展名）。由 UI 保证非空。
+    /// Rename and coexist: newName is the new file name (with extension) inside the destination directory. The UI guarantees it is non-empty.
     case rename(String)
 }
 
-/// 废纸篓一对：原位置 → 回收站落点（供撤销把 trashed 搬回 original）
+/// One Trash pair: original location → Trash location (lets undo move trashed back to original)
 public struct TrashedItem: Sendable, Hashable {
     public let original: URL
     public let trashed: URL
@@ -203,13 +203,13 @@ public struct TrashedItem: Sendable, Hashable {
     }
 }
 
-/// 操作真实成败凭证（Proof Owner 产物）
-/// 单项失败：**部分成功**的操作用它如实汇报哪一项没成、为什么。
+/// Proof of an operation's real outcome (Proof Owner artifact)
+/// Single-item failure: a **partially successful** operation uses this to report which item failed and why.
 ///
-/// 为什么需要它（对抗审查抓到的既有缺陷，v0.19.18）：节点原先首错即 `throw`，
-/// 已经真落地的那部分随 throw 一起丢——内核只在成功路径存回执，UI 拿到 nil，
-/// 于是既不注册撤销、也不弹吐司、也不报错。用户的文件真进了废纸篓却撤不回、也不知情。
-/// 「部分成功」是真实存在的结局，不是异常；它必须能被表达出来。
+/// Why it exists (an existing defect caught by adversarial review, v0.19.18): nodes used to `throw` at the first error,
+/// and whatever had really landed was lost with the throw: the kernel stores receipts only on the success path, so the UI got nil
+/// and neither registered undo, showed a toast, nor reported an error. The user's files really went to Trash with no undo and no notice.
+/// "Partial success" is a real outcome, not an exception; it must be expressible.
 public struct OperationFailure: Sendable {
     public let url: URL
     public let errorClass: ErrorClass
@@ -225,12 +225,12 @@ public struct OperationReceipt: Sendable {
     public let filesDone: Int
     public let bytesDone: Int64
     public let duration: TimeInterval
-    /// newFolder / newFile 等产生新条目的操作回传结果 URL（UI 用于选中+进入重命名）
+    /// Operations producing new entries (newFolder / newFile etc.) return result URLs (the UI selects them and enters rename)
     public let createdURLs: [URL]
-    /// trash 操作回传 原URL→回收站URL 对（UI 注册撤销用）
+    /// trash returns original URL → Trash URL pairs (the UI registers undo with them)
     public let trashedItems: [TrashedItem]
-    /// 逐项失败清单。非空 = 部分成功：内核据此把状态判为 .failed（状态说真话），
-    /// 但**回执照样存下来**，让 UI 能为真落地的那部分注册撤销并如实汇报。
+    /// Per-item failure list. Non-empty = partial success: the kernel marks the state .failed (the state tells the truth),
+    /// but **the receipt is stored anyway**, so the UI can register undo for what landed and report truthfully.
     public let failures: [OperationFailure]
 
     public init(id: UUID, filesDone: Int, bytesDone: Int64, duration: TimeInterval,
@@ -242,19 +242,19 @@ public struct OperationReceipt: Sendable {
     }
 }
 
-// MARK: - 节点契约（胶囊只依赖本词汇表，不依赖内核实现，BG-4/BG-6）
+// MARK: - Node contracts (pods depend only on this vocabulary, not on the kernel implementation, BG-4/BG-6)
 
-/// 节点执行中向内核回报的事件（进度切面；遥测失败不伤主链 BG-7）
+/// Events a node reports to the kernel during execution (progress aspect; telemetry failure must not hurt the main path, BG-7)
 public enum NodeEvent: Sendable {
     case scanTotals(files: Int, bytes: Int64)
     case progress(filesDone: Int, bytesDone: Int64, currentPath: String?)
 }
 
-/// 内核注入给节点的上下文：回报进度、请求冲突裁决
+/// Context the kernel injects into nodes: report progress, request conflict decisions
 public struct NodeContext: Sendable {
     public let operationID: UUID
     public let report: @Sendable (NodeEvent) -> Void
-    /// 返回 nil = 用户取消整个操作
+    /// Returning nil = the user cancelled the whole operation
     public let resolveConflicts: @Sendable ([FileConflict]) async -> [URL: ConflictDecision]?
 
     public init(operationID: UUID,
@@ -266,13 +266,13 @@ public struct NodeContext: Sendable {
     }
 }
 
-/// 语义原子节点统一契约：单一原子状态转换，强类型出入（P6）
+/// Unified contract for semantic atomic nodes: a single atomic state transition, strongly typed in and out (P6)
 public protocol OperationNode: Sendable {
     func execute(_ spec: OperationSpec, context: NodeContext) async throws -> OperationReceipt
 }
 
-/// 冲突裁决委托（由展示层实现为冲突面板；内核不知道 UI 存在）
+/// Conflict resolution delegate (implemented by the presentation layer as the conflict panel; the kernel does not know the UI exists)
 public protocol ConflictArbiter: Sendable {
-    /// 返回 nil = 用户在面板上取消了操作
+    /// Returning nil = the user cancelled the operation in the panel
     func arbitrate(operation id: UUID, conflicts: [FileConflict]) async -> [URL: ConflictDecision]?
 }

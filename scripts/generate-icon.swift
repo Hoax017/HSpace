@@ -1,7 +1,7 @@
 #!/usr/bin/env swift
-// 图标生成器（M20 定稿「N」）：CoreGraphics 离屏渲染 1024px PNG（无需窗口服务器/Xcode）
-// 设计：石墨玻璃深底 + 青→蓝渐变几何 N——两根竖条 = 双窗格，斜杠 = 分割线（用户 2026-08-26 拍板）
-// 用法: swift scripts/generate-icon.swift Support/icon_1024.png
+// Icon generator (M20 final "N"): CoreGraphics offscreen render of a 1024px PNG (no window server or Xcode needed)
+// Design: dark graphite glass base + cyan→blue gradient geometric N: two bars = dual panes, the slash = the divider (user decision 2026-08-26)
+// Usage: swift scripts/generate-icon.swift Support/icon_1024.png
 import Foundation
 import CoreGraphics
 import ImageIO
@@ -22,21 +22,21 @@ func rgba(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat) -> CGColor {
     CGColor(red: r, green: g, blue: b, alpha: a)
 }
 
-// macOS 图标网格：1024 画布中图形占约 824，四周留白
+// macOS icon grid: the shape takes about 824 of the 1024 canvas, with margin all around
 let plate = CGRect(x: 100, y: 100, width: 824, height: 824)
 ctx.saveGState()
 ctx.addPath(rounded(plate, 184))
 ctx.clip()
 
-// 底：石墨玻璃（近黑带蓝倾向），上亮下暗
+// Base: graphite glass (near black with a blue tint), lighter on top, darker below
 let bg = CGGradient(colorsSpace: cs, colors: [
     rgba(0.10, 0.11, 0.14, 1), rgba(0.045, 0.05, 0.07, 1),
 ] as CFArray, locations: [0, 1])!
 ctx.drawLinearGradient(bg, start: CGPoint(x: plate.midX, y: plate.maxY),
                        end: CGPoint(x: plate.midX, y: plate.minY), options: [])
 
-// N：两竖条 + 斜杠并成一条路径一次渐变填充（绕向与 CGPath(roundedRect:) 一致，
-// 避免 nonzero 环绕抵消出洞；一次填充无接缝、无叠影）
+// N: the two bars + slash merged into one path and gradient-filled once (winding matches CGPath(roundedRect:),
+// avoiding holes from nonzero winding cancellation; a single fill has no seams or double shadows)
 let inset = plate.insetBy(dx: 190, dy: 190)
 let barW = inset.width * 0.26
 let n = CGMutablePath()
@@ -60,7 +60,7 @@ ctx.drawLinearGradient(g, start: CGPoint(x: inset.midX, y: inset.maxY),
                        end: CGPoint(x: inset.midX, y: inset.minY), options: [])
 ctx.restoreGState()
 
-// 顶部玻璃高光（单一光源自上而下）
+// Top glass sheen (single light source from above)
 let sheen = CGGradient(colorsSpace: cs, colors: [rgba(1, 1, 1, 0.08), rgba(1, 1, 1, 0)] as CFArray,
                        locations: [0, 1])!
 ctx.drawLinearGradient(sheen, start: CGPoint(x: plate.midX, y: plate.maxY),
@@ -71,5 +71,5 @@ let img = ctx.makeImage()!
 let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: out) as CFURL,
                                            UTType.png.identifier as CFString, 1, nil)!
 CGImageDestinationAddImage(dest, img, nil)
-guard CGImageDestinationFinalize(dest) else { fatalError("PNG 写入失败") }
-print("已生成 \(out)")
+guard CGImageDestinationFinalize(dest) else { fatalError("PNG write failed") }
+print("Generated \(out)")

@@ -1,12 +1,12 @@
 import Foundation
 import NSpaceContracts
 
-// BookmarkStore 胶囊唯一对外契约面（Axiom 3）：自定义书签的唯一 Commit Owner
+// BookmarkStore pod's sole public contract surface (Axiom 3): sole Commit Owner of custom bookmarks
 
 public struct BookmarkItem: Sendable, Hashable, Codable, Identifiable {
     public let id: UUID
     public var name: String
-    /// URL bookmark Data：目标被移动/改名后仍可解析（spec 数据契约）
+    /// URL bookmark Data: still resolves after the target is moved or renamed (spec data contract)
     public var bookmarkData: Data
 
     public init(id: UUID = UUID(), name: String, bookmarkData: Data) {

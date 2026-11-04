@@ -1,23 +1,23 @@
 import Foundation
 
-/// 层序（BFS）目录遍历节点：产出的深度单调不减——浅层条目一定先被看到。
+/// Level-order (BFS) directory walk node: emitted depth is monotonically non-decreasing, so shallow entries are always seen first.
 ///
-/// 为什么不用 `FileManager.enumerator`（它是惰性前序 DFS）：DFS 拿到一个 depth-1 条目后
-/// 会把它整棵子树走完才回到下一个 depth-1 兄弟。真机实测（root=~，198.6 万项）：
-///   `~/.claude`      DFS 15.5s 才被枚举到（第 75 万项）  / BFS 0.006s（第 104 项）
-///   `~/.claude.json` DFS 34.2s（第 163 万项）            / BFS 0.006s（第 214 项）
-/// 这就是"能看到却搜不到"的一半根因——不是命中被压住，是压根还没被发现。
-/// 全树总成本 BFS 43.6s vs DFS 42.4s（+2.8%），峰值待处理目录 28410 个（≈2.2MB），都有界。
-/// 同时这个口径天然吻合产品既有契约「局部搜索按离根近者优先」（I-40）。
+/// Why not `FileManager.enumerator` (a lazy pre-order DFS): after a depth-1 entry, DFS walks its entire subtree
+/// before returning to the next depth-1 sibling. Measured on a real machine (root=~, 1.986M items):
+///   `~/.claude`      DFS enumerated at 15.5s (item 750k)    / BFS 0.006s (item 104)
+///   `~/.claude.json` DFS 34.2s (item 1.63M)                 / BFS 0.006s (item 214)
+/// This is half the root cause of "visible but unsearchable": the hit was not suppressed, it simply had not been discovered yet.
+/// Total tree cost BFS 43.6s vs DFS 42.4s (+2.8%), peak pending directories 28410 (about 2.2MB), both bounded.
+/// It also naturally fits the existing product contract "local search prefers items near the root" (I-40).
 ///
-/// 符号链接：不下钻。URL 资源值对指向目录的 symlink 返回 `isDirectory == false`
-/// （实测），故 `isDir` 判据本身就不会把它排进队列——与 enumerator 语义一致，无需额外读 key。
+/// Symlinks: not descended into. URL resource values return `isDirectory == false` for a symlink pointing to a directory
+/// (measured), so the `isDir` check itself never queues it, matching enumerator semantics, no extra key needed.
 enum LevelOrderWalk {
-    /// 逐项回调；`visit` 在「是否下钻」之前调用，所以巨坑目录**本身**仍可被匹配到
-    /// （旧 DFS 版在 skip 分支里先 `continue`，导致搜 "Library"/"node_modules" 永远搜不到那个目录本身）。
+    /// Per-item callback; `visit` runs before the "descend or not" decision, so heavy directories **themselves** can still match
+    /// (the old DFS version did `continue` in the skip branch first, so searching "Library"/"node_modules" could never find that directory itself).
     /// - Parameters:
-    ///   - skipDirectoryNames: 命中此名的目录不下钻（仍参与匹配）
-    ///   - shouldContinue: 返回 false 立即停止（协作式取消）
+    ///   - skipDirectoryNames: directories with these names are not descended into (still matched)
+    ///   - shouldContinue: returning false stops immediately (cooperative cancellation)
     static func walk(root: URL,
                      skipDirectoryNames: Set<String>,
                      shouldContinue: () -> Bool,
@@ -30,18 +30,18 @@ enum LevelOrderWalk {
             var next: [URL] = []
             for dir in frontier {
                 guard shouldContinue() else { return }
-                // 每个目录一个 autoreleasepool——**不是可选的**。
-                // contentsOfDirectory / resourceValues 产生大量自动释放对象，而扫描跑在
-                // Task.detached 里，没有 RunLoop 帮它排水，于是一路堆到扫完。
-                // 真机实测（root=~，194 万项）峰值 RSS：
-                //   旧 DFS enumerator 512MB ／ 无 pool 的 BFS 1219MB ／ 带 pool 的 BFS 51MB
-                // 代价 +3% 时长（42.6s → 44.0s）。frontier 数组本身只占 ~2MB，不是大头。
+                // One autoreleasepool per directory, and this is **not optional**.
+                // contentsOfDirectory / resourceValues produce many autoreleased objects, and the scan runs in
+                // Task.detached with no RunLoop to drain them, so they pile up until the scan ends.
+                // Measured on a real machine (root=~, 1.94M items), peak RSS:
+                //   old DFS enumerator 512MB / BFS without pool 1219MB / BFS with pool 51MB
+                // Cost is +3% duration (42.6s → 44.0s). The frontier array itself takes only ~2MB, not the main cost.
                 autoreleasepool {
                     let kids = (try? fm.contentsOfDirectory(
                         at: dir, includingPropertiesForKeys: [.isDirectoryKey], options: [])) ?? []
                     for url in kids {
-                        // 逐项查取消：旧 DFS 是每项查一次，改 BFS 后若只在目录粒度查，
-                        // 用户多敲一个字符时上一轮搜索还会把当前目录的孩子列表烧完才停。
+                        // Check cancellation per item: the old DFS checked once per item; if BFS checked only per directory,
+                        // typing one more character would let the previous search burn through the current directory's children before stopping.
                         guard shouldContinue() else { return }
                         let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
                         visit(url, depth, isDir)

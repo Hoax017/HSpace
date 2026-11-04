@@ -1,10 +1,10 @@
 import Foundation
 import NSpaceContracts
 
-// 节点契约（NodeEvent/NodeContext/OperationNode/ConflictArbiter）在 NSpaceContracts 词汇表；
-// 本内核只做通用机制：排队/调度/取消/进度切面/Run 状态机原子提交（BG-3 零业务分支）。
+// Node contracts (NodeEvent/NodeContext/OperationNode/ConflictArbiter) live in the NSpaceContracts vocabulary;
+// this kernel provides only generic mechanisms: queueing / scheduling / cancellation / progress aspect / atomic Run state machine commits (BG-3: zero business branches).
 
-// MARK: - 内核（唯一 Commit Owner：Run 状态机的原子提交，BG-5）
+// MARK: - Kernel (sole Commit Owner: atomic commits of the Run state machine, BG-5)
 
 public actor OperationKernel {
     private struct Run {
@@ -23,17 +23,17 @@ public actor OperationKernel {
     private var nodes: [OperationSpec.Kind: any OperationNode] = [:]
     private var arbiter: (any ConflictArbiter)?
     private var runs: [UUID: Run] = [:]
-    /// 成功终态的节点凭证留存（createdURLs / trashedItems 供 UI 选中/撤销读取；纯派生存档，非状态机分支）
+    /// Retained node receipts for successful terminal states (createdURLs / trashedItems for UI selection and undo; purely derived archive, not a state machine branch)
     private var receipts: [UUID: OperationReceipt] = [:]
     private var order: [UUID] = []
     private var observers: [UUID: AsyncStream<OperationProjection>.Continuation] = [:]
-    /// 串行执行：磁盘 I/O 可预测；并行度留作后续配置
+    /// Serial execution: predictable disk I/O; parallelism left for later configuration
     private var executing = false
     private var waiting: [UUID] = []
 
     public init() {}
 
-    // MARK: 编排配置（What 由 App 启动时声明式注入，BG-2）
+    // MARK: Orchestration config (the What is injected declaratively at app startup, BG-2)
 
     public func register(_ node: any OperationNode, for kinds: [OperationSpec.Kind]) {
         for k in kinds { nodes[k] = node }
@@ -41,7 +41,7 @@ public actor OperationKernel {
 
     public func setArbiter(_ a: any ConflictArbiter) { arbiter = a }
 
-    // MARK: Command 面（展示层唯一入口，BG-1）
+    // MARK: Command surface (the presentation layer's only entry point, BG-1)
 
     @discardableResult
     public func submit(_ spec: OperationSpec) -> UUID {
@@ -66,7 +66,7 @@ public actor OperationKernel {
         }
     }
 
-    // MARK: Query / Subscribe 面（只读投影）
+    // MARK: Query / Subscribe surface (read-only projections)
 
     public func projections() -> AsyncStream<OperationProjection> {
         let key = UUID()
@@ -87,10 +87,10 @@ public actor OperationKernel {
                                    currentPath: r.currentPath)
     }
 
-    /// 成功终态凭证（createdURLs / trashedItems）；未完成或非成功返回 nil
+    /// Receipt of a successful terminal state (createdURLs / trashedItems); nil when unfinished or unsuccessful
     public func receipt(_ id: UUID) -> OperationReceipt? { receipts[id] }
 
-    // MARK: 内部：调度与状态提交
+    // MARK: Internals: scheduling and state commits
 
     private func removeObserver(_ key: UUID) { observers[key] = nil }
 
@@ -128,13 +128,13 @@ public actor OperationKernel {
             commit(id) { run in
                 run.filesDone = receipt.filesDone
                 run.bytesDone = receipt.bytesDone
-                // 部分失败不算完成：状态说真话。但回执**照样已经存下来了**——
-                // 真落地的那部分必须能被撤销、能被如实汇报，不能随状态一起被丢掉。
+                // Partial failure is not completion: the state tells the truth. But the receipt **has already been stored**:
+                // what really landed must stay undoable and truthfully reportable, not be dropped along with the state.
                 if let first = receipt.failures.first {
                     run.state = .failed(
                         message: receipt.failures.count == 1
                             ? first.message
-                            : "\(first.message)（另有 \(receipt.failures.count - 1) 项失败）",
+                            : "\(first.message) (\(receipt.failures.count - 1) more failed)",
                         errorClass: first.errorClass)
                 } else {
                     run.state = .completed
@@ -152,7 +152,7 @@ public actor OperationKernel {
     }
 
     private func arbitrateConflicts(id: UUID, conflicts: [FileConflict]) async -> [URL: ConflictDecision]? {
-        guard let arbiter else { return [:] }  // 无裁决者=无冲突策略,默认跳过全部由节点处理
+        guard let arbiter else { return [:] }  // no arbiter = no conflict policy; by default everything is skipped and left to the node
         commit(id) { $0.state = .awaitingConflict }
         let decisions = await arbiter.arbitrate(operation: id, conflicts: conflicts)
         commit(id) { if !$0.state.isTerminal { $0.state = .running } }
@@ -174,7 +174,7 @@ public actor OperationKernel {
         }
     }
 
-    /// 唯一状态提交点：终态不可再转移（spec 3.1）
+    /// Sole state commit point: terminal states cannot transition again (spec 3.1)
     private func commit(_ id: UUID, _ mutate: (inout Run) -> Void) {
         guard var run = runs[id] else { return }
         let wasTerminal = run.state.isTerminal

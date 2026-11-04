@@ -1,148 +1,109 @@
-# M17 自绘顶部甲板 + 全高侧栏 —— 设计规格（方向契约）
+# M17 Custom Top Deck and Full-Height Sidebar: Design Spec
 
-<!-- 方向契约（direction contract）
-THESIS: 原生 macOS 专业工具标准做到极致——Finder 的材质语言 × QSpace 的密度与拓扑；
-       特色走结构与做工，不走色彩（用户否决一切"web 花哨配色"，seed f8a2afe5 的骰子结果被用户的 canon 出口取代）。
-OWN-WORLD: 现有主题系统（Theme.accent / appearanceMode / accentColorHex）+ 系统材质
-       （NSVisualEffectView .titlebar/.sidebar）+ SF Symbols + 发丝分隔线 + 4pt 网格。去掉全部内容后
-       仍可辨识的是拓扑：一条贯通全高的分割线，左列暂存牌堆压顶，右列三层甲板。
-STORY: 打开即是四件事同屏可扫——哪个窗格有焦点、路径在哪、暂存架里有什么、任务跑到哪。
-FIRST VIEWPORT: 左列 = 红绿灯行(28) + 暂存架(148) + 书签/iCloud/位置；右列 = 工作区标签条(28)
-       + 图标工具条(36) + 窗格矩阵(每窗格自带地址栏) + 状态栏(24)。
-FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review,
-       the verdict, and DESIGN.md.
+Condensed to the decisions that still apply. `DESIGN.md` records code reality and wins where the two differ; the mockup is `mockup-m17.html`.
+
+<!-- Direction contract
+THESIS: The native macOS pro-tool standard taken to its limit: Finder's material language × QSpace's density
+       and topology. Character comes from structure and finish, not colour; the owner rejected all "flashy web colours".
+OWN-WORLD: The existing theme system (Theme.accent, appearanceMode, accentColorHex), system materials
+       (NSVisualEffectView .titlebar and .sidebar), SF Symbols, hairline dividers and the 4pt grid. With all content
+       removed the topology is still recognisable: one divider running the full height, the stash pile at the top
+       of the left column, the deck layers in the right column.
+STORY: On opening, four things can be scanned at once: which pane has focus, where the path is, what is on the
+       stash shelf, how far the tasks have run.
+FIRST VIEWPORT: Left column = traffic light row + stash shelf (148) + bookmarks, iCloud, locations. Right column =
+       workspace tab row + icon toolbar (36) + pane grid, each pane with its own address bar + status bar (24).
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md.
 -->
 
-## 0. 不可动摇的前提
+## Premises
 
-- **混合原则（用户原话）**：搜索面板、设置窗、系统对话框、Quick Look、右键菜单等原生组件**保持原生不动**。本次只重做窗口主画面的顶部结构。
-- **配色零新增**：不引入任何新品牌色。全部取现有 Theme/系统语义色（controlAccentColor 途径的 Theme.accent、labelColor 族、separatorColor、系统材质）。
-- **北极星不回退**：四窗格闲置 CPU 0.0%。甲板全部是静态控件，禁止常驻动画/定时器。
-- **元架构门禁**：BG-1（甲板视图不得直接调 FileManager 写 API）、FG-1（无假按钮——每个图标必须接真动作）、快捷键一律走 KeyBindings 注册表、新可配项进 Preferences。
-- **确定性网格（frontend-design-methodology.md:84，机械执法 scripts/grid-lint.sh 已入 pre-commit）**：
-  一切新增 UI 尺寸（constraint constant/spacing/edgeInsets）严格收敛 4pt 阶梯；仅 |值|≤2 的发丝线/视错觉
-  修正与 0.5 小数豁免；存量偏离已入 grid-lint-allow.txt 基线（M18 清零），新代码禁止新增登记。
+- Hybrid rule: search panel, settings window, system dialogs, Quick Look and context menus stay native. Only the main window's top structure is custom.
+- No new colours: only existing Theme and system semantic colours and materials.
+- North star: four idle panes at 0.0% CPU. The deck is static controls, with no constant animation or timers.
+- Gates: BG-1 (deck views do not call FileManager write APIs), FG-1 (no fake buttons), shortcuts go through the KeyBindings registry, configurable items go in Preferences.
+- Grid: UI sizes follow the 4pt scale, enforced by `scripts/grid-lint.sh`. Only values up to 2 for hairlines and optical correction, and 0.5 fractions, are exempt.
 
-## 1. 窗口结构（弃 NSToolbar）
+## Window structure
 
-```
-NSWindow: styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-          titleVisibility = .hidden, titlebarAppearsTransparent = true
-          toolbar = nil（整个 NSToolbar/NSTrackingSeparatorToolbarItem 体系移除 → I-10 随之消亡）
-          红绿灯保持系统默认位置（左列顶部行内）
-```
+NSToolbar is gone (`toolbar = nil`), which also removed I-10. The window uses `.fullSizeContentView`, hidden title, transparent titlebar, and system traffic lights in the left column's top row.
 
 ```
-┌───────────────┬────────────────────────────────────────────────┐
-│ ●●●      (28) │ [工作区1][工作区2]                    [＋] (28) │ ← 工作区标签条
-│───────────────│────────────────────────────────────────────────│ ← 发丝线
-│   暂存架       │ ◀ ▶ ⌃ │ ⊞ ≡ ⫿ │ ᯤ ⌘ ⟳ 🗑 │ ▭ ▯▯ ⊟ ▤ ⊞ (36) │ ← 图标工具条
-│   (148)       │────────────────────────────────────────────────│ ← 发丝线
-│───────────────│                                                │
-│ 书签           │        窗格矩阵（每窗格自带地址栏/窗格标签条）    │
-│ iCloud        │                                                │
-│ 位置           │────────────────────────────────────────────────│
-│               │ 287 项 · 已选 3 项 · 可用 42.21 GB        (24) │ ← 状态栏（22→24 网格收敛）
-└───────────────┴────────────────────────────────────────────────┘
-        ↑ 唯一一条垂直分割线，从窗口顶贯通到底 = 用户要的"等高贯通"
++---------------+------------------------------------------+
+| traffic lights| [workspace 1][workspace 2]           [+] | tab row
+|---------------|------------------------------------------|
+| stash shelf   | icon toolbar (36)                        |
+| (148)         |------------------------------------------|
+|---------------|                                          |
+| bookmarks     | pane grid (each pane has an address bar) |
+| iCloud        |                                          |
+| locations     |------------------------------------------|
+|               | 287 items · 3 selected · 42.21 GB free   | status bar (24)
++---------------+------------------------------------------+
+        one vertical divider, window top to bottom
 ```
 
-- 左列（sidebarColumn）：NSVisualEffectView(.sidebar) 全高。顶部 28pt 红绿灯行（空白、可拖动窗口）；
-  其下暂存架 148pt（现 StashShelfView，I-07 的居中重排在此列宽内完成）；其下书签 outline（现有）。
-- 右列（contentColumn）：顶部甲板 TopDeckView = NSVisualEffectView(material: .titlebar) 内两行
-  （标签条 28 + 工具条 36 + 两条发丝线），甲板下是现 PaneGridController.view，底部现状态栏。
-- 分割：沿用现 manual NSSplitView（min160/max320/可折叠逻辑保留）。**侧栏折叠时**：甲板需给红绿灯
-  让位——contentColumn 顶部行 leading inset 80pt（仅折叠态，4pt 阶梯）。
-- 窗口拖动：甲板与红绿灯行空白处可拖（自定义 NSView.mouseDownCanMoveWindow=true 且命中非控件区）；
-  双击甲板空白 = 系统缩放行为（依系统偏好 AppleActionOnDoubleClick）。
+- Left column: full-height `.sidebar` material with the traffic light row, stash shelf and bookmark outline.
+- Right column: `TopDeckView` (`.titlebar` material) above `PaneGridController.view` and the status bar.
+- Split: manual `NSSplitView`, min 160, max 320. When the sidebar is collapsed, the tab row leading inset is 80pt to clear the traffic lights.
+- Dragging: blank deck and traffic light areas move the window. Double-clicking blank deck follows the system zoom preference.
 
-## 2. 工作区标签条（从原生 NSWindow tabbing 迁出 —— 本次最大迁移）
+The tab row was specified at 28 and became 40 with 28pt capsules (I-11, v0.9.1).
 
-- 现状：M13 用原生窗口标签（tabbingIdentifier "NSpaceMain"）。原生标签栏横跨全窗，与贯通布局冲突，弃用
-  （window.tabbingMode = .disallowed）。
-- 新模型：`WorkspaceManager`（App 层）持有 `[WorkspaceState]` + activeIndex；
-  WorkspaceState 直接复用 SessionStore 的 SessionWindow 编码（布局+窗格+标签+路径+排序+视图模式）。
-- 切换 = 把当前 grid 会话快照存回数组 → 用目标状态 grid.restoreSession（隐藏窗格 watcher 挂起复用现机制）。
-- 标签条 UI：复用/泛化现 TabBarView 语法（胶囊、hover 关闭、中键关闭、拖动重排 v1 可选）；活动标签
-  Theme.accent 0.18 底 + labelColor，同现窗格标签风格；右端 "＋"。标题 = 该工作区活动窗格目录名。
-- 快捷键（走 KeyBindings 注册表，沿用现 id）：⌘T 新工作区 / ⌘W 关闭（最后一个则关窗）/ ⌃⇥、⌃⇧⇥ 或
-  ⌘⇧]、⌘⇧[ 循环。paneTabLimit 语义不变（窗格标签层）；工作区数上限新增 Preferences 键
-  workspaceTabLimit（0=不限，超限覆盖最老，同 QSpace 语义）。
-- 会话恢复：SessionStore 从"多窗口各存一份"改为窗口内含 workspaces 数组；老格式做一次性迁移
- （读到旧结构 → 包成单工作区）。拖出成独立窗口延后 v2（记 TODO，不算本次回归）。
+## Workspace tabs
 
-## 3. 图标工具条（36pt，密度对齐 QSpace）
+- Native NSWindow tabbing was dropped (`tabbingMode = .disallowed`), since its bar spans the whole window and breaks the full-height divider.
+- `WorkspaceManager` holds `[WorkspaceState]` and `activeIndex`, reusing the SessionStore encoding. Switching snapshots the grid back and restores the target through `grid.restoreSession`.
+- Tabs are capsules with hover close and middle-click close; the active tab has a Theme.accent 0.18 fill. The title is the active pane's folder name.
+- Shortcuts: ⌘W closes (the last tab closes the window), and ⌃⇥, ⌃⇧⇥, ⌘⇧] and ⌘⇧[ cycle. ⌘T duplicates the current workspace (v0.19.25).
+- `workspaceTabLimit` defaults to 0 (no limit); above the limit the oldest is overwritten, as in QSpace.
+- Sessions hold a workspaces array, and the old format migrates once. Dragging a tab out to its own window is deferred to v2.
 
-按钮 24×24、SF Symbol pointSize 13、间距 4、簇间发丝竖线分隔，全部图标+tooltip（隐性语义）。**排布与符号以 §6 定稿为准**：
-| 簇 | 项 | 动作（全部已存在，1:1 迁移自现 NSToolbar） |
-|---|---|---|
-| 导航 | ◀ ▶（长按出历史菜单）⌃ | 现 navItemID 三联 |
-| 视图 | ⊞ ≡ ⫿ 分段 | 现 viewMode segmented（syncViewModeControl 保留） |
-| 动作 | AirDrop、终端、任务、废纸篓 | 现 airdrop/terminal/tasks/trash |
-| 布局 | 单/双列/双行/三列/四宫格 分段 | 现 layout switcher |
-| 最左 | 侧栏开关 ◫ | 现 toggleSidebar（自管宽度逻辑保留） |
-FG-1：迁移时逐个接回 action+validate，禁止先摆图标后补功能。
+## Icon toolbar (36pt)
 
-废纸篓钮语义（v0.19.17 修订，用户报告「缺少废纸篓功能」）：**点击 = 打开废纸篓**（在应用内导航到
-`~/.Trash`，恒可用、不看选中态）；**拖文件到钮上 = 移到废纸篓**。旧版是「action=moveToTrash +
-`isEnabled = hasSelection`」，空选中时长期灰着，且应用内没有任何通往废纸篓的路径。
-不做「有选中就删、没选中就打开」：用户手上几乎总有选中项，那样一个想去废纸篓的人会先把文件删掉。
-删除的既有入口全部保留（⌘⌫ / 条目右键菜单 / Backspace 习惯设置）。
-第二条入口在「前往」菜单 → 废纸篓（`goTrash`，默认不绑快捷键，可在设置里自定）。
+Buttons are 24×24, SF Symbol point size 13, spacing 4, all icon plus tooltip.
 
-## 4. 已知陷阱（前车之鉴，实现者必读）
+Layout A1, left and right split, chosen by the owner:
 
-1. 窗口 frame 持久化顺序：restore 必须在 `window.contentViewController =` 赋值**之后**（赋值会按
-   fittingSize 收缩窗口）；shouldCascadeWindows=false；自管 "windowFrame" 键——这套现逻辑保留勿动。
-2. NSSplitViewController 会泄漏 W==320/H==52 必需等式约束——继续用 manual NSSplitView，禁止回退。
-3. PaneGrid 子视图必须设 autoresizingMask=[.width,.height]，makeSplit 等分名义 frame。
-4. Foundation 的 resolvingSymlinksInPath 会剥 /private 前缀杀死 FSEvents——路径一律 POSIX realpath。
-5. grep -cE 零命中退出码 1 会断 && 链；BSD sed 无 \b。
-6. QLPreviewPanel 要 import QuickLookUI。
-7. pod-lint-swift.sh 对 UISelfTest.swift 有 BG-1 豁免——新增自测场景写在该文件内。
+`[sidebar] | [back forward up] | [view modes] -- flexible space, also the drag handle -- [AirDrop terminal tasks trash] | [layout modes]`
 
-## 5. 验收门（DoD——全绿才算完成）
+Clusters are 16pt apart with a hairline; frequent navigation and view controls sit left, global actions and layouts right.
 
-1. `swift build` 0 error；`./scripts/test.sh` 全绿；meta-doctor 退出 0（pre-commit 自动拦）。
-1b. `GRID_LINT_ALL=1 ./scripts/grid-lint.sh` 退出 0（M17 范围文件不靠基线，全量收敛）。
-2. `./scripts/ui-smoke.sh` 现 13 断言全过 + 新增断言：无 NSToolbar；甲板两行高度 28/36；
-   工作区标签条存在且 ⌘T/⌘W 增删正确；分割线全高（sidebarColumn.frame.height == contentView.height）；
-   侧栏折叠/展开 3 轮窗口尺寸与右列布局不漂移（I-10 回归）；暂存架 contentGroup 居中（|center 差|≤2pt）。
-3. UISelfTest 新场景截图：单/双/四窗格 + 折叠态 + 深浅两外观，人查无裁切/无错位。
-4. 北极星复测：4 窗格闲置 top 采样 ≥6 次 CPU 0.0%。
-5. 窗口 frame/侧栏宽度/会话（含工作区数组迁移）持久化 E2E 过（ui-smoke 两阶段法）。
-6. 功能零丢失：原工具栏每个动作在甲板上可点且 validate 正确；搜索/设置/预览等原生组件未被触碰。
-7. **网格收敛顺手项（已从 grid-lint 基线移除，本次必须收敛，否则 pre-commit 拦截）**：
-   StatusBarView 高 22→24；PaneViewController 地址栏 26→24；SidebarViewController 暂存顶距 34→36、
-   杂项 6→8、18→16 或 20；StashShelfView 10→12、-6→-8；TabBarView 3→4、-6→-8。
-   其余存量偏离（设置页/Toast/FileCellViews）留在基线，M18 清零。
+Trash button (revised in v0.19.17): click always opens the Trash in-app, and dropping files moves them to the Trash. It is deliberately not "delete if there is a selection", because a selection almost always exists and someone heading to the Trash would delete files first. Existing delete entries stay (⌘⌫, context menu, Backspace setting), and Go menu > Trash (`goTrash`) is a second entry with no default shortcut.
 
-## 6. 用户定稿（2026-08-26，权威覆盖——与上文冲突处以本节为准）
+## Official SF Symbols
 
-### 6.1 图标：一律用官方原版 SF Symbols（用户点名）
-- 实现只允许 `NSImage(systemSymbolName:)` 取**官方符号**，严禁自绘 path、严禁 emoji/文字充当图标。
-- 定稿符号表（pointSize 13 / .regular；系统无此符号时用括号内回退）：
-  | 动作 | 符号 |
-  |---|---|
-  | 后退/前进/上层 | `chevron.backward` / `chevron.forward` / `arrow.up` |
-  | 显示类型三段 | `square.grid.2x2` / `list.bullet` / `rectangle.split.3x1` |
-  | AirDrop | `airdrop`（回退 `dot.radiowaves.left.and.right`） |
-  | 在终端打开 | `apple.terminal`（回退 `terminal`） |
-  | 文件操作任务 | `arrow.up.arrow.down`（弃循环箭头，消除"刷新"误读） |
-  | 布局五段（同族） | `rectangle` / `rectangle.split.2x1` / `rectangle.split.1x2` / `rectangle.split.3x1` / `rectangle.split.2x2` |
-  | 侧栏开关 | `sidebar.leading` |
-  | 暂存架五钮 | `doc.on.doc` / `arrow.forward.square` / `airdrop` / `trash` / `ellipsis.circle` |
-  | 侧栏条目 | 保持现状：`folder.fill`/`icloud`/`internaldrive` + accent 着色 |
+Icons come only from `NSImage(systemSymbolName:)`, never custom paths, emoji or text.
 
-### 6.2 工具条排布：A1 左右分野（用户拍板）
-`[侧栏开关] │ [◀ ▶ ⌃] │ [视图三段] ——弹性留白（兼窗口拖动把手）—— [AirDrop 终端 任务 废纸篓] │ [布局五段]`
-簇间 16pt + 发丝竖线；左=高频导航/视图（就近内容），右=全局动作/布局。
+| Action | Symbol |
+|---|---|
+| Back, forward, up | `chevron.backward`, `chevron.forward`, `arrow.up` |
+| View modes | `square.grid.2x2`, `list.bullet`, `rectangle.split.3x1` |
+| AirDrop | `airdrop` (fallback `dot.radiowaves.left.and.right`) |
+| Open in terminal | `apple.terminal` (fallback `terminal`) |
+| File tasks | `arrow.up.arrow.down` (avoids reading as refresh) |
+| Layouts | `rectangle`, `rectangle.split.2x1`, `rectangle.split.1x2`, `rectangle.split.3x1`, `rectangle.split.2x2` |
+| Sidebar toggle | `sidebar.leading` |
+| Stash buttons | `doc.on.doc`, `arrow.forward.square`, `airdrop`, `trash`, `ellipsis.circle` |
+| Sidebar rows | `folder.fill`, `icloud`, `internaldrive` with accent tint |
 
-### 6.3 暂存架：B2 hover-reveal 浮条（用户拍板，覆盖 §1 的常显动作列）
-- **常态**：仅牌堆 + 计数药丸（10% 浅底、tabular-nums），组在 148pt 区内居中，牌堆可放大至约 112×100。
-- **悬停暂存区 150ms**：底部浮出动作条（overlay 材质 + 发丝框 + 阴影，五钮 20×20 间距 4：
-  拷贝/移动/AirDrop/清空/更多）。浮条是浮层，**不改变布局**（FG-4 空间防抖）；移出即隐。
-- **拖拽悬停**：隐浮条，区内显示 accent 发丝内圈投放高亮（150ms 原位反馈）。
-- **空态**：托盘符号（`tray.and.arrow.down`）+ "拖入文件暂存" muted 文案（空态说明下一步）。
-- 计数药丸点击 = 现有逐项管理菜单（保留）。
-- ui-smoke 断言相应改为：常态动作条 isHidden==true；牌堆容器居中（|center 差|≤2pt）；浮条为 overlay 不参与 Auto Layout 主链。
+## Stash shelf: B2 hover-reveal
+
+- At rest: only the pile and count pill (10% fill, tabular digits), centred in the 148pt area. The pile can grow to about 112×100.
+- Hover for 150ms: an action bar floats up at the bottom (overlay material, hairline frame, shadow; five 20×20 buttons, spacing 4: copy, move, AirDrop, clear, more). It is an overlay and does not change layout (FG-4), and it hides on exit.
+- Drag hover: the bar hides and an accent hairline inner ring shows the drop target.
+- Empty: `tray.and.arrow.down` plus a muted hint. Clicking the count pill opens the per-item menu.
+
+## Known traps
+
+1. Restore the window frame after assigning `window.contentViewController` (assignment shrinks the window to `fittingSize`). `shouldCascadeWindows` is false and the app owns the `windowFrame` key.
+2. `NSSplitViewController` leaks required W==320 and H==52 constraints, so keep the manual `NSSplitView`.
+3. PaneGrid subviews need `autoresizingMask = [.width, .height]`; `makeSplit` assigns equal nominal frames.
+4. Foundation's `resolvingSymlinksInPath` strips `/private` and breaks FSEvents, so use POSIX realpath.
+5. `grep -cE` exits 1 on no match and breaks `&&` chains; BSD sed has no `\b`.
+6. `QLPreviewPanel` needs `import QuickLookUI`.
+7. `pod-lint-swift.sh` exempts `UISelfTest.swift` from BG-1, so self-test scenarios go in that file.
+
+## Acceptance gates
+
+Build, tests and meta-doctor pass; `GRID_LINT_ALL=1 ./scripts/grid-lint.sh` exits 0; ui-smoke covers no NSToolbar, deck heights, ⌘T and ⌘W, the full-height divider, three collapse rounds without drift, and a centred stash group (within 2pt). Also required: screenshots of single, dual, quad and collapsed layouts in both appearances; four idle panes at 0.0% CPU over at least 6 samples; end-to-end persistence of frame, sidebar width and session; and every former toolbar action present and validated on the deck.

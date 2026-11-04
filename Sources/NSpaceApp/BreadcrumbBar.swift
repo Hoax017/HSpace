@@ -1,38 +1,38 @@
 import AppKit
 
-/// 面包屑地址栏（自绘，不用 NSPathControl——需要 chevron 弹子目录与后续分段拖放）
-/// I-37 宽度自适应：不再横向滚动，而是随窗格宽度实时重排——
-///   ① 段名超 ~18 字符中部省略（完整名进 toolTip）；
-///   ② 放不下时保留根段 + 末尾若干段，中间层级折叠为一个「…」段，点击弹菜单列出全部被折叠层级；
-///   ③ resize / 布局切换经 layout() 重算，从「全展示」平滑退化到「逐级折叠」。全层级永远可达。
-/// 布局 4pt 标尺；点击空白或 ⌘L 切换到路径编辑器（PathEditorField）
+/// Breadcrumb address bar (custom drawn, not NSPathControl: needs chevron subfolder popups and later per-segment drag and drop)
+/// I-37 adaptive width: no horizontal scrolling; instead it reflows live with the pane width:
+///     1. segment names over ~18 characters are middle-truncated (the full name goes in the toolTip);
+///     2. when things do not fit, keep the root segment + some trailing segments, and collapse the middle levels into one "…" segment whose menu lists all collapsed levels;
+///     3. resize / layout switches recompute through layout(), degrading smoothly from "show all" to "collapse step by step". Every level stays reachable.
+/// Layout on a 4pt scale; clicking blank space or ⌘L switches to the path editor (PathEditorField)
 @MainActor
 final class BreadcrumbBar: NSView {
     var onNavigate: ((URL) -> Void)?
     var onBeginEditing: (() -> Void)?
-    /// 拖文件到分段的投放意图上抛：(urls, 目标祖先目录, ⌥强制复制) → Pane → coordinator
+    /// File drop intent on a segment, passed up: (urls, target ancestor directory, ⌥ force copy) -> Pane -> coordinator
     var onDropFiles: ((_ urls: [URL], _ target: URL, _ forceCopy: Bool) -> Void)?
 
-    /// 单段显示名字符上限：超出则中部省略（完整名进 toolTip）
+    /// Character limit for one segment's display name: longer names are middle-truncated (the full name goes in the toolTip)
     private static let maxSegmentChars = 18
-    /// 左右内缩（4pt 阶梯）
+    /// Left and right inset (4pt steps)
     private static let edgeInset: CGFloat = 8
-    /// chevron 分隔箭头的固定占位宽（4pt 阶梯）。
-    /// 16 → 8：段命中盒左右各留的 4pt 余量**从这里让出来**，于是每级总宽
-    /// （段字形 + segHitPadX×2 + chevronWidth = 字形 + 16）与改前完全一致，
-    /// 折叠阈值不右移。否则同宽度下会少显一层路径（审查实测：dualH 600 窗、
-    /// 侧栏折叠、4 层路径，改前全展示、改后退化成折叠）。
-    /// 箭头字形实测 7pt，装得进 8pt；且命中盒现在是全高 20pt，
-    /// 面积 8×20=160pt² 仍比改前的 16×6.5=104pt² 大 54%。
+    /// Fixed width reserved for the chevron separator (4pt steps).
+    /// 16 -> 8: the 4pt margin on each side of the segment hit box is **taken from here**, so each level's total width
+    /// (glyph + segHitPadX×2 + chevronWidth = glyph + 16) is exactly what it was before the change,
+    /// and the collapse threshold does not move right. Otherwise one path level fewer shows at the same width (measured in review: dualH 600 window,
+    /// sidebar collapsed, 4-level path: all shown before the change, collapsed after).
+    /// The chevron glyph measures 7pt and fits in 8pt; the hit box is now the full 20pt height,
+    /// so 8×20=160pt² is still 54% larger than the former 16×6.5=104pt².
     private static let chevronWidth: CGFloat = 8
-    /// 段命中盒左右各留的余量（4pt 阶梯）：点到名字旁边一点点仍是这一段，不被隔壁 chevron 抢走
+    /// Margin on each side of the segment hit box (4pt steps): a click just beside the name still belongs to this segment, not the neighboring chevron
     private static let segHitPadX: CGFloat = 4
-    /// 段命中宽（纯函数：layout 与自测共用同一口径，不许各算一遍）
+    /// Segment hit width (pure function: layout and self-tests share one definition, no separate calculations)
     static func segmentHitWidth(glyphWidth: CGFloat) -> CGFloat {
         max(1, glyphWidth) + segHitPadX * 2
     }
 
-    /// 一级路径的完整模型：段按钮 + 其后的下钻 chevron
+    /// Full model of one path level: segment button + the drill-down chevron after it
     private struct Level {
         let url: URL
         let fullTitle: String
@@ -53,7 +53,7 @@ final class BreadcrumbBar: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     func setURL(_ url: URL) {
         self.url = url
@@ -61,19 +61,19 @@ final class BreadcrumbBar: NSView {
         needsLayout = true
     }
 
-    /// 点击空白区进入编辑模式（QSpace 惯例）
+    /// Clicking blank space enters edit mode (QSpace convention)
     override func mouseDown(with event: NSEvent) {
         onBeginEditing?()
     }
 
-    // MARK: 段模型构建（URL 变化时）
+    // MARK: Segment model construction (on URL change)
 
     private func rebuildLevels() {
         for lvl in levels { lvl.button.removeFromSuperview(); lvl.chevron.removeFromSuperview() }
         levels.removeAll()
 
-        // 按 path 组件正向构建（严禁 deletingLastPathComponent 向上循环——
-        // macOS 对 "/" 返回 "/.."，不等于自身，会造成无限循环+内存爆炸）
+        // Build forward from path components (never loop upward with deletingLastPathComponent:
+        // macOS returns "/.." for "/", which does not equal itself, causing an infinite loop and memory blowup)
         var components: [URL] = [URL(fileURLWithPath: "/")]
         var cursor = URL(fileURLWithPath: "/")
         for part in url.standardizedFileURL.path.split(separator: "/") {
@@ -97,21 +97,21 @@ final class BreadcrumbBar: NSView {
         }
     }
 
-    /// 中部省略：段名超 max 字符时保留首尾、中间以「…」替代（"很长很长的…文件夹名"）。
+    /// Middle truncation: a segment name over max characters keeps its head and tail, with "…" in between ("a-very-long…folder-name").
     private static func truncatedMiddle(_ s: String, max: Int) -> String {
         let chars = Array(s)
         guard chars.count > max else { return s }
-        let keep = max - 1                    // 让位给「…」
+        let keep = max - 1                    // leaves room for "…"
         let head = (keep + 1) / 2
         let tail = keep - head
         return String(chars.prefix(head)) + "…" + String(chars.suffix(tail))
     }
 
-    // MARK: 宽度自适应重排（resize / 布局切换 / URL 变化都经此）
+    // MARK: Adaptive width reflow (resize / layout switches / URL changes all pass through here)
 
-    /// 最近一次实际排布的内容右缘（供自测断言「不溢出」：应 ≤ bounds.width）
+    /// Right edge of content from the last layout (for the self-test "no overflow" assertion: should be ≤ bounds.width)
     private(set) var lastContentRight: CGFloat = 0
-    /// 最近一次被折叠的中间层级（供「…」菜单与自测；根段与可见末段不入内）
+    /// Middle levels collapsed in the last layout (for the "…" menu and self-tests; excludes the root and visible trailing segments)
     private(set) var collapsedURLs: [URL] = []
 
     override func layout() {
@@ -125,14 +125,14 @@ final class BreadcrumbBar: NSView {
         let chevW = Self.chevronWidth
 
         func segW(_ i: Int) -> CGFloat { Self.segmentHitWidth(glyphWidth: levels[i].button.intrinsicContentSize.width) }
-        // 每级占位 = 段宽 + 其后 chevron
+        // Each level takes segment width + the chevron after it
         func levelW(_ i: Int) -> CGFloat { segW(i) + chevW }
 
         let n = levels.count
         var fullWidth: CGFloat = 0
         for i in 0..<n { fullWidth += levelW(i) }
 
-        // 全部装得下 → 顺序铺开，隐藏「…」
+        // Everything fits -> lay out in sequence and hide "…"
         if fullWidth <= avail {
             ellipsis.isHidden = true
             collapsedURLs = []
@@ -146,16 +146,16 @@ final class BreadcrumbBar: NSView {
             return
         }
 
-        // 需折叠：根段常驻；末尾贪心尽量多留；中间折进「…」段。
+        // Must collapse: the root stays; greedily keep as many trailing levels as possible; the middle goes into the "…" segment.
         ellipsis.configure()
         let ellW = max(20, ellipsis.intrinsicContentSize.width)
 
-        // 决定可见的末尾起点 tailStart（levels[tailStart ..< n] 全可见）
-        // 预算 = 根段(+chev) + 「…」段 + 末尾各级
+        // Decide the visible tail start tailStart (levels[tailStart ..< n] are all visible)
+        // Budget = root (+chevron) + "…" segment + each trailing level
         let rootCost = levelW(0)
         var tailStart = n - 1
         var tailCost = levelW(n - 1)
-        // 至少保留末段；随后从倒数第二段起逐段回收，装得下才纳入（且不吞掉根段位）
+        // Keep at least the last segment; then reclaim backward from the second-to-last, including each only if it fits (and without eating the root's slot)
         var i = n - 2
         while i >= 1 {
             let cost = levelW(i)
@@ -168,17 +168,17 @@ final class BreadcrumbBar: NSView {
             }
         }
 
-        // 布置：根段 → 「…」 → 末尾段们
+        // Placement: root -> "…" -> trailing segments
         var x = leftInset
-        // 先全部隐藏，再显式点亮参与排布的
+        // Hide everything first, then explicitly light up the ones being placed
         for lvl in levels { lvl.button.isHidden = true; lvl.chevron.isHidden = true }
 
-        // 「装得下底线」（对抗审查用真实 layout() 实测到的回归）：
-        // root + 「…」 + 强制可见的末段这个**种子**本身也可能装不下（窄窗格 + 长末段名）。
-        // 旧版把它无条件铺开，于是 lastContentRight 越过 bounds.width，I-37「不溢出」不变量被打破。
-        // 段宽 +2×segHitPadX 之后这个阈值被抬高，所以底线必须补上：
-        //   ① 种子装不下 → 连根段一起折进「…」（I-37 的「全层级永远可达」由菜单兜住，不丢层级）
-        //   ② 逐个按剩余预算 clamp → x 结构上不可能越过 leftInset + avail
+        // "Must fit" floor (a regression measured with the real layout() during adversarial review):
+        // the **seed** of root + "…" + the forced-visible last segment may itself not fit (narrow pane + long last name).
+        // The old version laid it out unconditionally, so lastContentRight passed bounds.width and broke the I-37 "no overflow" invariant.
+        // Adding 2×segHitPadX to segment widths raises this threshold, so the floor has to be enforced:
+        //     1. seed does not fit -> fold the root into "…" too (I-37's "every level stays reachable" is covered by the menu; no level is lost)
+        //     2. clamp each item to the remaining budget -> x structurally cannot pass leftInset + avail
         var remaining = avail
         func placeClamped(_ v: NSView, desired: CGFloat) -> Bool {
             guard remaining > 0 else { return false }
@@ -198,14 +198,14 @@ final class BreadcrumbBar: NSView {
             levels[0].chevron.isHidden = false
             collapsed = (1..<tailStart).map { levels[$0].url }
         } else {
-            // 根段也放不下：它进折叠菜单（含根，仍然可达）
+            // Even the root does not fit: it goes into the collapsed menu (root included, still reachable)
             collapsed = (0..<max(1, n - 1)).map { levels[$0].url }
         }
 
         collapsedURLs = collapsed
         ellipsis.collapsedURLs = collapsed
-        // 连「…」都放不下时必须真的隐藏它：否则留下一个"可见但未被排布"的旧 frame，
-        // 那既是幽灵命中区，也会让 uiTestHasEllipsis 撒谎
+        // When even "…" does not fit it must really be hidden: otherwise a "visible but unplaced" stale frame remains,
+        // which is both a ghost hit area and makes uiTestHasEllipsis lie
         ellipsis.isHidden = !placeClamped(ellipsis, desired: ellW)
 
         let visibleTailStart = seedFits ? tailStart : n - 1
@@ -219,46 +219,46 @@ final class BreadcrumbBar: NSView {
         lastContentRight = x
     }
 
-    /// 放置一个子视图：**frame 就是命中盒**，占满整条 bar 的高度（字形居中交给 cell 自己画）。
+    /// Places a subview: **the frame is the hit box**, taking the full height of the bar (the cell draws the glyph centered).
     ///
-    /// 反面教材（用户报告 bug，v0.19.17）：旧版把 frame 高度收成 intrinsicContentSize.height
-    /// 再垂直居中，于是 20pt 的栏里段按钮只有 14pt、chevron 只有 6.5pt，上下都是死区——
-    /// 点进死区就穿透到本视图的 mouseDown → onBeginEditing，用户看到的就是
-    /// 「要点到文件夹正中心才跳转，偏一点变成输入模式」。
-    /// 实测死区占比：段 6/20=30%（换算到 24pt 地址行是 42%）、chevron 13.5/20=68%。
+    /// Cautionary tale (user-reported bug, v0.19.17): the old version shrank the frame height to intrinsicContentSize.height
+    /// and centered it vertically, so in a 20pt bar segment buttons were only 14pt and chevrons 6.5pt, with dead zones above and below.
+    /// A click in a dead zone fell through to this view's mouseDown -> onBeginEditing, which the user saw as
+    /// "you must hit the exact center of a folder to jump; slightly off goes into input mode".
+    /// Measured dead zone share: segment 6/20=30% (42% on a 24pt address row), chevron 13.5/20=68%.
     private func place(_ v: NSView, at x: inout CGFloat, width: CGFloat, height: CGFloat) {
         v.frame = NSRect(x: x, y: 0, width: width, height: height)
         x += width
     }
 
-    // MARK: 自测通道（NSPACE_UITEST；I-37）
+    // MARK: Self-test channel (NSPACE_UITEST; I-37)
 
-    /// 内容右缘（含左内缩），应 ≤ bounds.width（不溢出）
+    /// Right edge of content (including left inset), should be ≤ bounds.width (no overflow)
     var uiTestContentRight: CGFloat { lastContentRight }
-    /// 是否存在「…」折叠段
+    /// Whether the "…" collapsed segment exists
     var uiTestHasEllipsis: Bool { !ellipsis.isHidden }
-    /// 被折叠的中间层级 URL（「…」菜单来源）
+    /// URLs of the collapsed middle levels (source of the "…" menu)
     var uiTestCollapsedURLs: [URL] { collapsedURLs }
-    /// 真实构建「…」菜单（与点击弹出同一构建函数）；无折叠返回 nil
+    /// Really builds the "…" menu (same builder as the click popup); returns nil with nothing collapsed
     func uiTestEllipsisMenu() -> NSMenu? {
         guard !ellipsis.isHidden else { return nil }
         return ellipsis.buildMenu()
     }
-    /// 当前可见的末段（当前目录段）的 toolTip（应 == 完整名）
+    /// toolTip of the currently visible last segment (the current directory segment; should == the full name)
     var uiTestLastSegmentToolTip: String? { levels.last?.button.toolTip }
-    /// 当前可见末段完整名
+    /// Full name of the currently visible last segment
     var uiTestLastSegmentFullName: String? { levels.last?.fullTitle }
 
-    // ---- 命中盒探针（用户报告"要点正中心才跳转"）----
-    // 断言必须打在**命中区**上，不是打在 frame 上：只验 frame 的断言，把 place() 改回
-    // 居中矮盒照样能算对数,验不出"点不到"。故这里走 AppKit 自己派发 mouseDown 用的
-    // NSView.hitTest(_:)，不复刻。
+    // ---- Hit box probe (user report "must click dead center to jump") ----
+    // Assertions must target the **hit area**, not the frame: a frame-only assertion still computes the right numbers
+    // with place() reverted to a short centered box, and cannot detect "can't click it". So this goes through the
+    // NSView.hitTest(_:) that AppKit itself uses to dispatch mouseDown, instead of re-creating it.
 
-    /// hitTest 落在哪一类节点上
+    /// What kind of node hitTest landed on
     enum HitKind: String { case segment, chevron, ellipsis, bar, none }
 
-    /// 在 bar 自身坐标系的一点做**真实** hitTest。
-    /// hitTest(_:) 收的是「接收者 superview」坐标系，故先换算上去。
+    /// Does a **real** hitTest at a point in the bar's own coordinates.
+    /// hitTest(_:) takes coordinates in the receiver's superview, so convert up first.
     func uiTestHitKind(at p: NSPoint) -> HitKind {
         guard let sp = superview else { return .none }
         let v = hitTest(convert(p, to: sp))
@@ -269,8 +269,8 @@ final class BreadcrumbBar: NSView {
         return v == nil ? .none : .bar
     }
 
-    /// 命中点落在段按钮上则触发它真实的 action 并回报该段 URL；不落在段上返回 nil。
-    /// 直调 action 而非合成鼠标事件：NSCell.trackMouse 会开嵌套事件循环，headless 会挂。
+    /// If the hit point is on a segment button, fires its real action and reports that segment's URL; otherwise returns nil.
+    /// Calls the action directly rather than synthesizing mouse events: NSCell.trackMouse starts a nested event loop, which hangs headless.
     func uiTestActivateSegment(at p: NSPoint) -> URL? {
         guard let sp = superview,
               let b = hitTest(convert(p, to: sp)) as? SegmentButton else { return nil }
@@ -278,35 +278,35 @@ final class BreadcrumbBar: NSView {
         return b.url
     }
 
-    /// 当前可见段的 (URL, frame)（bar 局部坐标）
+    /// (URL, frame) of the visible segments (bar local coordinates)
     var uiTestVisibleSegments: [(url: URL, frame: NSRect)] {
         levels.filter { !$0.button.isHidden }.map { ($0.url, $0.button.frame) }
     }
-    /// 当前可见 chevron 的 frame（bar 局部坐标）
+    /// Frames of the visible chevrons (bar local coordinates)
     var uiTestVisibleChevronFrames: [NSRect] {
         levels.filter { !$0.chevron.isHidden }.map { $0.chevron.frame }
     }
-    /// 可见末段的字形宽（intrinsic）——用于验「命中宽 == 字形宽 + 2×padX」
+    /// Glyph width (intrinsic) of the visible last segment, used to verify "hit width == glyph width + 2×padX"
     var uiTestLastSegmentGlyphWidth: CGFloat? {
         levels.last(where: { !$0.button.isHidden })?.button.intrinsicContentSize.width
     }
-    /// 段命中盒左右余量总量（自测口径与产品口径同源）
+    /// Total left and right margin of the segment hit box (self-test and product use one source)
     static var uiTestSegHitPadTotal: CGFloat { segHitPadX * 2 }
 }
 
-/// 路径分段按钮：点击导航 + 文件投放目标（拖文件到分段=投进该祖先目录）
+/// Path segment button: click to navigate + file drop target (dragging files onto a segment = dropping into that ancestor directory)
 @MainActor
 private final class SegmentButton: NSButton {
     let url: URL
     var onClick: (() -> Void)?
-    /// 投放回调：(urls, 本分段目录, ⌥强制复制)
+    /// Drop callback: (urls, this segment's directory, ⌥ force copy)
     var onDropFiles: ((_ urls: [URL], _ target: URL, _ forceCopy: Bool) -> Void)?
 
     init(displayTitle: String, fullTitle: String, url: URL) {
         self.url = url
         super.init(frame: .zero)
         self.title = displayTitle
-        self.toolTip = fullTitle          // I-37：完整名进 toolTip（截断段悬停可见全名）
+        self.toolTip = fullTitle          // I-37: the full name goes in the toolTip (hover a truncated segment to see it)
         bezelStyle = .accessoryBarAction
         isBordered = false
         font = .systemFont(ofSize: NSFont.systemFontSize(for: .small))
@@ -321,12 +321,12 @@ private final class SegmentButton: NSButton {
         registerForDraggedTypes([.fileURL])
     }
 
-    /// 投放高亮层：与命中盒**解耦**——命中盒占满 bar 全高（否则上下是死区），
-    /// 但高亮不能跟着占满，那样会顶到地址行边缘看着像个色块。
-    /// 高亮铺满命中盒的**宽度**（= 字形 + 2×segHitPadX，与真正接受投放的区域同宽——
-    /// 这是刻意的，高亮该指示「投这里会落到哪一段」），只上下各内缩 2pt 避开地址行边缘。
+    /// Drop highlight layer: **decoupled** from the hit box. The hit box fills the bar's full height (else there are dead zones above and below),
+    /// but the highlight must not fill it too, or it reaches the address row's edges and looks like a color block.
+    /// The highlight spans the hit box **width** (= glyph + 2×segHitPadX, the same width as the area that really accepts drops,
+    /// deliberately: the highlight should show "which segment a drop here lands on"), inset 2pt top and bottom to clear the address row's edges.
     private let dropHighlight = CALayer()
-    /// 高亮相对命中盒的上下内缩（≤2pt 视错觉修正档，grid-lint 豁免）
+    /// Top/bottom inset of the highlight relative to the hit box (≤2pt optical correction tier, grid-lint exempt)
     private static let dropHighlightInsetY: CGFloat = 2
 
     override func layout() {
@@ -335,22 +335,22 @@ private final class SegmentButton: NSButton {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     @objc private func clicked() { onClick?() }
 
-    // MARK: 投放目标（语义同列表：默认同卷移动/跨卷复制、⌥ 复制）
+    // MARK: Drop target (same semantics as the list: move within a volume, copy across volumes, ⌥ copies)
 
     private func dragOperation(_ info: any NSDraggingInfo) -> NSDragOperation {
         guard let urls = info.draggingPasteboard.readObjects(
                 forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
               !urls.isEmpty else { return [] }
-        // 拒绝把目录投进它自己/子孙
+        // Reject dropping a directory into itself or a descendant
         guard urls.allSatisfy({ !FileOpsCoordinator.isSelfOrDescendant(destination: url, ofSource: $0) }) else {
             return []
         }
         let forceCopy = info.draggingSourceOperationMask == .copy
-        // 全部来源已在本分段目录：移动是无操作 → 拒绝（⌥ 复制放行）
+        // All sources are already in this segment's directory: a move is a no-op -> reject (⌥ copy is allowed)
         let destPath = url.standardizedFileURL.path
         if !forceCopy, urls.allSatisfy({ $0.standardizedFileURL.deletingLastPathComponent().path == destPath }) {
             return []
@@ -397,7 +397,7 @@ private final class SegmentButton: NSButton {
     }
 }
 
-/// 分段间箭头：点击弹出该级子目录菜单（懒构建）
+/// Arrow between segments: click to pop up that level's subfolder menu (built lazily)
 @MainActor
 private final class ChevronButton: NSButton {
     let parentURL: URL
@@ -416,7 +416,7 @@ private final class ChevronButton: NSButton {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     @objc private func showMenu() {
         let menu = NSMenu()
@@ -448,8 +448,8 @@ private final class ChevronButton: NSButton {
     }
 }
 
-/// 折叠段「…」：代表被隐藏的中间层级；点击弹菜单列出全部被折叠层级（带层级缩进），点任意项即导航。
-/// 保证「深层级永远可达」——即便窗格再窄，全部祖先都躺在这个菜单里。
+/// Collapsed "…" segment: stands for the hidden middle levels; click pops up a menu listing all collapsed levels (indented by depth), and picking one navigates there.
+/// Guarantees "deep levels are always reachable": however narrow the pane, all ancestors are in this menu.
 @MainActor
 private final class EllipsisButton: NSButton {
     var onPick: ((URL) -> Void)?
@@ -465,9 +465,9 @@ private final class EllipsisButton: NSButton {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
-    /// 官方 ellipsis 符号，取不到则纯文字「…」兜底（§6.1 官方符号铁律 + 回退）
+    /// Official ellipsis symbol, falling back to plain text "…" if unavailable (§6.1 official symbol hard rule + fallback)
     func configure() {
         if let img = NSImage.officialSymbol("ellipsis",
                                             accessibility: L10n.t("addressbar.collapsedLevels")) {
@@ -482,7 +482,7 @@ private final class EllipsisButton: NSButton {
         toolTip = L10n.t("addressbar.collapsedLevels")
     }
 
-    /// 构建折叠层级菜单（点击弹出与自测共用）：按路径顺序，带层级缩进；点项即导航。
+    /// Builds the collapsed levels menu (shared by the click popup and self-tests): in path order, indented by depth; picking an item navigates.
     func buildMenu() -> NSMenu {
         let menu = NSMenu()
         if collapsedURLs.isEmpty {
@@ -495,7 +495,7 @@ private final class EllipsisButton: NSButton {
                                     action: #selector(pick(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = dir
-            item.indentationLevel = i          // 层级缩进（路径越深缩进越大）
+            item.indentationLevel = i          // depth indent (deeper paths indent more)
             item.image = NSWorkspace.shared.icon(for: .folder)
             item.image?.size = NSSize(width: 14, height: 14)
         }

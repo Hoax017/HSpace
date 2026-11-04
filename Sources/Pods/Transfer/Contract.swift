@@ -1,9 +1,9 @@
 import Foundation
 import NSpaceContracts
 
-// Transfer 胶囊唯一对外契约面（Axiom 3）：
-// Composite Node —— 复制 / 移动 / 制作副本（内部微步：预扫描→冲突裁决→逐文件传输）
-// 节点边界按不可逆副作用切：一次操作 = 一次原子提交单位
+// Transfer pod's sole public contract surface (Axiom 3):
+// Composite Node: copy / move / duplicate (internal micro-steps: pre-scan → conflict resolution → per-file transfer)
+// Node boundaries follow irreversible side effects: one operation = one atomic commit unit
 
 public struct TransferError: ClassifiedError {
     public let errorClass: ErrorClass
@@ -17,8 +17,8 @@ public struct TransferError: ClassifiedError {
     }
 }
 
-/// "两者都保留"的命名规则（纯逻辑，可黑盒单测）：
-/// file.txt → file 2.txt → file 3.txt…（恒加后缀，绝不返回原名——keepBoth 语义=保留既有再新增副本）
+/// "Keep both" naming rule (pure logic, black-box unit-testable):
+/// file.txt → file 2.txt → file 3.txt… (always adds a suffix, never returns the original name: keepBoth keeps the existing item and adds a copy)
 public func keepBothName(for source: URL, in destinationDir: URL,
                          existsCheck: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }) -> String {
     let base = source.deletingPathExtension().lastPathComponent
@@ -31,8 +31,8 @@ public func keepBothName(for source: URL, in destinationDir: URL,
     }
 }
 
-/// rename 兜底命名：用户指定 desired 名可用则原样返回，否则 desired → "desired 2" → …（不覆盖已存在）。
-/// 与 keepBothName 的区别：rename 允许命中 desired 本身（用户显式意图），keepBoth 恒新增副本。
+/// Rename fallback naming: returns the desired name if it is free, otherwise desired → "desired 2" → … (never overwrites).
+/// Unlike keepBothName, rename may land on desired itself (explicit user intent); keepBoth always adds a copy.
 public func uniqueName(base: String, ext: String, in destinationDir: URL,
                        existsCheck: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }) -> String {
     let firstName = ext.isEmpty ? base : "\(base).\(ext)"
@@ -45,7 +45,7 @@ public func uniqueName(base: String, ext: String, in destinationDir: URL,
     }
 }
 
-/// 合并语义（文档化承诺）：mergeFolders 递归合并目录内容，同名文件以源覆盖目标
+/// Merge semantics (documented promise): mergeFolders recursively merges directory contents; on a name clash the source file overwrites the target
 public enum TransferMergePolicy {
-    public static let documentation = "merge = 递归并集；同名子文件源覆盖目标；同名子目录继续递归"
+    public static let documentation = "merge = recursive union; a same-named source file overwrites the target; same-named subfolders recurse"
 }

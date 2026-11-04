@@ -1,7 +1,7 @@
 import AppKit
 
-/// L1 轻量吐司（方法论三级通知模型）：非阻断成功反馈，2s 自动隐退。
-/// 用于"已拷贝路径/已拷贝 N 项/已添加书签"这类操作确认——消除"操作后界面死寂"。
+/// L1 lightweight toast (three-tier notification model): non-blocking success feedback, fades after 2s.
+/// Used for confirmations such as "Path copied/N items copied/Bookmark added", so the UI is not silent after an action.
 @MainActor
 enum Toast {
     private static var current: NSView?

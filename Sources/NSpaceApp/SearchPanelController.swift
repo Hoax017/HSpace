@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 import SearchEngine
 import Frecency
 
-/// 种类过滤（客户端过滤结果，不重发搜索）
+/// Kind filter (filters results client-side, without re-running the search)
 private enum SearchKindFilter: Int, CaseIterable {
     case all, folder, image, document, movie, audio, archive
 
@@ -37,7 +37,7 @@ private enum SearchKindFilter: Int, CaseIterable {
     }
 }
 
-/// 可成为 key 的无边框面板（borderless 默认拒绝 key，输入框需要）
+/// Borderless panel that can become key (borderless refuses key by default; the input field needs it)
 @MainActor
 private final class SearchPanel: NSPanel {
     var onCancel: (() -> Void)?
@@ -45,12 +45,12 @@ private final class SearchPanel: NSPanel {
     override func cancelOperation(_ sender: Any?) { onCancel?() }
 }
 
-/// 结果表：Return=定位、Esc=关面板、右键=上下文菜单（其余交默认：方向键/双击）
+/// Results table: Return = locate, Esc = close panel, right-click = context menu (the rest stays default: arrow keys/double-click)
 @MainActor
 private final class SearchResultTableView: NSTableView {
     var onReturn: (() -> Void)?
     var onEscape: (() -> Void)?
-    /// 右键菜单提供者：入参为点击行（-1 表示空白区，返回 nil 不弹菜单）
+    /// Context menu provider: takes the clicked row (-1 means blank space; returning nil shows no menu)
     var menuProvider: ((Int) -> NSMenu?)?
 
     override func keyDown(with event: NSEvent) {
@@ -64,7 +64,7 @@ private final class SearchResultTableView: NSTableView {
     override func menu(for event: NSEvent) -> NSMenu? {
         let point = convert(event.locationInWindow, from: nil)
         let row = self.row(at: point)
-        // 右击未选中行 → 先把它设为唯一选中（Finder 语义）
+        // Right-click on an unselected row -> make it the sole selection first (Finder semantics)
         if row >= 0, !selectedRowIndexes.contains(row) {
             selectRowIndexes([row], byExtendingSelection: false)
         }
@@ -72,9 +72,9 @@ private final class SearchResultTableView: NSTableView {
     }
 }
 
-/// 聚焦搜索面板（QSpace 式浮层）：无边框浮窗居中于主窗口上方。
-/// 只读消费 SearchEngine 流（BG-1：本层零写型文件 API）；
-/// 回车定位经回调上抛 MainWindowController 导航；双击走系统默认打开。
+/// Focused search panel (QSpace-style overlay): a borderless floating window centered above the main window.
+/// Consumes the SearchEngine stream read-only (BG-1: this layer has zero file write APIs);
+/// Return-to-locate goes up through a callback to MainWindowController for navigation; double-click uses the system default open.
 @MainActor
 final class SearchPanelController: NSObject {
     static let shared = SearchPanelController()
@@ -89,39 +89,39 @@ final class SearchPanelController: NSObject {
     private let kindPopup = NSPopUpButton()
     private let tableView = SearchResultTableView()
     private let emptyLabel = NSTextField(labelWithString: L10n.t("search.empty"))
-    /// 结果达上限提示（"仅显示前 N 条，请细化关键词"）——引擎在此上限停两通道，杜绝卡死
+    /// Result cap notice ("Showing only the first N results, refine your keywords"): the engine stops both channels at this cap, ruling out hangs
     private let truncationLabel = NSTextField(labelWithString: "")
 
     private let engine = SearchEngine()
-    /// 全量命中（流式累积）与过滤后展示集
+    /// All hits (accumulated from the stream) and the filtered display set
     private var allHits: [SearchHit] = []
     private var hits: [SearchHit] = []
     private var searchTask: Task<Void, Never>?
     private var debounceTask: Task<Void, Never>?
     private var isSearching = false
-    /// I-40：局部范围的搜索根（按"离根近者优先"排序用；全局搜索为 nil 保持到达顺序）
+    /// I-40: search root for local scope (for "nearest to root first" sorting; nil for global search, which keeps arrival order)
     private var searchRoot: URL?
-    /// 根的两种前缀表示：原样 + 解析符号链接后——Spotlight 通道回报解析后路径
-    /// （/tmp⟷/private/tmp 等），单一未解析前缀会让主通道整体判为"根外"沉底
+    /// Two prefix forms of the root: as given + with symlinks resolved. The Spotlight channel reports resolved paths
+    /// (/tmp⟷/private/tmp etc.), and a single unresolved prefix would mark the whole main channel "outside root" and sink it
     private var rootPrefixes: [String] = []
-    /// 每命中深度只算一次（键=url.path）；批次归并/过滤重排复用，不做全量重算
+    /// Depth computed once per hit (key = url.path); reused by batch merges/filter re-sorts, with no full recomputation
     private var depthCache: [String: Int] = [:]
 
-    /// M28 使用习惯学习排序：注入的 frecency 载体（AppDelegate 设一次，与全应用记账同一实例）
+    /// M28 usage-based ranking: injected frecency carrier (set once by AppDelegate, same instance as app-wide accounting)
     var frecencyStore: FrecencyStore?
-    /// 本次搜索的 frecency 快照（搜索任务开头 await 一次；搜索期内稳定，per-hit 同步打分）
+    /// Frecency snapshot for this search (awaited once at the start of the search task; stable during the search, hits scored synchronously)
     private var frecencySnapshot: [String: FrecencyEntry] = [:]
-    /// 本次搜索是否走智能排序（偏好开且有查询词）——搜索期内固定
+    /// Whether this search uses smart ranking (preference on and a query present); fixed during the search
     private var smartSortActive = false
-    /// 本次查询词（智能匹配打分用）
+    /// Query for this search (used for smart match scoring)
     private var currentQuery = ""
-    /// 每命中融合分只算一次（键=url.path）
+    /// Blended score computed once per hit (key = url.path)
     private var scoreCache: [String: Double] = [:]
 
-    /// 打开时捕获的"当前文件夹"与定位回调（每次 show 重新注入）
+    /// "Current folder" and locate callback captured on open (re-injected on every show)
     private var currentDirectory: URL?
     private var onReveal: ((URL) -> Void)?
-    /// 加入暂存架回调（MainWindowController 经 StashShelfController 注入；nil=不可达则菜单省该项，FG-1）
+    /// Add-to-stash callback (injected by MainWindowController through StashShelfController; nil = unreachable, so the menu omits the item, FG-1)
     private var onStash: (([URL]) -> Void)?
 
     override private init() {
@@ -137,14 +137,14 @@ final class SearchPanelController: NSObject {
         panel.hidesOnDeactivate = true
         panel.onCancel = { [weak self] in self?.closePanel() }
         buildContent()
-        // 失焦（点击面板外部）自动关闭
+        // Auto-close on focus loss (click outside the panel)
         NotificationCenter.default.addObserver(self, selector: #selector(panelResignedKey(_:)),
                                                name: NSWindow.didResignKeyNotification, object: panel)
     }
 
-    // MARK: 打开 / 关闭
+    // MARK: Open / close
 
-    /// ⌘F：scopeGlobal=false（当前文件夹）；⌥⌘F：scopeGlobal=true（全局）
+    /// ⌘F: scopeGlobal=false (current folder); ⌥⌘F: scopeGlobal=true (global)
     func show(scopeGlobal: Bool, currentDirectory: URL, attachedTo window: NSWindow?,
               onReveal: @escaping (URL) -> Void,
               onStash: (([URL]) -> Void)? = nil) {
@@ -156,7 +156,7 @@ final class SearchPanelController: NSObject {
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(field)
         field.currentEditor()?.selectAll(nil)
-        // 带着已有关键词切范围重开 → 立即按新范围重搜
+        // Reopened with existing keywords in a different scope -> search again at once in the new scope
         restartSearch()
     }
 
@@ -182,7 +182,7 @@ final class SearchPanelController: NSObject {
         closePanel()
     }
 
-    // MARK: 搜索执行（即输即搜，300ms 防抖；流式追加）
+    // MARK: Search execution (search as you type, 300ms debounce; streaming append)
 
     private func scheduleSearch() {
         debounceTask?.cancel()
@@ -222,7 +222,7 @@ final class SearchPanelController: NSObject {
                                     includeHidden: hiddenCheck.state == .on)
         searchTask = Task { [weak self] in
             guard let self else { return }
-            // M28：搜索排序前取一次 frecency 快照（放在流之前 → 首批命中即按习惯排序，期内稳定）
+            // M28: take a frecency snapshot once before ranking (ahead of the stream, so the first batch already ranks by usage, stable during the search)
             self.frecencySnapshot = await self.frecencyStore?.snapshot() ?? [:]
             guard !Task.isCancelled else { return }
             for await batch in engine.search(request) {
@@ -239,11 +239,11 @@ final class SearchPanelController: NSObject {
         let filter = selectedKindFilter
         let visible = filter == .all ? batch : batch.filter { filter.matches($0) }
         guard !visible.isEmpty else { return }
-        // 选中记忆（I-38）：变更前按 URL 记住当前选中
+        // Selection memory (I-38): remember the current selection by URL before changing
         let selectedURL = tableView.selectedRow >= 0 && tableView.selectedRow < hits.count
             ? hits[tableView.selectedRow].url : nil
-        // 智能排序（M28）或局部根近序：新批排序后线性归并（O(n) 摊销，避免全量重拼）。
-        // 全局 + 智能关：到达序原地追加（O(1)）。
+        // Smart ranking (M28) or local root-nearness: sort the new batch and merge linearly (O(n) amortized, avoids rebuilding everything).
+        // Global + smart off: append in arrival order in place (O(1)).
         if smartSortActive || searchRoot != nil {
             hits = merged(hits, visible.sorted(by: rankLess))
         } else {
@@ -254,14 +254,14 @@ final class SearchPanelController: NSObject {
         updateTruncationHint()
     }
 
-    /// I-38：重载后按 URL 还原选中并保持可见（流式批次此前每批 reloadData 直接清掉用户选中）
+    /// I-38: after reload, restore the selection by URL and keep it visible (each streamed batch's reloadData used to wipe the user's selection)
     private func restoreSelection(_ url: URL?) {
         guard let url, let row = hits.firstIndex(where: { $0.url == url }) else { return }
         tableView.selectRowIndexes([row], byExtendingSelection: false)
         tableView.scrollRowToVisible(row)
     }
 
-    /// 结果集整体替换（kindChanged / 测试探针用）——保持选中
+    /// Whole result set replacement (for kindChanged / test probes); keeps the selection
     private func setHits(_ newHits: [SearchHit]) {
         let selectedURL = tableView.selectedRow >= 0 && tableView.selectedRow < hits.count
             ? hits[tableView.selectedRow].url : nil
@@ -271,14 +271,14 @@ final class SearchPanelController: NSObject {
         updateTruncationHint()
     }
 
-    /// 达结果硬上限时提示"仅显示前 N 条，请细化关键词"（引擎已在此上限停两通道，CPU 恒有界）
+    /// At the hard result cap, shows "Showing only the first N results, refine your keywords" (the engine has stopped both channels at this cap, so CPU stays bounded)
     private func updateTruncationHint() {
         truncationLabel.isHidden = allHits.count < SearchLimits.maxResults
     }
 
-    // MARK: I-40 局部排序（离根近者优先：根直接子级最先、逐层下推，同层按路径字典序）
+    // MARK: I-40 local ordering (nearest to root first: root's direct children first, deeper level by level, same level in path dictionary order)
 
-    /// 换根：重置前缀表示与深度缓存（restartSearch / 测试探针共用）
+    /// Change root: resets prefix forms and depth cache (shared by restartSearch / test probes)
     private func setSearchRoot(_ root: URL?) {
         searchRoot = root
         depthCache = [:]
@@ -295,7 +295,7 @@ final class SearchPanelController: NSObject {
 
     private func dirPrefix(_ path: String) -> String { path == "/" ? "/" : path + "/" }
 
-    /// 命中相对根的层深（直接子级=1）；两种根表示都不匹配 → 根外沉底（.max）
+    /// Hit depth relative to the root (direct child = 1); no match with either root form -> outside root, sinks to the bottom (.max)
     private func depth(of hit: SearchHit) -> Int {
         let key = hit.url.path
         if let cached = depthCache[key] { return cached }
@@ -316,9 +316,9 @@ final class SearchPanelController: NSObject {
             : a.url.path.localizedStandardCompare(b.url.path) == .orderedAscending
     }
 
-    // MARK: M28 智能排序（frecency + 匹配质量融合；偏好开时接管全局与局部）
+    // MARK: M28 smart ranking (blend of frecency + match quality; takes over global and local when the preference is on)
 
-    /// 融合分（每命中只算一次，缓存）：匹配质量 + frecency（快照，搜索期内稳定）。
+    /// Blended score (computed once per hit and cached): match quality + frecency (snapshot, stable during the search).
     private func smartScore(of hit: SearchHit) -> Double {
         let key = hit.url.path
         if let c = scoreCache[key] { return c }
@@ -330,7 +330,7 @@ final class SearchPanelController: NSObject {
         return s
     }
 
-    /// 排序比较器：智能开 → 融合分降序（局部再按离根近、否则字典序 tiebreak）；智能关 → 原 inRankOrder。
+    /// Sort comparator: smart on -> blended score descending (tie-break by root nearness for local, else dictionary order); smart off -> the original inRankOrder.
     private func rankLess(_ a: SearchHit, _ b: SearchHit) -> Bool {
         guard smartSortActive else { return inRankOrder(a, b) }
         let sa = smartScore(of: a), sb = smartScore(of: b)
@@ -342,7 +342,7 @@ final class SearchPanelController: NSObject {
         return a.url.path.localizedStandardCompare(b.url.path) == .orderedAscending
     }
 
-    /// 两个已序数组线性归并（hits 不变式：智能/局部时恒按 rankLess 有序）
+    /// Linear merge of two sorted arrays (hits invariant: always ordered by rankLess under smart/local)
     private func merged(_ a: [SearchHit], _ b: [SearchHit]) -> [SearchHit] {
         var out: [SearchHit] = []
         out.reserveCapacity(a.count + b.count)
@@ -374,12 +374,12 @@ final class SearchPanelController: NSObject {
         SearchKindFilter(rawValue: kindPopup.indexOfSelectedItem) ?? .all
     }
 
-    // MARK: 控件动作
+    // MARK: Control actions
 
     @objc private func scopeChanged(_ sender: Any?) { restartSearch() }
 
     @objc private func channelChanged(_ sender: NSButton) {
-        // 名称/内容不得双关（FG：不留必然空结果的死状态）
+        // Name/content cannot both be off (FG: no dead state that can only give empty results)
         if nameCheck.state == .off, contentCheck.state == .off {
             sender.state = .on
             NSSound.beep()
@@ -393,13 +393,13 @@ final class SearchPanelController: NSObject {
     @objc private func kindChanged(_ sender: Any?) {
         let filter = selectedKindFilter
         let base = filter == .all ? allHits : allHits.filter { filter.matches($0) }
-        // 过滤切换是显式用户动作：单次全排可接受（深度/融合分已缓存，仅比较成本）
+        // Switching the filter is an explicit user action: one full sort is acceptable (depth/blended scores are cached, so only comparison cost)
         setHits((smartSortActive || searchRoot != nil) ? base.sorted(by: rankLess) : base)
         updateEmptyState()
     }
 
-    /// 双击：目录（非包）在当前窗口活动窗格内进入（I-18——不再经 LS 绕一圈弹新窗口）；
-    /// 文件/包保持系统默认程序打开
+    /// Double-click: directories (not packages) are entered in the current window's active pane (I-18: no more round trip through LS opening a new window);
+    /// files/packages keep opening with the system default app
     @objc private func didDoubleClick(_ sender: Any?) {
         let row = tableView.clickedRow
         guard row >= 0, row < hits.count else { return }
@@ -411,12 +411,12 @@ final class SearchPanelController: NSObject {
             closePanel()
             onReveal?(url)
         } else {
-            if let store = frecencyStore { Task { await store.record(url) } }   // M28：搜索结果打开=记账
+            if let store = frecencyStore { Task { await store.record(url) } }   // M28: opening a search result counts as usage
             NSWorkspace.shared.open(url)
         }
     }
 
-    /// 回车 = 在活动窗格导航到所在目录并选中
+    /// Return = navigate the active pane to the containing directory and select
     private func revealSelection() {
         let row = tableView.selectedRow >= 0 ? tableView.selectedRow : (hits.isEmpty ? -1 : 0)
         guard row >= 0, row < hits.count else { NSSound.beep(); return }
@@ -425,23 +425,23 @@ final class SearchPanelController: NSObject {
         onReveal?(url)
     }
 
-    // MARK: 结果行右键菜单（I-31——按搜索上下文裁剪：持有 hits[URL] 而非 model；无 coordinator 依赖项一律省，FG-1 不留假项）
+    // MARK: Result row context menu (I-31: trimmed for the search context: holds hits[URL] rather than a model; anything that depends on coordinator is left out, FG-1 no fake items)
 
-    /// 点击行 → 命中，构造菜单（-1 或越界返回 nil：搜索面板无空白区目录菜单）
+    /// Clicked row -> hit, build the menu (-1 or out of range returns nil: the search panel has no blank-space directory menu)
     private func buildMenu(clickedRow row: Int) -> NSMenu? {
         guard row >= 0, row < hits.count else { return nil }
         return menu(for: hits[row])
     }
 
-    /// 结果行上下文菜单。最小集：打开 / 在 NSpace 中定位 / 拷贝路径 / 加入暂存架(可达时) / 显示简介。
-    /// 每项 representedObject 携带该命中 URL；action 目标即本控制器（暴露供 UISelfTest 直接构造断言）。
+    /// Result row context menu. Minimal set: Open / Locate in NSpace / Copy Path / Add to Stash (when reachable) / Get Info.
+    /// Each item's representedObject carries the hit URL; the action target is this controller (exposed so UISelfTest can build and assert directly).
     func menu(for hit: SearchHit) -> NSMenu {
         let menu = NSMenu()
         let url = hit.url
 
         addMenuItem(menu, "menu.open", #selector(openHit(_:)), url: url,
                     symbol: hit.isDirectory ? "arrow.forward.square" : "arrow.up.forward.app")
-        // 在 NSpace 中定位：经 onReveal 链（show 时注入）；不可达则省（FG-1）
+        // Locate in NSpace: through the onReveal chain (injected at show); left out if unreachable (FG-1)
         if onReveal != nil {
             addMenuItem(menu, "search.reveal", #selector(revealHit(_:)), url: url,
                         symbol: "scope")
@@ -450,14 +450,14 @@ final class SearchPanelController: NSObject {
 
         addMenuItem(menu, "menu.copyPath", #selector(copyHitPath(_:)), url: url,
                     symbol: "link")
-        // 加入暂存架：仅 StashShelfController 可达时提供（onStash 由 MainWindowController 注入）
+        // Add to Stash: offered only when StashShelfController is reachable (onStash is injected by MainWindowController)
         if onStash != nil {
             addMenuItem(menu, "search.addToStash", #selector(stashHit(_:)), url: url,
                         symbol: "tray.and.arrow.down")
         }
         menu.addItem(.separator())
 
-        // 显示简介：InfoPanel 直接可复用
+        // Get Info: InfoPanel can be reused directly
         addMenuItem(menu, "menu.getInfo", #selector(getInfoForHit(_:)), url: url,
                     symbol: "info.circle")
         return menu
@@ -474,7 +474,7 @@ final class SearchPanelController: NSObject {
         return item
     }
 
-    /// 打开：目录（非包）在 NSpace 内定位进入；文件/包走系统默认程序（与双击同语义）
+    /// Open: directories (not packages) are located inside NSpace; files/packages use the system default app (same semantics as double-click)
     @objc private func openHit(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         var isDir: ObjCBool = false
@@ -488,14 +488,14 @@ final class SearchPanelController: NSObject {
         }
     }
 
-    /// 在 NSpace 中定位：经 onReveal 链上抛 MainWindowController 导航并选中
+    /// Locate in NSpace: passes up the onReveal chain to MainWindowController to navigate and select
     @objc private func revealHit(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         closePanel()
         onReveal?(url)
     }
 
-    /// 拷贝路径：写入通用剪贴板（真实效果——NSPasteboard 内容==该路径）
+    /// Copy Path: writes to the general pasteboard (real effect: NSPasteboard content == the path)
     @objc private func copyHitPath(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         let pb = NSPasteboard.general
@@ -504,21 +504,21 @@ final class SearchPanelController: NSObject {
         Toast.show(L10n.t("toast.copiedPath"), in: panel)
     }
 
-    /// 加入暂存架：经注入的 onStash（StashShelfController.add）落地
+    /// Add to Stash: lands through the injected onStash (StashShelfController.add)
     @objc private func stashHit(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         onStash?([url])
     }
 
-    /// 显示简介：复用 InfoPanel
+    /// Get Info: reuses InfoPanel
     @objc private func getInfoForHit(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         InfoPanel.show(for: url)
     }
 
-    // MARK: UISelfTest 探针（I-38 流式不打断选中 / I-40 根近排序+路径列；不触真实搜索引擎）
+    // MARK: UISelfTest probes (I-38 streaming keeps selection / I-40 root nearness + path column; does not touch the real search engine)
 
-    /// 重置结果集并注入搜索根（夹具驱动，绕过引擎）
+    /// Resets the result set and injects a search root (fixture-driven, bypasses the engine)
     func uiTestReset(root: URL?) {
         searchTask?.cancel()
         debounceTask?.cancel()
@@ -527,7 +527,7 @@ final class SearchPanelController: NSObject {
         hits = []
         tableView.reloadData()
     }
-    /// 走真实 appendResults 链注入一批结果（排序/选中保持逻辑全生效）
+    /// Injects a batch through the real appendResults chain (all sort/selection-keeping logic applies)
     func uiTestAppend(_ batch: [SearchHit]) { appendResults(batch) }
     func uiTestSelectRow(_ row: Int) { tableView.selectRowIndexes([row], byExtendingSelection: false) }
     var uiTestSelectedPath: String? {
@@ -535,7 +535,7 @@ final class SearchPanelController: NSObject {
             ? hits[tableView.selectedRow].url.path : nil
     }
     var uiTestResultPaths: [String] { hits.map(\.url.path) }
-    /// M28：注入智能排序状态（查询词 + frecency 快照 + 开关），配合 uiTestAppend 确定性验证融合排序
+    /// M28: injects smart ranking state (query + frecency snapshot + switch), for deterministic blended ranking checks with uiTestAppend
     func uiTestConfigureSmart(query: String, snapshot: [String: FrecencyEntry], active: Bool) {
         currentQuery = query
         frecencySnapshot = snapshot
@@ -544,7 +544,7 @@ final class SearchPanelController: NSObject {
     }
     var uiTestTruncationVisible: Bool { !truncationLabel.isHidden }
     var uiTestResultCount: Int { hits.count }
-    /// 首行路径列单元格实渲染文本（真实效果断言：路径真的显示了，不是 tooltip）
+    /// Rendered text of the first row's path cell (real-effect assertion: the path really shows, not just a tooltip)
     var uiTestFirstRowPathCellText: String? {
         guard !hits.isEmpty,
               let col = tableView.tableColumns.first(where: { $0.identifier.rawValue == "path" })
@@ -552,7 +552,7 @@ final class SearchPanelController: NSObject {
         return (tableView(tableView, viewFor: col, row: 0) as? TextCellView)?.textField?.stringValue
     }
 
-    // MARK: 构建 UI（4pt 网格）
+    // MARK: Build UI (4pt grid)
 
     private func buildContent() {
         let root = NSVisualEffectView()
@@ -565,7 +565,7 @@ final class SearchPanelController: NSObject {
         root.layer?.borderWidth = 1
         root.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.4).cgColor
 
-        // —— 第一行：icon + 大搜索框 + spinner + 范围切换 ——
+        // —— Row 1: icon + big search field + spinner + scope switch ——
         let icon = NSImageView(image: NSImage(systemSymbolName: "magnifyingglass",
                                               accessibilityDescription: L10n.t("search.placeholder"))!)
         icon.symbolConfiguration = .init(pointSize: 18, weight: .regular)
@@ -588,7 +588,7 @@ final class SearchPanelController: NSObject {
         scopePopup.target = self
         scopePopup.action = #selector(scopeChanged(_:))
 
-        // —— 第二行：通道勾选 + 种类过滤 ——
+        // —— Row 2: channel checkboxes + kind filter ——
         for check in [nameCheck, contentCheck] {
             check.target = self
             check.action = #selector(channelChanged(_:))
@@ -600,7 +600,7 @@ final class SearchPanelController: NSObject {
         hiddenCheck.font = .systemFont(ofSize: 12)
         hiddenCheck.target = self
         hiddenCheck.action = #selector(hiddenChanged(_:))
-        hiddenCheck.toolTip = L10n.t("search.hiddenTooltip")  // 超越 QSpace 的卖点开关
+        hiddenCheck.toolTip = L10n.t("search.hiddenTooltip")  // headline toggle that goes beyond QSpace
 
         for filter in SearchKindFilter.allCases {
             kindPopup.addItem(withTitle: L10n.t(filter.titleKey))
@@ -610,7 +610,7 @@ final class SearchPanelController: NSObject {
         kindPopup.target = self
         kindPopup.action = #selector(kindChanged(_:))
 
-        // —— 结果表 ——
+        // —— Results table ——
         tableView.style = .plain
         tableView.rowHeight = 24
         tableView.intercellSpacing = NSSize(width: 8, height: 0)
@@ -693,7 +693,7 @@ final class SearchPanelController: NSObject {
             scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             emptyLabel.centerXAnchor.constraint(equalTo: scroll.centerXAnchor),
             emptyLabel.centerYAnchor.constraint(equalTo: scroll.centerYAnchor),
-            // 上限提示：贴结果区底部整条（细条 overlay，不挤占列表布局）
+            // Cap notice: a strip along the bottom of the result area (thin overlay, takes no space from the list layout)
             truncationLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             truncationLabel.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             truncationLabel.bottomAnchor.constraint(equalTo: root.bottomAnchor),
@@ -703,7 +703,7 @@ final class SearchPanelController: NSObject {
     }
 }
 
-// MARK: - 搜索框委托（防抖触发 + 键路由）
+// MARK: - Search field delegate (debounce trigger + key routing)
 
 extension SearchPanelController: NSTextFieldDelegate {
     func controlTextDidChange(_ obj: Notification) {
@@ -719,7 +719,7 @@ extension SearchPanelController: NSTextFieldDelegate {
             closePanel()
             return true
         case #selector(NSResponder.moveDown(_:)):
-            // ↓ 把焦点交给结果表
+            // ↓ moves focus to the results table
             guard !hits.isEmpty else { return true }
             panel.makeFirstResponder(tableView)
             tableView.selectRowIndexes([0], byExtendingSelection: false)
@@ -731,7 +731,7 @@ extension SearchPanelController: NSTextFieldDelegate {
     }
 }
 
-// MARK: - 结果表数据源/委托（复用 NameCellView/TextCellView/Formatters）
+// MARK: - Results table data source/delegate (reuses NameCellView/TextCellView/Formatters)
 
 extension SearchPanelController: NSTableViewDataSource, NSTableViewDelegate {
     func numberOfRows(in tableView: NSTableView) -> Int { hits.count }
@@ -745,21 +745,21 @@ extension SearchPanelController: NSTableViewDataSource, NSTableViewDelegate {
             let icon = NSWorkspace.shared.icon(forFile: hit.url.path)
             icon.size = NSSize(width: 16, height: 16)
             cell.configure(icon: icon, name: hit.name, dimmed: false)
-            cell.toolTip = hit.url.path  // 同名结果靠路径区分
+            cell.toolTip = hit.url.path  // same-name results are told apart by path
             return cell
         }
         let cell = tableView.makeView(withIdentifier: .init("searchText"), owner: nil) as? TextCellView
             ?? TextCellView(identifier: .init("searchText"))
         switch colID {
         case "path":
-            // I-40：常驻路径列（同名结果不再只靠悬浮区分）——中部省略保根与最近父级两头
+            // I-40: permanent path column (same-name results no longer rely on hover alone); middle truncation keeps both the root and nearest parent
             let parent = hit.url.deletingLastPathComponent().path
             cell.configure((parent as NSString).abbreviatingWithTildeInPath, alignment: .left)
             cell.textField?.lineBreakMode = .byTruncatingMiddle
             cell.toolTip = parent
         case "size":
             cell.configure(hit.size.map { Formatters.size.string(fromByteCount: $0) } ?? "—", alignment: .right)
-            cell.textField?.lineBreakMode = .byTruncatingTail   // 复用格重置（可能上轮是路径列）
+            cell.textField?.lineBreakMode = .byTruncatingTail   // reset for cell reuse (may have been the path column last time)
             cell.toolTip = nil
         case "dateModified":
             cell.configure(hit.modified.map { Formatters.relativeDate($0) } ?? "—", alignment: .left)

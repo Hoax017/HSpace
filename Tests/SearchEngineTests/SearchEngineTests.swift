@@ -2,11 +2,11 @@ import Testing
 import Foundation
 @testable import SearchEngine
 
-/// 黑盒验收：通道B（隐藏文件扫描）用真实临时夹具树精确断言；
-/// 通道A（Spotlight）依赖系统索引状态，只做"能启动能停止不崩"的宽松断言（不做假 Mock）。
+/// Black-box acceptance: channel B (hidden file scan) asserts precisely on real temp fixture trees;
+/// channel A (Spotlight) depends on system index state, so it only loosely asserts "starts and stops without crashing" (no fake mocks).
 @MainActor
 @Suite struct SearchEngineTests {
-    /// 夹具树：可见命中 + 点隐藏命中 + 隐藏目录内命中 + 深层命中 + 巨坑目录内命中（应被跳过）
+    /// Fixture tree: visible hit + dot-hidden hit + hit inside a hidden directory + deep hit + hit inside a heavy directory (should be skipped)
     func makeFixture() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("nspace-search-\(UUID().uuidString)")
@@ -28,7 +28,7 @@ import Foundation
         return dir
     }
 
-    /// 收集流结果直到自然收尾或超时（超时取消 = 验证协作式停止）
+    /// Collects stream results until natural completion or timeout (timeout cancels = verifies cooperative stop)
     func collect(_ request: SearchRequest, timeout: Double = 5) async -> [SearchHit] {
         let engine = SearchEngine()
         let stream = engine.search(request)
@@ -55,7 +55,7 @@ import Foundation
                                                searchNames: true, searchContents: false,
                                                includeHidden: true))
         let names = Set(hits.map(\.name))
-        // 点隐藏文件、隐藏目录内文件、可见文件、深层文件全部按名命中
+        // Dot-hidden files, files in hidden directories, visible files and deep files all match by name
         #expect(names.contains(".hidden-nsneedle.txt"))
         #expect(names.contains("inside-nsneedle.txt"))
         #expect(names.contains("visible-nsneedle.txt"))
@@ -69,14 +69,14 @@ import Foundation
         let hits = await collect(SearchRequest(query: "nsneedle", scope: .directory(dir),
                                                searchNames: true, searchContents: false,
                                                includeHidden: true))
-        // node_modules 巨坑目录被跳过
+        // The heavy directory node_modules is skipped
         #expect(!hits.contains { $0.name == "skip-nsneedle.txt" })
     }
 
     @Test func includeHiddenOffOmitsHiddenChannel() async throws {
         let dir = try makeFixture()
         defer { try? FileManager.default.removeItem(at: dir) }
-        // 关闭隐藏通道：只走 Spotlight，临时目录/隐藏文件不入索引 → 隐藏文件必不出现
+        // Hidden channel off: Spotlight only, temp directories and hidden files are not indexed → hidden files must not appear
         let hits = await collect(SearchRequest(query: "nsneedle", scope: .directory(dir),
                                                searchNames: true, searchContents: false,
                                                includeHidden: false), timeout: 2)
@@ -87,7 +87,7 @@ import Foundation
     @Test func resultsAreDeduplicatedByURL() async throws {
         let dir = try makeFixture()
         defer { try? FileManager.default.removeItem(at: dir) }
-        // 双通道同时开：同一 URL 严禁重复出现在合并流中
+        // Both channels on: the same URL must never appear twice in the merged stream
         let hits = await collect(SearchRequest(query: "nsneedle", scope: .directory(dir),
                                                searchNames: true, searchContents: false,
                                                includeHidden: true))
@@ -107,17 +107,17 @@ import Foundation
     @Test func spotlightChannelStartsAndStopsWithoutCrash() async throws {
         let dir = try makeFixture()
         defer { try? FileManager.default.removeItem(at: dir) }
-        // 通道A 宽松断言：内容搜索启动后 0.5s 取消，流必须终止且不崩（不苛求索引返回结果）
+        // Loose channel A assertion: content search cancelled 0.5s after starting; the stream must end without crashing (index results are not required)
         let hits = await collect(SearchRequest(query: "nsneedle", scope: .directory(dir),
                                                searchNames: true, searchContents: true,
                                                includeHidden: false), timeout: 0.5)
-        _ = hits  // 结果内容不作断言（依赖 Spotlight 索引状态）
+        _ = hits  // result contents are not asserted (depends on Spotlight index state)
         #expect(Bool(true))
     }
 
     @Test func resultsAreCappedAtMaxResults() async throws {
-        // 卡死根因回归：命中数超上限时引擎必须封顶停通道（否则主线程读全量 → 卡死/CPU 暴涨）。
-        // 用通道B 递归扫描构造 maxResults+200 个匹配文件，断言流总产出 ≤ 上限。
+        // Freeze root-cause regression: when hits exceed the cap the engine must cap and stop channels (otherwise main-thread full reads freeze and spike CPU).
+        // Builds maxResults+200 matching files for channel B's recursive scan, asserting total stream output <= the cap.
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("nspace-search-cap-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -130,17 +130,17 @@ import Foundation
                                                searchNames: true, searchContents: false,
                                                includeHidden: true), timeout: 10)
         #expect(hits.count <= SearchLimits.maxResults)
-        #expect(hits.count >= SearchLimits.maxResults - 50)   // 确实逼近上限（证明扫到了大量、且封顶）
+        #expect(hits.count >= SearchLimits.maxResults - 50)   // really approaches the cap (proves many were scanned, and capped)
     }
-    // MARK: v0.19.17 —— "能看到却搜不到 .claude" 的四条独立真因（用户报告）
+    // MARK: v0.19.17: the four independent real causes of "visible but .claude unsearchable" (user report)
 
-    /// 真因① 遍历顺序：`FileManager.enumerator` 是惰性前序 DFS，拿到一个 depth-1 目录后
-    /// 会把它整棵子树走完才回到下一个 depth-1 兄弟。真机实测 `~/.claude` DFS 要 15.5s
-    /// 才被**枚举到**（第 75 万项），BFS 0.006s（第 104 项）。
+    /// Real cause (1) traversal order: `FileManager.enumerator` is a lazy pre-order DFS; after a depth-1 directory
+    /// it walks the whole subtree before returning to the next depth-1 sibling. Measured on a real machine, `~/.claude` took DFS 15.5s
+    /// to be **enumerated** (item 750k), BFS 0.006s (item 104).
     ///
-    /// 本断言与目录枚举顺序**无关**（不靠运气）：夹具 root/{d1/leaf, d2/leaf} 下，
-    /// DFS 无论先走 d1 还是 d2，都必然产出 depth-2 之后才回到另一个 depth-1
-    /// → 「深度单调不减」必然被打破。BFS 则恒成立。
+    /// This assertion is **independent** of directory enumeration order (no luck involved): in the fixture root/{d1/leaf, d2/leaf},
+    /// whichever of d1 or d2 DFS takes first, it must emit depth-2 before returning to the other depth-1
+    /// → "monotonically non-decreasing depth" is necessarily broken. BFS always holds.
     @Test func levelOrderWalkEmitsNonDecreasingDepths() throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("nspace-bfs-\(UUID().uuidString)")
@@ -153,17 +153,17 @@ import Foundation
         LevelOrderWalk.walk(root: root, skipDirectoryNames: [], shouldContinue: { true }) { _, depth, _ in
             depths.append(depth)
         }
-        #expect(depths == depths.sorted(), "深度必须单调不减，实得 \(depths)")
-        #expect(depths.count == 4)                       // 反空断言：夹具真被走到了
-        #expect(depths.filter { $0 == 1 }.count == 2)    // 两个 depth-1 目录都在 depth-2 之前
+        #expect(depths == depths.sorted(), "Depth must be monotonically non-decreasing, got \(depths)")
+        #expect(depths.count == 4)                       // anti-empty assertion: the fixture really was walked
+        #expect(depths.filter { $0 == 1 }.count == 2)    // both depth-1 directories come before depth-2
     }
 
-    /// 真因① 的**接线**：上一条只证明 LevelOrderWalk 自己是 BFS，把 scan() 换回 DFS
-    /// 它照样全绿（对抗审查实测 3/3）。这条打在 scan() 真实产出的命中序列上。
+    /// The **wiring** of real cause (1): the previous test only proves LevelOrderWalk itself is BFS; swap scan() back to DFS
+    /// and it stays fully green (adversarial review measured 3/3). This test hits the actual hit sequence from scan().
     ///
-    /// 夹具 root/{m-dirA/m-inner, m-dirB/m-inner}，四项全部匹配 "nswire"。
-    /// DFS 无论先走哪个目录，都必然是 depth1→depth2→depth1→depth2；BFS 恒为 1,1,2,2。
-    /// 与目录枚举顺序无关。
+    /// Fixture root/{m-dirA/m-inner, m-dirB/m-inner}, all four items match "nswire".
+    /// Whichever directory DFS takes first it must go depth1→depth2→depth1→depth2; BFS is always 1,1,2,2.
+    /// Independent of directory enumeration order.
     @Test func scanDeliversShallowHitsBeforeDeepOnes() throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("nspace-wire-\(UUID().uuidString)")
@@ -178,18 +178,18 @@ import Foundation
                                                   includeHidden: true)) { order.append(contentsOf: $0) }
         let rootDepth = root.standardizedFileURL.pathComponents.count
         let depths = order.map { $0.url.standardizedFileURL.pathComponents.count - rootDepth }
-        #expect(depths == depths.sorted(), "scan() 产出的深度必须单调不减，实得 \(depths)")
-        #expect(depths.count == 4)                      // 反空断言：四项都到齐
-        #expect(depths.prefix(2).allSatisfy { $0 == 1 }) // 两个 depth-1 目录在任何 depth-2 之前
+        #expect(depths == depths.sorted(), "scan() depths must be monotonically non-decreasing, got \(depths)")
+        #expect(depths.count == 4)                      // anti-empty assertion: all four items arrived
+        #expect(depths.prefix(2).allSatisfy { $0 == 1 }) // both depth-1 directories come before any depth-2
     }
 
-    /// 真因② 发射条件：旧版只有 `batch.count >= 50` 和「整棵扫完」两个发射点。
-    /// 低命中率查询（~ 下搜 ".claude" 只有 135 条命中 / 198 万项）命中被攥在栈上，
-    /// 实测第一批要等到 17.9s（第 50 条命中），扫完要 45s。
+    /// Real cause (2) emit conditions: the old version emitted only at `batch.count >= 50` and at "whole tree scanned".
+    /// Low-hit-rate queries (searching ".claude" under ~ has only 135 hits among 1.98M items) kept hits held on the stack,
+    /// measured at 17.9s to the first batch (hit 50) and 45s to scan completion.
     ///
-    /// 夹具两个命中分处 depth 1 与 depth 3，中间隔 5000 个不命中项。
-    /// 加了时间发射后浅层命中会**单独成批**先发出 → 至少 2 次发射；
-    /// 只有计数发射时 2 < 50，全程只有收尾那一次发射 → 断言必红。
+    /// The fixture's two hits sit at depth 1 and depth 3, separated by 5000 non-matching items.
+    /// With timed emits the shallow hit goes out **in its own batch** first → at least 2 emits;
+    /// with count-only emits 2 < 50 and only the final emit happens → the assertion must fail.
     @Test func sparseHitIsNotWithheldUntilScanEnds() throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("nspace-flush-\(UUID().uuidString)")
@@ -198,25 +198,25 @@ import Foundation
         try fm.createDirectory(at: deepDir, withIntermediateDirectories: true)
         try Data("x".utf8).write(to: root.appendingPathComponent("flushneedle-shallow.txt"))   // depth 1
         try Data("x".utf8).write(to: deepDir.appendingPathComponent("flushneedle-deep.txt"))   // depth 3
-        for i in 0..<5000 {                                                                    // depth 2 填充
+        for i in 0..<5000 {                                                                    // depth 2 padding
             try Data().write(to: root.appendingPathComponent("bulk/pad-\(i).bin"))
         }
         var emits: [[SearchHit]] = []
         SearchSession.scan(root: root,
                            request: SearchRequest(query: "flushneedle", scope: .directory(root),
                                                   includeHidden: true),
-                           flushInterval: 1_000_000) { emits.append($0) }   // 1ms 窗，配 5000 项(~12ms)夹具
-        #expect(emits.count >= 2, "浅层命中必须先单独发出，实得 \(emits.count) 次发射")
+                           flushInterval: 1_000_000) { emits.append($0) }   // 1ms window, paired with a 5000-item (~12ms) fixture
+        #expect(emits.count >= 2, "The shallow hit must go out alone first, got \(emits.count) emits")
         #expect(emits.first?.contains { $0.name == "flushneedle-shallow.txt" } == true,
-                "第一批必须是 depth-1 的那条，实得 \(emits.first?.map(\.name) ?? [])")
-        #expect(emits.flatMap { $0 }.count == 2)         // 反空断言：两条命中都到齐
+                "The first batch must be the depth-1 hit, got\(emits.first?.map(\.name) ?? [])")
+        #expect(emits.flatMap { $0 }.count == 2)         // anti-empty assertion: both hits arrived
     }
 
-    /// 真因③ 跳过名单里的目录**本身**永远不可能成为命中：旧版 skip 分支在匹配测试
-    /// **之前** `continue`，于是搜 "node_modules" / "Library" / ".git" 搜不到那个目录自己。
+    /// Real cause (3): a directory in the skip list could **itself** never be a hit: the old skip branch did `continue`
+    /// **before** the match test, so searching "node_modules" / "Library" / ".git" could not find that directory itself.
     @Test func skippedDirectoryItselfCanStillBeAHit() async throws {
-        // 专用夹具：坑内文件名**也**包含查询词。用共享夹具的 skip-nsneedle.txt 时
-        // 「仍然不下钻」那句是恒真的（查询词 node_modules 根本匹配不到它），等于没断言。
+        // Dedicated fixture: the file name inside the heavy directory **also** contains the query. With the shared fixture's skip-nsneedle.txt,
+        // the "still not descended into" check would be trivially true (the query node_modules cannot match it), asserting nothing.
         let fm = FileManager.default
         let dir = fm.temporaryDirectory.appendingPathComponent("nspace-skip-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: dir) }
@@ -227,31 +227,31 @@ import Foundation
                                                searchNames: true, searchContents: false,
                                                includeHidden: true))
         #expect(hits.contains { $0.name == "node_modules" && $0.isDirectory },
-                "巨坑目录自身必须可被命中，实得 \(hits.map(\.name))")
-        // 仍然不下钻：坑内那个**同样匹配**的文件必须不出现（跳过语义没被一起改掉）
+                "The heavy directory itself must be matchable, got\(hits.map(\.name))")
+        // Still not descended into: the file inside that **also matches** must not appear (skip semantics not changed along the way)
         #expect(!hits.contains { $0.name == "node_modules-inside.txt" },
-                "跳过语义必须保留，实得 \(hits.map(\.name))")
+                "Skip semantics must be preserved, got\(hits.map(\.name))")
     }
 
-    /// 真因④ 结果封顶饿死通道B：通道A 在首个 gathering 通知里就能一次读满 2000 条，
-    /// `append()` 随即 `keptCount >= maxResults` → `teardown()` → `scanTask.cancel()`，
-    /// 通道B 攥在栈上的 batch 直接作废。于是任何 Spotlight 命中 ≥2000 的词，
-    /// 「包含隐藏文件」是个静默空开关。预留后通道A 吃不满全部名额。
+    /// Real cause (4) the result cap starves channel B: channel A can read a full 2000 in the first gathering notification,
+    /// `append()` then hits `keptCount >= maxResults` → `teardown()` → `scanTask.cancel()`,
+    /// and the batch held on channel B's stack is discarded. So for any word with ≥2000 Spotlight hits,
+    /// "Include hidden files" is a silent no-op switch. With the reserve channel A cannot take all slots.
     @Test func spotlightBudgetReservesRoomForTheScanChannel() {
-        // 通道B 在跑：通道A 单次最多读 maxResults - scanReserve（旧公式会给出全部 maxResults）
+        // Channel B running: channel A reads at most maxResults - scanReserve at once (the old formula gave all of maxResults)
         #expect(SearchLimits.spotlightReadBudget(kept: 0, scanAlive: true)
                 == SearchLimits.maxResults - SearchLimits.scanReserve)
-        #expect(SearchLimits.scanReserve > 0)                       // 反焊死：预留必须真的有量
-        // 通道B 已收工：不再预留，通道A 可用满额度（否则白丢结果）
+        #expect(SearchLimits.scanReserve > 0)                       // anti-hardcoding: the reserve must really have a size
+        // Channel B done: no more reserve, channel A may use the full quota (otherwise results are wasted)
         #expect(SearchLimits.spotlightReadBudget(kept: 0, scanAlive: false) == SearchLimits.maxResults)
-        // 已读接近上限时预算归零，绝不负数
+        // Budget reaches zero near the cap, never negative
         #expect(SearchLimits.spotlightReadBudget(kept: SearchLimits.maxResults, scanAlive: true) == 0)
         #expect(SearchLimits.spotlightReadBudget(kept: SearchLimits.maxResults + 99, scanAlive: false) == 0)
     }
-    /// 封顶必须**逐条**守，不能靠"批次恒为 50 所以正好落在 2000"这种巧合：
-    /// 加了时间发射之后批次大小不定，越顶后才发现会多留最多 49 条。
-    /// 直接喂 7 条一批（7 不整除 2000）——端到端夹具做不出这个条件（命中都在同一目录、
-    /// 批次恒 50，keptCount 本来就正好落上限，第一版据此写的断言是假绿）。
+    /// The cap must be guarded **per item**, not by the coincidence "batches are always 50 so it lands on 2000":
+    /// with timed emits batch sizes vary, and detecting overshoot afterwards would keep up to 49 extra.
+    /// Feeds batches of 7 directly (7 does not divide 2000); end-to-end fixtures cannot produce this condition (hits all in one directory,
+    /// batches always 50, keptCount lands exactly on the cap; the first assertion written that way was a false green).
     @Test func hardCapLandsExactlyOnLimitWithIrregularBatches() async throws {
         let (stream, cont) = AsyncStream<[SearchHit]>.makeStream()
         let session = SearchSession(request: SearchRequest(query: "capx", scope: .global),
@@ -273,14 +273,14 @@ import Foundation
         }
         session.stop()
         let got = await collector.value
-        #expect(got.count == SearchLimits.maxResults, "实得 \(got.count)，必须正好等于上限")
-        #expect(Set(got.map(\.url.path)).count == got.count)   // 反空断言：去重后仍是这个数
+        #expect(got.count == SearchLimits.maxResults, "got \(got.count), must equal the cap exactly")
+        #expect(Set(got.map(\.url.path)).count == got.count)   // anti-empty assertion: still this count after dedup
     }
-    /// 首批免节流：扫描侧 150ms 发射窗之后，append() 又压 300ms 节流，
-    /// 稀疏查询的首个结果上屏要 ~450ms。首批直接推出去，后续才节流。
+    /// First batch throttle exemption: after the scan side's 150ms emit window, append() adds a 300ms throttle,
+    /// so a sparse query's first result takes ~450ms to appear. The first batch goes out directly; only later ones are throttled.
     ///
-    /// 这条**不是**计时断言：`hasYielded` 在 append 返回那一刻就是终值，
-    /// 所以它是确定性的。端到端测同一件事会变成易抖的计时断言，那种不写。
+    /// This is **not** a timing assertion: `hasYielded` is final the moment append returns,
+    /// so it is deterministic. Testing the same thing end to end would be a flaky timing assertion, which we do not write.
     @Test func firstBatchBypassesThrottleButLaterSmallBatchesDoNot() async throws {
         let (stream, cont) = AsyncStream<[SearchHit]>.makeStream()
         let session = SearchSession(request: SearchRequest(query: "thr", scope: .global),
@@ -289,24 +289,24 @@ import Foundation
             SearchHit(url: URL(fileURLWithPath: "/tmp/nspace-thr-\(i)"), name: "thr-\(i)",
                       isDirectory: false, size: nil, modified: nil, contentTypeID: nil)
         }
-        // 首批：必须**立刻**推出（不进 300ms 计划）
+        // First batch: must be pushed **immediately** (not put on the 300ms schedule)
         session.append([hit(1)])
-        #expect(session.hasYielded, "首批必须立刻推出，不许压 300ms 节流")
-        #expect(session.bufferedCount == 0, "首批应已清空缓冲，实得 \(session.bufferedCount)")
-        // 第二批小批：节流仍要生效（否则每条命中都跨线程推一次，白烧 CPU）
+        #expect(session.hasYielded, "The first batch must be pushed immediately, not held by the 300ms throttle")
+        #expect(session.bufferedCount == 0, "The first batch should have emptied the buffer, got\(session.bufferedCount)")
+        // Second small batch: the throttle must still apply (otherwise every hit crosses threads, wasting CPU)
         session.append([hit(2)])
-        #expect(session.bufferedCount == 1, "第二批小批必须留在缓冲里受节流，实得 \(session.bufferedCount)")
+        #expect(session.bufferedCount == 1, "The second small batch must stay buffered under the throttle, got\(session.bufferedCount)")
         session.stop()
         _ = stream
     }
 
-    // MARK: 多词查询（用户报告：在 ~/.claude 里搜 "override md" 报未找到，而目录里就有 OVERRIDE.md）
+    // MARK: Multi-term queries (user report: searching "override md" in ~/.claude reported not found, though OVERRIDE.md was right there)
 
-    /// 夹具：名字以**点**分隔、大小写与查询不同的文件——用户那条 bug 的最小复现形状。
+    /// Fixture: dot-separated names in a different case from the query: the minimal reproduction of the user's bug.
     ///
-    /// 注意 basename 必须互不相同：APFS 默认大小写不敏感，`NSOVERRIDE.md` 与 `nsoverride.md`
-    /// 在同一目录里是**同一个文件**，写两次只会剩一个（第一版夹具就是这么写的，两条断言假红）。
-    /// 「大小写一致者优先」是排序问题，归 SearchRanking 的纯函数单测，不在文件系统上验。
+    /// Note that basenames must all differ: APFS is case-insensitive by default, so `NSOVERRIDE.md` and `nsoverride.md`
+    /// in one directory are the **same file**, and writing twice leaves one (the first fixture did exactly that, giving two false reds).
+    /// "Case-matching first" is a ranking concern, covered by SearchRanking's pure function tests, not verified on the file system.
     func makeCaseFixture() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("nspace-case-\(UUID().uuidString)")
@@ -317,8 +317,8 @@ import Foundation
         return dir
     }
 
-    /// 本条就是用户报的那个 bug：带空格的查询必须命中以点分隔的名字。
-    /// 大小写从来不是原因（"nsoverride" 单独搜一直能命中），空格才是。
+    /// This is the very bug the user reported: a query with spaces must hit dot-separated names.
+    /// Case was never the cause ("nsoverride" alone always hit); the space was.
     @Test func spaceSeparatedTermsMatchAcrossPunctuation() async throws {
         let dir = try makeCaseFixture()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -326,13 +326,13 @@ import Foundation
                                                searchNames: true, searchContents: false,
                                                includeHidden: true))
         let names = Set(hits.map(\.name))
-        // 全大写的那个也要命中：大小写不敏感（这一条一直成立），空格才是这次修的
-        #expect(names.contains("NSOVERRIDE.md"), "带空格的查询必须命中 NSOVERRIDE.md，实得 \(names)")
+        // The all-caps one must hit too: case-insensitive (this always held); the space is what this fix addressed
+        #expect(names.contains("NSOVERRIDE.md"), "A query with spaces must hit NSOVERRIDE.md, got\(names)")
         #expect(names.contains("nsoverridetwo.md"))
         #expect(!names.contains("unrelated.txt"))
     }
 
-    /// 词序无关：AND 匹配不是顺序匹配
+    /// Term order does not matter: AND matching is not sequence matching
     @Test func termOrderDoesNotMatter() async throws {
         let dir = try makeCaseFixture()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -342,18 +342,18 @@ import Foundation
         #expect(Set(hits.map(\.name)).contains("NSOVERRIDE.md"))
     }
 
-    /// 每个词都要命中（AND，不是 OR）：有一个词不沾边就整条不算
+    /// Every term must hit (AND, not OR): one unmatched term voids the entry
     @Test func allTermsMustMatchNotAny() async throws {
         let dir = try makeCaseFixture()
         defer { try? FileManager.default.removeItem(at: dir) }
         let hits = await collect(SearchRequest(query: "nsoverride zzz", scope: .directory(dir),
                                                searchNames: true, searchContents: false,
                                                includeHidden: true))
-        #expect(hits.isEmpty, "第二个词谁都不沾边，整条查询就不该有命中，实得 \(hits.map(\.name))")
+        #expect(hits.isEmpty, "The second term matches nothing, so the query should have no hits, got\(hits.map(\.name))")
     }
 
-    /// 纯空白查询必须立刻收尾：切词后是空数组，而空数组喂给 andPredicate 会得到**恒真**谓词
-    /// （那会把整块磁盘推给主线程）。原来的守卫只判 query.isEmpty，拦不住一个空格。
+    /// A whitespace-only query must finish immediately: it splits into an empty array, and feeding that to andPredicate yields an **always-true** predicate
+    /// (which would push the whole disk to the main thread). The old guard checked only query.isEmpty and could not stop a single space.
     @Test func whitespaceOnlyQueryFinishesImmediately() async throws {
         let dir = try makeCaseFixture()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -370,7 +370,7 @@ import Foundation
         #expect(QueryTerms.matches("OVERRIDE.md", terms: ["override", "md"]))
         #expect(QueryTerms.matches("OVERRIDE.md", terms: ["MD", "OverRide"]))
         #expect(!QueryTerms.matches("OVERRIDE.md", terms: ["override", "zzz"]))
-        // 空词组永不命中——否则空查询会把整个磁盘当结果
+        // An empty term list never matches: otherwise an empty query would return the whole disk
         #expect(!QueryTerms.matches("anything", terms: []))
     }
 }

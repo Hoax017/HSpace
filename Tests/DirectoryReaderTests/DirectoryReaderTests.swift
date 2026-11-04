@@ -3,9 +3,9 @@ import Foundation
 @testable import DirectoryReader
 import NSpaceContracts
 
-/// 黑盒验收：只经 Contract 公开面，对真实临时夹具树断言（无 Fake Mock）
+/// Black-box acceptance: only through the Contract public surface, asserting on real temp fixture trees (no fakes or mocks)
 @Suite struct DirectoryReaderTests {
-    /// 建夹具树: a.txt(5B) / B.txt(10B) / sub/ / .secret
+    /// Builds the fixture tree: a.txt (5B) / B.txt (10B) / sub/ / .secret
     func makeFixture() throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nspace-dr-\(UUID().uuidString)")
@@ -40,7 +40,7 @@ import NSpaceContracts
         defer { try? FileManager.default.removeItem(at: root) }
         let sort = SortSpec(key: .size, ascending: false, foldersFirst: false)
         let snap = try await DirectoryReader().load(ReadRequest(directory: root, sort: sort))
-        #expect(snap.items.first?.name == "B.txt")  // 10B 最大
+        #expect(snap.items.first?.name == "B.txt")  // 10B is the largest
     }
 
     @Test func generationIsMonotonic() async throws {
@@ -56,15 +56,15 @@ import NSpaceContracts
         let bogus = URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)")
         do {
             _ = try await DirectoryReader().load(ReadRequest(directory: bogus))
-            Issue.record("应当抛错")
+            Issue.record("Expected an error")
         } catch let e as any ClassifiedError {
             #expect(e.errorClass == .external || e.errorClass == .transient)
         } catch {
-            Issue.record("错误未分类(违反 P6.4): \(error)")
+            Issue.record("Unclassified error (violates P6.4):\(error)")
         }
     }
 
-    /// I-26：新增排序键 created/added——严格弱序 + nil 值(distantPast)不崩且排前
+    /// I-26: new sort keys created/added: strict weak ordering + nil values (distantPast) do not crash and sort first
     @Test func sortByAddedAndCreated() {
         let now = Date()
         func item(_ n: String, created: Date?, added: Date?) -> FileItem {
@@ -81,7 +81,7 @@ import NSpaceContracts
         #expect(items.map(\.name) == ["c", "a", "b"])
     }
 
-    /// I-26 全键覆盖：name/dateModified/kind 双向（size/created/added 已有专测）
+    /// I-26 full key coverage: name/dateModified/kind in both directions (size/created/added have dedicated tests)
     @Test func sortByNameDateKindBothDirections() {
         let t0 = Date(timeIntervalSince1970: 1_000)
         func item(_ n: String, m: TimeInterval, kind: String) -> FileItem {
@@ -106,7 +106,7 @@ import NSpaceContracts
         #expect(items.map(\.name) == ["a", "b", "c"])
     }
 
-    /// I-50 Finder 式：文件夹置顶只在按名称排时生效；按时间排时文件夹纯按时间混排（不上浮）。
+    /// I-50 Finder style: folders-first applies only to name sort; when sorting by time folders mix purely by time (no floating to the top).
     @Test func foldersFirstOnlyAppliesToNameSort() {
         let t0 = Date(timeIntervalSince1970: 1_000)
         func node(_ n: String, dir: Bool, m: TimeInterval) -> FileItem {
@@ -114,18 +114,18 @@ import NSpaceContracts
                      isPackage: false, isSymlink: false, isHidden: false, size: dir ? nil : 1,
                      modified: t0.addingTimeInterval(m), created: t0, added: t0, contentTypeID: nil)
         }
-        // 老文件夹 + 新文件
+        // Old folder + new file
         var items = [node("newfile.txt", dir: false, m: 100), node("oldfolder", dir: true, m: 10)]
 
-        // 按名称 + 置顶 → 文件夹在前（newfile 名字在后但文件夹上浮）
+        // By name + folders first → folder first (newfile sorts later by name, and the folder floats up)
         sortItems(&items, by: SortSpec(key: .name, ascending: true, foldersFirst: true))
         #expect(items.first?.name == "oldfolder")
 
-        // 按修改日期降序 + 置顶 → 纯按时间：新文件在前，老文件夹在后（文件夹不再上浮）
+        // By date modified descending + folders first → purely by time: new file first, old folder last (the folder no longer floats)
         sortItems(&items, by: SortSpec(key: .dateModified, ascending: false, foldersFirst: true))
         #expect(items.map(\.name) == ["newfile.txt", "oldfolder"])
 
-        // 按修改日期升序 + 置顶 → 老文件夹在前（因它更老，非因置顶）
+        // By date modified ascending + folders first → old folder first (because it is older, not because of folders-first)
         sortItems(&items, by: SortSpec(key: .dateModified, ascending: true, foldersFirst: true))
         #expect(items.map(\.name) == ["oldfolder", "newfile.txt"])
     }

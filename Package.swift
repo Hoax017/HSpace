@@ -1,7 +1,7 @@
 // swift-tools-version: 6.1
 import PackageDescription
 
-// 胶囊清单：新增能力 = 在此追加一个名字 + 建 Sources/Pods/<名>/ 目录（BG-11 增量累加的唯一显式点）
+// Pod list: adding a capability = append a name here + create a Sources/Pods/<name>/ directory (the single explicit point of BG-11 incremental addition)
 let pods: [String] = ["DirectoryReader", "Transfer", "PathComplete", "DirectoryWatch", "FolderSize", "IconThumb", "LocalOps", "VolumeInfo", "BookmarkStore", "SessionStore", "StashStore", "SearchEngine", "ArchiveEngine", "Frecency", "Eraser", "TrashLedger"]
 
 let podTargets: [Target] = pods.map {

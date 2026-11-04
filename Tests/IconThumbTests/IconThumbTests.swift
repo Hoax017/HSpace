@@ -5,10 +5,10 @@ import ImageIO
 import UniformTypeIdentifiers
 import IconThumb
 
-/// 黑盒验收：只经 Contract 公开面 + 真实临时 PNG（用 ImageIO 生成，不碰 AppKit/NSImage）。
+/// Black-box acceptance: only through the Contract public surface + a real temp PNG (generated with ImageIO, no AppKit/NSImage).
 @Suite struct IconThumbTests {
 
-    /// 用 CoreGraphics + ImageIO 落一张纯色 PNG，返回其 URL。
+    /// Writes a solid-color PNG with CoreGraphics + ImageIO and returns its URL.
     private func makePNG(width: Int, height: Int) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("nspace-it-\(UUID().uuidString).png")
@@ -38,7 +38,7 @@ import IconThumb
         let scale: CGFloat = 2
         let thumb = await IconThumb().thumbnail(for: png, size: size)
 
-        let image = try #require(thumb, "真实 PNG 应能生成缩略图")
+        let image = try #require(thumb, "A real PNG should produce a thumbnail")
         #expect(image.width > 0 && image.height > 0)
         #expect(image.width <= Int(size * scale))
         #expect(image.height <= Int(size * scale))
@@ -58,7 +58,7 @@ import IconThumb
         let first = await icon.thumbnail(for: png, size: 96)
         let second = await icon.thumbnail(for: png, size: 96)
         #expect(first != nil)
-        // 命中缓存应返回同一 CGImage 实例（引用相等）
+        // A cache hit should return the same CGImage instance (reference equality)
         #expect(first === second)
     }
 }

@@ -1,13 +1,13 @@
 import AppKit
 import SessionStore
 
-/// 窗格布局（QSpace 12 布局的 v1 子集）
+/// Pane layout (v1 subset of QSpace's 12 layouts)
 enum PaneLayout: Int, CaseIterable {
-    case single = 1     // 单窗格
-    case dualH          // 双列（左右）
-    case dualV          // 双行（上下）
-    case tripleH        // 三列
-    case quad           // 四宫格
+    case single = 1     // single pane
+    case dualH          // two columns (left/right)
+    case dualV          // two rows (top/bottom)
+    case tripleH        // three columns
+    case quad           // quad
 
     var paneCount: Int {
         switch self {
@@ -18,7 +18,7 @@ enum PaneLayout: Int, CaseIterable {
         }
     }
 
-    /// 本地化名键（菜单/设置窗/注册表共用，避免键散落）
+    /// L10n name key (shared by menus/settings window/registry so keys do not scatter)
     var titleKey: String {
         switch self {
         case .single: "layout.single"
@@ -42,23 +42,23 @@ enum PaneLayout: Int, CaseIterable {
     }
 }
 
-/// 窗格网格 + 焦点协调：窗格池懒建、切布局保状态、Tab 循环焦点、活动窗格高亮。
-/// 切走的窗格 hidden-not-destroyed（浏览上下文/历史/滚动位置全保留）
+/// Pane grid + focus coordination: lazily built pane pool, layout switches keep state, Tab cycles focus, active pane highlight.
+/// Panes switched away are hidden, not destroyed (browsing context/history/scroll position all stay)
 @MainActor
 final class PaneGridController: NSViewController {
     private(set) var layout: PaneLayout = .single
-    /// 窗格池：最多 4 个，懒创建，切布局不销毁
+    /// Pane pool: at most 4, created lazily, not destroyed on layout switches
     private var pool: [PaneViewController] = []
     private(set) var activePaneIndex = 0
     private let initialDirectory: URL
 
-    /// 文件操作桥（由 MainWindowController 注入后下传各窗格）
+    /// File operations bridge (injected by MainWindowController and passed down to each pane)
     var coordinator: FileOpsCoordinator? {
         didSet { pool.forEach { $0.coordinator = coordinator } }
     }
 
     var onActiveLocationChange: ((URL) -> Void)?
-    /// 活动窗格计数/选中变化上抛（甲板动作按钮 enabled 重验；M17）
+    /// Active pane count/selection changes propagate up (re-validates deck action buttons' enabled state; M17)
     var onActiveStatusChange: (() -> Void)?
 
     var activePane: PaneViewController { pool[activePaneIndex] }
@@ -70,7 +70,7 @@ final class PaneGridController: NSViewController {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     override func loadView() {
         view = NSView()
@@ -78,28 +78,28 @@ final class PaneGridController: NSViewController {
         rebuildGrid()
     }
 
-    // MARK: 布局切换（⌃⌘1..5 / 工具栏）
+    // MARK: Layout switching (⌃⌘1..5 / toolbar)
 
     func apply(layout newLayout: PaneLayout) {
         guard newLayout != layout else { return }
         layout = newLayout
         ensurePanes(count: layout.paneCount)
-        // 北极星：布局切走的窗格整体挂起（watcher 真停），切回的恢复（mtime 变才重载）
+        // North star: panes switched away by the layout are fully suspended (watchers really stop); panes switched back resume (reload only if mtime changed)
         for (i, pane) in pool.enumerated() {
             if i < layout.paneCount { pane.resumePane() } else { pane.suspendPane() }
         }
         if activePaneIndex >= layout.paneCount { setActivePane(0) }
         rebuildGrid()
-        // rebuildGrid 会 removeFromSuperview 掉旧层级：挂在被移除视图上的 firstResponder 会被
-        // AppKit 打回窗口本身（不是任何 NSView）——从此键盘全哑，用户得先随便点一下才恢复。
-        // 地址栏正在编辑时（firstResponder 是 field editor）最容易撞上。重建后显式把焦点收口。
+        // rebuildGrid does removeFromSuperview on the old hierarchy: a firstResponder inside a removed view gets
+        // bounced by AppKit to the window itself (not any NSView), and the keyboard goes dead until the user clicks something.
+        // Easiest to hit while the address bar is being edited (firstResponder is the field editor). Explicitly restore focus after the rebuild.
         view.window?.makeFirstResponder(activePane.focusTarget)
     }
 
     private func ensurePanes(count: Int) {
         while pool.count < count {
             let index = pool.count
-            // 新窗格开在活动窗格的当前位置（QSpace 惯例），首个开初始目录
+            // A new pane opens at the active pane's current location (QSpace convention); the first opens the initial directory
             let dir = pool.isEmpty ? initialDirectory : activePane.activeTab.browser.current
             let pane = PaneViewController(directory: dir)
             pane.coordinator = coordinator
@@ -156,8 +156,8 @@ final class PaneGridController: NSViewController {
         view.needsLayout = true
     }
 
-    /// 等分必须在真实布局尺寸就绪后执行；窗口尺寸未稳定前持续重equalize
-    /// （只跑一次会在尺寸后续增长时把空间全给末窗格 → 首行/首列塌陷）
+    /// Equalizing must run once real layout sizes are ready; keep re-equalizing until the window size settles
+    /// (running it once gives all space to the last pane when the size grows later, collapsing the first row/column)
     private var lastLayoutSize: NSSize = .zero
 
     override func viewDidLayout() {
@@ -166,7 +166,7 @@ final class PaneGridController: NSViewController {
               grid.bounds.height > 1, grid.bounds.width > 1 else { return }
         equalizeSplits(in: grid)
         if grid.bounds.size == lastLayoutSize {
-            needsEqualize = false  // 连续两次布局尺寸一致 = 稳定，交还用户拖拽自由
+            needsEqualize = false  // same size in two consecutive layouts = stable; hand dragging back to the user
         }
         lastLayoutSize = grid.bounds.size
     }
@@ -175,14 +175,14 @@ final class PaneGridController: NSViewController {
         let split = NSSplitView()
         split.isVertical = vertical
         split.dividerStyle = .thin
-        // NSSplitView 按子视图当前 frame 比例分配空间；复用窗格带着旧 frame 进来
-        // 会导致某行/列塌陷 —— 显式预设等分 frame，比例分配恒 1/n（确定性，无布局时序竞态）
+        // NSSplitView distributes space by the subviews' current frame ratios; reused panes arriving with old frames
+        // can collapse a row/column, so preset equal frames explicitly and the ratio is always 1/n (deterministic, no layout timing race)
         let n = CGFloat(subviews.count)
         let nominal = NSSize(width: 1200, height: 800)
         for (i, sub) in subviews.enumerated() {
             sub.translatesAutoresizingMaskIntoConstraints = true
-            // 必设 [.width,.height]：默认 none 会把残留 frame 转成必需固定尺寸约束，
-            // 经约束引擎反推窗口坍缩（视图/布局切换后窗口被改尺寸的真凶，探针点名）
+            // [.width,.height] is mandatory: the default none turns the leftover frame into required fixed-size constraints,
+            // and the constraint engine then collapses the window in reverse (the real cause of windows resizing after view/layout switches, identified by the probe)
             sub.autoresizingMask = [.width, .height]
             sub.frame = vertical
                 ? NSRect(x: CGFloat(i) * nominal.width / n, y: 0,
@@ -207,23 +207,23 @@ final class PaneGridController: NSViewController {
         for sub in split.arrangedSubviews { equalizeSplits(in: sub) }
     }
 
-    // MARK: 焦点协调
+    // MARK: Focus coordination
 
     func setActivePane(_ index: Int) {
         guard index < layout.paneCount else { return }
         let sameAsActive = (index == activePaneIndex)
         activePaneIndex = index
-        refreshActiveHighlight()                         // 幂等且廉价：多窗格 restore/首布局着色须恒执行
+        refreshActiveHighlight()                         // idempotent and cheap: must always run for multi-pane restore/first-layout tinting
         view.window?.makeFirstResponder(activePane.focusTarget)
-        // 同窗格点击：不重推位置/状态。窗格内选中变化本就经 pane.onStatusChange 更新甲板，
-        // 此处再推一次是"改选中前的旧值" → 双刷卡顿（I-33）；跨窗格切换才需要这一推。
+        // Click within the same pane: do not re-push location/status. Selection changes inside a pane already update the deck through pane.onStatusChange,
+        // and another push here carries the "pre-selection" stale value, causing a double-refresh stutter (I-33); only cross-pane switches need this push.
         guard !sameAsActive else { return }
         onActiveLocationChange?(activePane.activeTab.browser.current)
         onActiveStatusChange?()
     }
 
     private func refreshActiveHighlight() {
-        // 单窗格不描色（无歧义时不加视觉噪声）；非活动窗格仅多窗格时暗化
+        // No tint for a single pane (no visual noise when nothing is ambiguous); inactive panes are dimmed only with multiple panes
         let multi = layout.paneCount > 1
         for (i, pane) in pool.enumerated() {
             let active = multi && i == activePaneIndex
@@ -231,12 +231,12 @@ final class PaneGridController: NSViewController {
         }
     }
 
-    /// 外观变更后重刷各窗格描色/暗化（强调色/高亮开关/暗化 alpha 即时生效）
+    /// Refresh pane tint/dimming after appearance changes (accent/highlight toggle/dimming alpha apply at once)
     func refreshTheme() {
         refreshActiveHighlight()
     }
 
-    /// Tab 键循环窗格焦点
+    /// Tab key cycles pane focus
     func cycleFocus(backward: Bool = false) {
         let count = layout.paneCount
         guard count > 1 else { return }
@@ -247,7 +247,7 @@ final class PaneGridController: NSViewController {
     }
 
 
-    // MARK: 会话快照/恢复（M11）
+    // MARK: Session snapshot/restore (M11)
 
     func sessionWindow() -> SessionWindow {
         SessionWindow(layoutRaw: layout.rawValue,
@@ -256,20 +256,20 @@ final class PaneGridController: NSViewController {
     }
 
     func restoreSession(_ w: SessionWindow) {
-        _ = view  // 先强制 loadView（窗格池就位）
+        _ = view  // force loadView first (pane pool in place)
         if let l = PaneLayout(rawValue: w.layoutRaw) { apply(layout: l) }
         for (pane, sp) in zip(visiblePanes, w.panes) {
-            // 目标态与窗格现态**逐字段相同** → 不重建：保住浏览历史 / 选中 / 滚动位置。
-            // 「新建工作区 = 复制当前工作区」会拿现态原样造快照，只有活动窗格可能换路径；
-            // 无条件 installTab 会把用户根本没碰的那些窗格连 BrowserState 一起换新——
-            // 切回去 ⌘[ 后退失灵、选中消失、列表滚回顶部。外部打开默认走这条，每次都中。
+            // Target state **identical field by field** to the pane's current state -> no rebuild: keeps browsing history / selection / scroll position.
+            // "New workspace = duplicate current workspace" builds its snapshot verbatim from the current state, and only the active pane may change path;
+            // an unconditional installTab would replace, BrowserState included, panes the user never touched:
+            // after switching back, ⌘[ stops working, the selection vanishes and the list scrolls to the top. External opens take this path by default, so it would hit every time.
             guard pane.sessionPane() != sp else { continue }
             pane.restoreSession(sp)
         }
         setActivePane(min(max(0, w.activePaneIndex), layout.paneCount - 1))
     }
 
-    // MARK: 菜单命令
+    // MARK: Menu commands
 
     @objc func applyLayout(_ sender: NSMenuItem) {
         guard let layout = PaneLayout(rawValue: sender.tag) else { return }

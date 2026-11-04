@@ -4,16 +4,16 @@ import NSpaceContracts
 import DirectoryReader
 import IconThumb
 
-/// Miller 分栏视图（M9 ⌘3，QSpace/Finder 式）：水平滚动 NSStackView 排多列，
-/// 每列 = 一个单列 NSTableView（图标+名，行高 22，列宽 220 固定 v1）。
-/// 点选目录 → 右侧展开子列（截断其右所有列）；点选文件 → 最右简单预览列。
-/// 导航联动（QSpace 语义）：下钻经 onNavigate 上抛改地址栏；showDirectory 回流按
-/// 路径前缀判断"沿当前列链下钻原地扩列"或"跳转重建列链"。
-/// 列加载自管：每列局部 DirectoryReader 实例、加载在 Task 中，列销毁/挂起即取消——
-/// 不动共享 model 的数据源语义（切回列表零成本），窗格挂起时列加载一并停（北极星）。
+/// Miller column view (M9 ⌘3, QSpace/Finder style): a horizontally scrolling NSStackView of columns,
+/// each column = a single-column NSTableView (icon + name, row height 22, column width fixed at 220 in v1).
+/// Selecting a directory → expands a child column on the right (truncating all columns to its right); selecting a file → simple preview column at the far right.
+/// Navigation link (QSpace semantics): drill-down goes up through onNavigate to change the address bar; showDirectory flows back and uses the
+/// path prefix to decide "extend in place along the current chain" or "jump and rebuild the chain".
+/// Columns load themselves: each has a local DirectoryReader and loads in a Task, cancelled when the column is destroyed/suspended.
+/// The shared model's data source semantics stay untouched (switching back to the list costs nothing), and column loads stop on pane suspend (north star).
 @MainActor
 final class FileColumnViewController: NSViewController {
-    /// 只读消费共享 model 的配置（includeHidden/sort）与 FSEvents 联动；列内容不经它
+    /// Read-only consumer of the shared model's config (includeHidden/sort) and FSEvents link; column content doesn't go through it
     let model: DirectoryViewModel
     weak var coordinator: FileOpsCoordinator?
     var onNavigate: ((URL) -> Void)?
@@ -22,11 +22,11 @@ final class FileColumnViewController: NSViewController {
 
     private let hScroll = NSScrollView()
     private let stack = NSStackView()
-    private(set) var columns: [ColumnUnit] = []   // setter 私有；UISelfTest 内容级断言需读
+    private(set) var columns: [ColumnUnit] = []   // setter private; UISelfTest content-level assertions need to read it
     private var preview: PreviewColumnView?
     private var focusedColumnIndex = 0
 
-    /// 挂起态：置位期间列加载全取消、showDirectory 只记 pending（恢复时重建）
+    /// Suspended state: while set, all column loads are cancelled and showDirectory only records pending (rebuilt on resume)
     private var suspended = false
     private var pendingDirectory: URL?
 
@@ -34,7 +34,7 @@ final class FileColumnViewController: NSViewController {
         columns.indices.contains(focusedColumnIndex) ? columns[focusedColumnIndex].tableView : view
     }
 
-    /// 状态栏计数（焦点列语义：N 项 / 已选 M 项）
+    /// Status bar counts (focused column semantics: N items / M selected)
     var statusCounts: (items: Int, selected: Int) {
         guard columns.indices.contains(focusedColumnIndex) else { return (0, 0) }
         let col = columns[focusedColumnIndex]
@@ -46,13 +46,13 @@ final class FileColumnViewController: NSViewController {
     }
     var selectedURLs: [URL] { selectedItems.map(\.url) }
 
-    /// UISelfTest（I-32）：焦点列视图层原始选中行数（直查 tableView）——验删除后真清空
+    /// UISelfTest (I-32): raw selected row count of the focused column at the view layer (queries tableView directly); verifies a real clear after delete
     var uiTestFocusedRawSelectionCount: Int {
         columns.indices.contains(focusedColumnIndex)
             ? columns[focusedColumnIndex].tableView.selectedRowIndexes.count : 0
     }
 
-    /// UISelfTest（I-32）：在焦点列按 URL 集选中（模拟用户多选；走真实选中变更链）
+    /// UISelfTest (I-32): selects by URL set in the focused column (simulates user multi-select; through the real selection change chain)
     func uiTestSelectInFocusedColumn(_ urls: [URL]) {
         guard columns.indices.contains(focusedColumnIndex) else { return }
         let col = columns[focusedColumnIndex]
@@ -62,12 +62,12 @@ final class FileColumnViewController: NSViewController {
         col.tableView.selectRowIndexes(idx, byExtendingSelection: false)
     }
 
-    /// UISelfTest（I-32）：焦点列当前项 URL（供测试取真实 URL，避免 symlink 路径不匹配）
+    /// UISelfTest (I-32): URLs of the focused column's items (lets tests get real URLs, avoiding symlink path mismatches)
     var uiTestFocusedColumnItemURLs: [URL] {
         columns.indices.contains(focusedColumnIndex) ? columns[focusedColumnIndex].items.map(\.url) : []
     }
 
-    /// 焦点列所在目录（粘贴/新建/空白右键的落点）
+    /// Directory of the focused column (destination for paste/new/empty-space right-click)
     var currentDirectory: URL {
         columns.indices.contains(focusedColumnIndex) ? columns[focusedColumnIndex].directory : model.directory
     }
@@ -75,7 +75,7 @@ final class FileColumnViewController: NSViewController {
     init(model: DirectoryViewModel) {
         self.model = model
         super.init(nibName: nil, bundle: nil)
-        // FSEvents 联动：活动目录内容变化 → 刷新对应列（加载中的列不打扰，避免 navigate 双读）
+        // FSEvents link: active directory content changed → refresh the matching column (columns still loading are left alone, avoiding a double read on navigate)
         model.addOnUpdate { [weak self] in
             guard let self, !self.suspended, self.view.window != nil else { return }
             if let col = self.columns.first(where: { $0.directory.path == self.model.directory.path }),
@@ -86,7 +86,7 @@ final class FileColumnViewController: NSViewController {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     override func loadView() {
         stack.orientation = .horizontal
@@ -99,10 +99,10 @@ final class FileColumnViewController: NSViewController {
         hScroll.hasVerticalScroller = false
         hScroll.autohidesScrollers = true
 
-        // 横向滚动 NSStackView：stack 钉 clip 的 top/leading + 高度铺满视口；宽度铺满约束用 .defaultLow。
-        // 宽度铺满若为 required，会把单列内容宽（220）经 required 反推、defeat PaneViewController 挂载
-        // 内容视图用的 999 铺满边约束 → 列宽坍缩（M23 断言实锤 220×…）。降为 .defaultLow 即可少列铺满
-        // 又不与 999 抢。（纵向坍缩另有真凶：ColumnUnit 竖分隔线 NSBox 的伪固有高度，见下方修复。）
+        // Horizontally scrolling NSStackView: stack pinned to the clip's top/leading + height fills the viewport; the width fill constraint uses .defaultLow.
+        // If the width fill were required, the single column's content width (220) would push back through required constraints and defeat the 999 fill edges
+        // PaneViewController uses to mount content views → column width collapse (proved by the M23 assertion, 220×…). .defaultLow lets few columns fill
+        // without fighting the 999. (Vertical collapse had a separate cause: the fake intrinsic height of ColumnUnit's vertical separator NSBox; see the fix below.)
         let clip = hScroll.contentView
         let fillW = stack.widthAnchor.constraint(greaterThanOrEqualTo: clip.widthAnchor)
         fillW.priority = .defaultLow
@@ -125,9 +125,9 @@ final class FileColumnViewController: NSViewController {
         view = root
     }
 
-    // MARK: 挂起/恢复（窗格切走/布局切换时由 PaneViewController 调用——北极星零后台功耗）
+    // MARK: Suspend/resume (called by PaneViewController on pane/layout switches; north star of zero background power)
 
-    /// 取消全部在飞列加载与预览缩略图；后续 showDirectory 只记 pending
+    /// Cancels all in-flight column loads and preview thumbnails; later showDirectory calls only record pending
     func suspend() {
         guard !suspended else { return }
         suspended = true
@@ -135,7 +135,7 @@ final class FileColumnViewController: NSViewController {
         preview?.cancelThumb()
     }
 
-    /// 恢复并对齐当前目录：沿链则刷新列链，否则重建
+    /// Resumes and aligns to the current directory: refreshes the column chain if on it, otherwise rebuilds
     func wake(at url: URL) {
         suspended = false
         if let pending = pendingDirectory {
@@ -148,10 +148,10 @@ final class FileColumnViewController: NSViewController {
         }
     }
 
-    // MARK: 列链管理（沿链下钻原地扩列；跳转重建）
+    // MARK: Column chain management (drill-down along the chain extends in place; a jump rebuilds)
 
-    /// 呈现目录（Pane 导航唯一回流入口）：
-    /// 已有该目录列 → 截其右；父目录在链上 → 原地扩列；否则重建列链
+    /// Presents a directory (the single return entry point for pane navigation):
+    /// column for this directory exists → truncate to its right; parent on the chain → extend in place; otherwise rebuild the chain
     func showDirectory(_ url: URL) {
         let std = url.standardizedFileURL
         if suspended { pendingDirectory = std; return }
@@ -161,7 +161,7 @@ final class FileColumnViewController: NSViewController {
         } else if let p = columns.firstIndex(where: { $0.directory.path == std.deletingLastPathComponent().path }) {
             truncateColumns(after: p)
             removePreview()
-            columns[p].highlight(url: std)   // 程序化选中链行（不触发再下钻）
+            columns[p].highlight(url: std)   // Programmatically select the chain row (no further drill-down)
             appendColumn(for: std)
         } else {
             rebuild(root: std)
@@ -170,16 +170,16 @@ final class FileColumnViewController: NSViewController {
         onSelectionChange?()
     }
 
-    /// 操作后刷新（coordinator reload 路径）：全列重读（每列一次 readdir，列数有限）
+    /// Refresh after an operation (coordinator reload path): re-reads all columns (one readdir per column; the column count is limited)
     func reloadAllColumns() {
         guard !suspended else { return }
         columns.forEach { $0.reload() }
     }
 
-    /// 仅重绘（剪切灰显变化）
-    /// 仅重绘（剪切灰显变化）。
-    /// **不能用 reloadData()**：它会把选中清空，而"重绘"语义里行没变、选中就不该变
-    /// （用户报告：⌘C 之后选中框消失）。按行/列重载会保留选中。
+    /// Redraw only (cut dimming changed)
+    /// Redraw only (cut dimming changed).
+    /// **Must not use reloadData()**: it clears the selection, and in a "redraw" the rows haven't changed, so neither should the selection
+    /// (user report: the selection highlight vanished after ⌘C). Reloading by rows/columns keeps the selection.
     func redraw() {
         for col in columns {
             let tv = col.tableView
@@ -189,15 +189,15 @@ final class FileColumnViewController: NSViewController {
         }
     }
 
-    /// 按 URL 集恢复选中（视图模式切换迁移）：落在叶列，装载完成后应用
+    /// Restores the selection from a URL set (view mode migration): lands on the leaf column, applied after loading
     func select(urls: [URL]) {
         guard let leaf = columns.last else { return }
         leaf.desiredSelection = Set(urls)
         leaf.applyDesiredSelectionIfLoaded()
-        view.window?.makeFirstResponder(leaf.tableView)   // I-48：聚焦叶列，选中显蓝色强调（非 first responder 时未强调灰几乎不可见）
+        view.window?.makeFirstResponder(leaf.tableView)   // I-48: focus the leaf column so the selection shows the blue accent (without first responder the unemphasized gray is nearly invisible)
     }
 
-    /// 取走并清空叶列的待定位目标（切视图模式搬家用，语义同 FileRevealTarget.takePendingReveal）
+    /// Takes and clears the leaf column's pending reveal (for relocation on view mode switch; same semantics as FileRevealTarget.takePendingReveal)
     func takePendingReveal() -> URL? {
         guard let leaf = columns.last, let url = leaf.desiredSelection.first else { return nil }
         leaf.desiredSelection = []
@@ -211,7 +211,7 @@ final class FileColumnViewController: NSViewController {
         focusedColumnIndex = 0
     }
 
-    /// 移除 index 之后的所有列（-1 = 全部），取消其在飞加载
+    /// Removes all columns after index (-1 = all), cancelling their in-flight loads
     private func truncateColumns(after index: Int) {
         guard index < columns.count - 1 else { return }
         for col in columns[(index + 1)...] {
@@ -257,14 +257,14 @@ final class FileColumnViewController: NSViewController {
         hScroll.reflectScrolledClipView(clip)
     }
 
-    // MARK: 列回调（ColumnUnit → 语义裁决在此）
+    // MARK: Column callbacks (ColumnUnit → semantic decisions live here)
 
     func columnInteracted(_ column: ColumnUnit) {
         if let i = columns.firstIndex(where: { $0 === column }) { focusedColumnIndex = i }
         onInteract?()
     }
 
-    /// 用户级选中变化：单选目录=下钻（经 Pane 同步地址栏）；单选文件=预览列；多选/清选=截右列
+    /// User-level selection change: single directory = drill down (syncing the address bar through the pane); single file = preview column; multi/cleared = truncate right columns
     func selectionChanged(in column: ColumnUnit) {
         guard columns.contains(where: { $0 === column }) else { return }
         let sel = column.selectedItems
@@ -287,21 +287,21 @@ final class FileColumnViewController: NSViewController {
     }
 
     func columnContentChanged(_ column: ColumnUnit) {
-        onSelectionChange?()   // 计数刷新（状态栏经 Pane 读 statusCounts）
+        onSelectionChange?()   // Refresh counts (the status bar reads statusCounts through the pane)
     }
 
     func doubleClicked(in column: ColumnUnit) {
         let row = column.tableView.clickedRow
         guard row >= 0, row < column.items.count else { return }
         let item = column.items[row]
-        // 目录已由单击下钻；文件/包 = 系统默认 App 打开
+        // Directories already drilled down on single click; files/packages open in the system default app
         if !item.isDirectory || item.isPackage {
-            coordinator?.recordAccess(item.url)   // M28：打开文件 = 一次使用记账
+            coordinator?.recordAccess(item.url)   // M28: opening a file = one usage record
             NSWorkspace.shared.open(item.url)
         }
     }
 
-    /// ←/→ 列间移动：← 聚焦父列；→ 聚焦子列（无选中则选第一行触发下钻/预览）
+    /// ←/→ moving between columns: ← focuses the parent column; → focuses the child column (with no selection, selects the first row to trigger drill-down/preview)
     func moveFocus(from column: ColumnUnit, direction: Int) {
         guard let i = columns.firstIndex(where: { $0 === column }) else { return }
         let target = i + direction
@@ -324,7 +324,7 @@ final class FileColumnViewController: NSViewController {
 
     func isCut(_ url: URL) -> Bool { coordinator?.isCut(url) ?? false }
 
-    // MARK: 投放语义（与列表一致：目录行=投进该文件夹；空白/文件行=投进列目录；⌥ 复制）
+    // MARK: Drop semantics (same as the list: directory row = drop into that folder; empty space/file row = drop into the column's directory; ⌥ copies)
 
     func validateDrop(in column: ColumnUnit, info: any NSDraggingInfo,
                       proposedRow row: Int, operation op: NSTableView.DropOperation) -> NSDragOperation {
@@ -346,7 +346,7 @@ final class FileColumnViewController: NSViewController {
         if targetRow >= 0 {
             column.tableView.setDropRow(targetRow, dropOperation: .on)
         } else {
-            column.tableView.setDropRow(-1, dropOperation: .on)   // 整列高亮 = 投进列目录
+            column.tableView.setDropRow(-1, dropOperation: .on)   // Whole-column highlight = drop into the column's directory
         }
         if forceCopy { return .copy }
         return urls.allSatisfy({ FileOpsCoordinator.isSameVolume($0, target) }) ? .move : .copy
@@ -370,7 +370,7 @@ final class FileColumnViewController: NSViewController {
                                             options: [.urlReadingFileURLsOnly: true]) as? [URL]
     }
 
-    // MARK: 菜单命令（响应链；作用于焦点列；重命名未实现 → 不响应即诚实灰显）
+    // MARK: Menu commands (responder chain; act on the focused column; rename unimplemented → not responding is honestly grayed out)
 
     @objc func toggleHiddenFiles(_ sender: Any?) {
         model.includeHidden.toggle()
@@ -384,16 +384,16 @@ final class FileColumnViewController: NSViewController {
 
     @objc func copyItems(_ sender: Any?) { coordinator?.copy(selectedURLs) }
     @objc func cutItems(_ sender: Any?) { coordinator?.cut(selectedURLs) }
-    /// 放回原处（仅废纸篓内；只对台账里有记录的项有效，其余诚实置灰）
+    /// Put Back (only inside the Trash; works only for items in the ledger, others honestly grayed out)
     @objc func putBackItems(_ sender: Any?) { coordinator?.putBack(selectedURLs) }
 
     @objc func pasteItems(_ sender: Any?) { coordinator?.paste(into: currentDirectory, revealIn: nil) }
-    /// 拷贝路径（⌘⇧C）：**空选中时回落到当前目录**——用户点文件夹空白处按快捷键，
-    /// 意图就是"复制我现在所在这个文件夹的路径"（Finder ⌥⌘C 在空白处同样给当前文件夹）。
-    /// 此前只传 selectedURLs，空选中即空数组，copyPaths 的 guard 直接吞掉，表现为快捷键没反应。
+    /// Copy Path (⌘⇧C): **with nothing selected, falls back to the current directory**. Pressing the shortcut on empty space in a folder
+    /// means "copy the path of the folder I'm in" (Finder's ⌥⌘C on empty space also gives the current folder).
+    /// It used to pass only selectedURLs, an empty array with no selection, which copyPaths' guard swallowed, so the shortcut seemed dead.
     @objc func copyPath(_ sender: Any?) { copyPath(to: .general) }
 
-    /// 自测注入私有 pasteboard 用（产品路径恒走 .general）
+    /// For self-tests to inject a private pasteboard (the product path always uses .general)
     func copyPath(to pasteboard: NSPasteboard) {
         coordinator?.copyPaths(selectedURLs.isEmpty ? [currentDirectory] : selectedURLs, to: pasteboard)
     }
@@ -413,7 +413,7 @@ final class FileColumnViewController: NSViewController {
             if item.isDirectory && !item.isPackage {
                 onNavigate?(item.url)
             } else {
-                coordinator?.recordAccess(item.url)   // M28：打开文件 = 一次使用记账
+                coordinator?.recordAccess(item.url)   // M28: opening a file = one usage record
                 NSWorkspace.shared.open(item.url)
             }
         }
@@ -455,9 +455,9 @@ final class FileColumnViewController: NSViewController {
         onNavigate?(pkg.url)
     }
 
-    // MARK: Quick Look（空格开关；数据源=焦点列选中集）
+    // MARK: Quick Look (space toggles; data source = the focused column's selection)
 
-    /// I-45：收起走淡出而非"缩到图标"（同列表视图，sourceFrame 收起态返回 .zero）
+    /// I-45: dismiss with a fade rather than "shrink to icon" (same as the list view: sourceFrame returns .zero when dismissing)
     private var quickLookDismissing = false
 
     @objc func toggleQuickLook(_ sender: Any?) {
@@ -485,13 +485,13 @@ final class FileColumnViewController: NSViewController {
     }
 }
 
-// MARK: - 菜单校验（按焦点列选中态启用/禁用）
+// MARK: - Menu validation (enable/disable by the focused column's selection state)
 
 extension FileColumnViewController: @preconcurrency NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         let hasSelection = !selectedItems.isEmpty
         switch menuItem.action {
-        // 拷贝路径恒可用：空选中回落到焦点列所在目录（同列表视图）
+        // Copy Path is always available: with no selection it falls back to the focused column's directory (same as the list view)
         case #selector(copyPath(_:)):
             return true
         case #selector(putBackItems(_:)):
@@ -501,9 +501,9 @@ extension FileColumnViewController: @preconcurrency NSMenuItemValidation {
              #selector(copyToOtherPane(_:)), #selector(moveToOtherPane(_:)),
              #selector(copy(_:)), #selector(cut(_:)):
             return hasSelection
-        // 废纸篓里禁掉「把活文件放进来」的动作（Finder 同样禁用）。废纸篓可浏览之后
-        // 这些入口才第一次可达：放进来的文件既无撤销、也无「放回原处」元数据，
-        // 将来清空废纸篓就真没了。三视图同病同修。
+        // Inside the Trash, disable actions that "bring live files in" (Finder disables them too). These became reachable only once
+        // the Trash was browsable: files put here have no undo and no Put Back metadata,
+        // so emptying the Trash later would really lose them. Same fix across all three views.
         case #selector(pasteItems(_:)), #selector(paste(_:)):
             if TrashLocation.isInsideTrash(currentDirectory) { return false }
             return NSPasteboard.general.canReadObject(forClasses: [NSURL.self],
@@ -516,7 +516,7 @@ extension FileColumnViewController: @preconcurrency NSMenuItemValidation {
     }
 }
 
-// MARK: - Quick Look 数据源/委托
+// MARK: - Quick Look data source/delegate
 
 extension FileColumnViewController: @preconcurrency QLPreviewPanelDataSource, @preconcurrency QLPreviewPanelDelegate {
     func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
@@ -529,14 +529,14 @@ extension FileColumnViewController: @preconcurrency QLPreviewPanelDataSource, @p
         return urls[index] as NSURL
     }
 
-    /// 面板收到方向键先转回焦点列（↑↓ 推进行、←→ 移列）
+    /// Arrow keys on the panel go back to the focused column first (↑↓ advance rows, ←→ move columns)
     func previewPanel(_ panel: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
         guard event.type == .keyDown, (123...126).contains(Int(event.keyCode)) else { return false }
         (focusTarget as? NSTableView)?.keyDown(with: event)
         return true
     }
 
-    /// 缩放动画起点=焦点列该行图标位置
+    /// Zoom animation origin = the row's icon position in the focused column
     func previewPanel(_ panel: QLPreviewPanel!, sourceFrameOnScreenFor item: (any QLPreviewItem)!) -> NSRect {
         if quickLookDismissing { return .zero }
         guard let url = (item as? NSURL) as URL?,
@@ -550,7 +550,7 @@ extension FileColumnViewController: @preconcurrency QLPreviewPanelDataSource, @p
     }
 }
 
-// MARK: - 单列（列宽 220 固定 v1）：自管加载（局部 DirectoryReader），销毁/挂起即取消
+// MARK: - Single column (width fixed at 220 in v1): loads itself (local DirectoryReader), cancelled on destroy/suspend
 
 @MainActor
 final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
@@ -561,13 +561,13 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
     private let scroll = NSScrollView()
     private weak var owner: FileColumnViewController?
 
-    /// 列私有读取器：列是临时视图，直接局部实例（不动共享 model）
+    /// Column-private reader: columns are temporary views, so a local instance (the shared model stays untouched)
     private let reader = DirectoryReader()
     private var loadTask: Task<Void, Never>?
 
-    /// 程序化选中防回环（链行高亮/选中恢复不得触发再下钻）
+    /// Guards against programmatic selection loops (chain row highlight/selection restore must not trigger further drill-down)
     private var isProgrammaticSelection = false
-    /// 装载完成后要应用的选中集（模式切换迁移/链行高亮）
+    /// Selection to apply after loading (mode switch migration/chain row highlight)
     var desiredSelection: Set<URL> = []
 
     init(directory: URL, owner: FileColumnViewController) {
@@ -583,7 +583,7 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
             guard let self else { return nil }
             return self.owner?.menu(for: self)
         }
-        tableView.onReturn = { NSSound.beep() }   // 分栏不支持行内重命名（诚实反馈）
+        tableView.onReturn = { NSSound.beep() }   // Columns have no inline rename (honest feedback)
         tableView.onSpace = { [weak self] in self?.owner?.toggleQuickLook(nil) }
         tableView.onArrowLeft = { [weak self] in
             guard let self else { return }
@@ -619,10 +619,10 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
         let separator = NSBox()
         separator.boxType = .separator
         separator.translatesAutoresizingMaskIntoConstraints = false
-        // 竖向分隔线：NSBox separator 的固有内容尺寸默认为「横线（高=1）」，会经 required 约束链
-        // （separator↔ColumnUnit↔stack↔clip↔scrollView↔列根↔contentContainer）把整列纵向拉塌成 1pt
-        // （M23 断言 + 约束转储实锤 NSContentSizeLayoutConstraint: NSBox.height==1）。把它的纵向
-        // hugging/抗压降到最低，由 top/bottom 约束定高，消除这条伪高度诉求。
+        // Vertical separator: an NSBox separator's intrinsic content size defaults to "horizontal line (height=1)", which through the required constraint chain
+        // (separator↔ColumnUnit↔stack↔clip↔scrollView↔column root↔contentContainer) collapses the whole column vertically to 1pt
+        // (proved by the M23 assertion + a constraint dump: NSContentSizeLayoutConstraint: NSBox.height==1). Lowering its vertical
+        // hugging/compression resistance to the minimum lets top/bottom constraints set the height, removing this fake height demand.
         separator.setContentHuggingPriority(.init(1), for: .vertical)
         separator.setContentCompressionResistancePriority(.init(1), for: .vertical)
 
@@ -637,16 +637,16 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
             separator.topAnchor.constraint(equalTo: topAnchor),
             separator.bottomAnchor.constraint(equalTo: bottomAnchor),
             separator.trailingAnchor.constraint(equalTo: trailingAnchor),
-            // I-24b：竖分隔线必须钉死宽 1——无宽度约束时横向歧义会被解成"分隔线 219/滚动区 0"，
-            // 内容全被 0 宽裁剪层裁掉（纵向坍缩修复后暴露；层链转储实锤 NSClipView 0x393）
+            // I-24b: the vertical separator must be pinned to width 1: with no width constraint the horizontal ambiguity resolves to "separator 219/scroll area 0",
+            // with all content clipped by a zero-width clip layer (exposed after the vertical collapse fix; proved by a layer chain dump: NSClipView 0x393)
             separator.widthAnchor.constraint(equalToConstant: 1),
         ])
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
-    // MARK: 加载（列私有 Task；取消即停）
+    // MARK: Loading (column-private Task; stops on cancel)
 
     func reload() {
         loadTask?.cancel()
@@ -658,11 +658,11 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
             let snap = try? await reader.load(request)
             guard let self, !Task.isCancelled else { return }
             self.isLoading = false
-            // 刷新前保留现有选中（FSEvents/操作后重读不丢选中）
+            // Keep the existing selection before refreshing (re-reads after FSEvents/operations don't lose it)
             if self.desiredSelection.isEmpty {
                 self.desiredSelection = Set(self.selectedItems.map(\.url))
             }
-            self.items = snap?.items ?? []   // 读取失败 → 空列原位呈现（不弹窗）
+            self.items = snap?.items ?? []   // Read failed → empty column in place (no alert)
             self.isProgrammaticSelection = true
             self.tableView.reloadData()
             self.isProgrammaticSelection = false
@@ -677,23 +677,23 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
         isLoading = false
     }
 
-    // MARK: 选中
+    // MARK: Selection
 
     var selectedItems: [FileItem] {
         tableView.selectedRowIndexes.compactMap { items.indices.contains($0) ? items[$0] : nil }
     }
 
-    /// 程序化高亮链行（下钻后父列保持选中子目录；不触发再下钻）
+    /// Programmatically highlights the chain row (the parent column keeps the child directory selected after drill-down; no further drill-down)
     func highlight(url: URL) {
         desiredSelection = [url]
         applyDesiredSelectionIfLoaded()
     }
 
     func applyDesiredSelectionIfLoaded() {
-        guard !items.isEmpty else { return }          // 空列无行可选；desiredSelection 保留待后续载入
-        guard !desiredSelection.isEmpty else { return } // 无待恢复选中：不动现状
+        guard !items.isEmpty else { return }          // Empty column has no rows to select; desiredSelection is kept for a later load
+        guard !desiredSelection.isEmpty else { return } // No selection pending restore: leave things as they are
         var indexes = IndexSet()
-        // 标准化路径比较 + 大小写兜底（大小写不敏感卷上用户给的大小写常与盘上不同）——I-39/I-55 同病同修
+        // Standardized path compare + case-insensitive fallback (on case-insensitive volumes user-supplied case often differs from disk); same fix as I-39/I-55
         let wantedPaths = Set(desiredSelection.map { $0.standardizedFileURL.path })
         for (i, item) in items.enumerated() {
             let p = item.url.standardizedFileURL.path
@@ -702,24 +702,24 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
                 indexes.insert(i)
             }
         }
-        // 一个都没匹配上时，只有在「本列确实就是这些目标所在的目录」时才认定为"真的不存在"并消费掉。
-        // 否则列里装的还是上一个目录的陈旧内容——照旧清空就把待选中吃掉，正确内容载入后再也不会选中，
-        // 表现为粘贴文件路径后分栏模式什么都没选中（I-55）。
+        // When nothing matched, treat it as "really missing" and consume it only if this column really is the directory of those targets.
+        // Otherwise the column still holds stale content from the previous directory; clearing would eat the pending selection, and it would never apply after the right content loads,
+        // showing up as nothing selected in column mode after pasting a file path (I-55).
         let ownsTargets = desiredSelection.allSatisfy {
             $0.deletingLastPathComponent().standardizedFileURL.path
                 == directory.standardizedFileURL.path
         }
         guard !indexes.isEmpty || ownsTargets else { return }
         desiredSelection = []
-        // I-32：精确匹配集即恢复；空集（选中项全被删）也显式 select 清空——
-        // 不再 `guard !indexes.isEmpty else { return }` 留 reloadData 的按行号残留（删除后选中"漂移"真凶）
+        // I-32: restore the exact-match set; even an empty set (all selected items deleted) is selected explicitly to clear,
+        // no longer `guard !indexes.isEmpty else { return }`, which left reloadData's row-number leftovers (the real cause of selection "drift" after a delete)
         isProgrammaticSelection = true
         tableView.selectRowIndexes(indexes, byExtendingSelection: false)
         isProgrammaticSelection = false
         if let first = indexes.first { tableView.scrollRowToVisible(first) }
     }
 
-    // MARK: 表数据源/委托
+    // MARK: Table data source/delegate
 
     func numberOfRows(in tableView: NSTableView) -> Int { items.count }
 
@@ -743,7 +743,7 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
         owner?.doubleClicked(in: self)
     }
 
-    // MARK: 拖拽源 / 投放目标（语义裁决在 owner，与列表一致）
+    // MARK: Drag source / drop target (semantic decisions live in owner, same as the list)
 
     func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> (any NSPasteboardWriting)? {
         guard items.indices.contains(row) else { return nil }
@@ -761,7 +761,7 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
     }
 }
 
-// MARK: - 文件预览列（点选文件时出现在最右：大图 + 名称 + 种类/大小/日期）
+// MARK: - File preview column (appears at the far right when a file is selected: large image + name + kind/size/date)
 
 @MainActor
 final class PreviewColumnView: NSView {
@@ -804,11 +804,11 @@ final class PreviewColumnView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     func show(_ item: FileItem) {
         cancelThumb()
-        bigIcon.image = Formatters.fullIcon(for: item)   // 快路径类型图标先出
+        bigIcon.image = Formatters.fullIcon(for: item)   // Fast-path type icon first
         nameLabel.stringValue = item.name
         var lines: [String] = [Formatters.kind(forTypeID: item.contentTypeID, isDirectory: item.isDirectory)]
         if let size = item.size {
@@ -818,7 +818,7 @@ final class PreviewColumnView: NSView {
             lines.append(Formatters.relativeDate(modified))
         }
         infoLabel.stringValue = lines.joined(separator: "\n")
-        // QLThumbnail 大图异步升级（失败保持类型图标——BG-7 装饰失败不伤主链）
+        // Async upgrade to a large QLThumbnail (keeps the type icon on failure; BG-7: decoration failures don't harm the main chain)
         let url = item.url
         thumbTask = Task { [weak self] in
             let cg = await Engines.iconThumb.thumbnail(for: url, size: 128)

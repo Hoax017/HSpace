@@ -6,32 +6,32 @@ import SessionStore
 import Frecency
 import TrashLedger
 
-/// 主窗口（M17 自绘甲板）：两列贯通结构——
-/// 左列 sidebarColumn（.sidebar 材质全高：红绿灯行 + 暂存架 + 书签），
-/// 右列 contentColumn（TopDeckView 甲板 + PaneGrid 窗格矩阵 + 各窗格状态栏）。
-/// 工作区标签自管（WorkspaceManager，弃原生 NSWindow tabbing）；Tab 键循环窗格焦点。
+/// Main window (M17 custom deck): two continuous columns:
+/// left sidebarColumn (full-height .sidebar material: traffic light row + stash shelf + bookmarks),
+/// right contentColumn (TopDeckView deck + PaneGrid pane matrix + each pane's status bar).
+/// Workspace tabs are self-managed (WorkspaceManager, native NSWindow tabbing abandoned); Tab cycles pane focus.
 @MainActor
 final class MainWindowController: NSWindowController, @preconcurrency NSMenuItemValidation {
     let kernel: OperationKernel
     let grid: PaneGridController
     let coordinator: FileOpsCoordinator
     let sidebar: SidebarViewController
-    /// 暂存架控制器（M7）：内容经 StashStore 胶囊持久化，行呈现在侧边栏
+    /// Stash shelf controller (M7): content persists through the StashStore pod, rows are shown in the sidebar
     let stashShelf: StashShelfController
-    /// 自绘顶部甲板（M17）：标签条 28 + 图标工具条 36
+    /// Custom top deck (M17): tab strip 28 + icon toolbar 36
     let deck = TopDeckView()
-    /// 工作区管理器（M17）：窗口内 [SessionWindow] + activeIndex，切换=快照当前→恢复目标
+    /// Workspace manager (M17): the window's [SessionWindow] + activeIndex; switch = snapshot current -> restore target
     private(set) var workspaces: WorkspaceManager!
 
-    /// 手工 NSSplitView（弃 NSSplitViewController：其恢复/调宽会在 splitView 上留必需
-    /// 等式约束，布局扰动时反推窗口坍缩——UI 探针实锤 W==320/W==220/H==52 泄漏）
+    /// Manual NSSplitView (NSSplitViewController abandoned: its restore/resizing leaves required equality
+    /// constraints on splitView that collapse the window under layout churn; the UI probe caught W==320/W==220/H==52 leaking)
     private let mainSplit = NSSplitView()
-    let sidebarWrap = NSVisualEffectView()   // internal：UISelfTest I-22 断言需度量可见性
-    /// 右列容器：甲板压顶 + 窗格矩阵铺底（唯一垂直分割线由此列与左列共界）
+    let sidebarWrap = NSVisualEffectView()   // internal: the UISelfTest I-22 assertion must measure visibility
+    /// Right column container: deck on top + pane matrix filling the rest (the only vertical divider is shared by this column and the left one)
     private let contentColumn = NSView()
     private var savedSidebarWidth: CGFloat = 200
-    /// I-22：折叠状态完全自管。绝不走 NSSplitView 的 collapse 机制——它把折叠记在私有状态里，
-    /// isHidden 会被后续布局重新盖回（实测宽度已恢复 202 仍 hidden=true），展开永远失败。
+    /// I-22: collapse state is fully self-managed. Never use NSSplitView's collapse mechanism: it keeps collapse in private state,
+    /// and later layouts reapply isHidden (measured: width back to 202 but still hidden=true), so expanding always fails.
     private var sidebarCollapsedState = false
     private var keyMonitor: Any?
 
@@ -41,8 +41,8 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         self.kernel = kernel
         self.grid = PaneGridController(initialDirectory: initialDirectory)
         self.coordinator = FileOpsCoordinator(kernel: kernel, grid: grid)
-        self.coordinator.frecencyStore = frecencyStore   // M28：全应用打开/进入记账
-        self.coordinator.trashLedger = trashLedger       // 「放回原处」台账（全应用同一实例）
+        self.coordinator.frecencyStore = frecencyStore   // M28: app-wide open/enter accounting
+        self.coordinator.trashLedger = trashLedger       // "Put Back" ledger (same instance app-wide)
         let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("NSpace")
         let model = SidebarModel(bookmarkStore: BookmarkStore(directory: supportDir))
@@ -55,27 +55,27 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
             backing: .buffered, defer: false)
         window.minSize = NSSize(width: 600, height: 400)
         window.center()
-        // M17：弃原生窗口标签（横跨全窗与贯通布局冲突）——工作区改自管 WorkspaceManager
+        // M17: native window tabs abandoned (span the full window, conflicting with the continuous layout); workspaces are self-managed in WorkspaceManager
         window.tabbingMode = .disallowed
-        // 自绘甲板：标题隐藏 + 标题栏透明 + 无 NSToolbar（I-10 追踪分隔线体系随之消亡）
+        // Custom deck: hidden title + transparent title bar + no NSToolbar (the I-10 tracking separator setup goes away with it)
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.toolbar = nil
-        // 窗口尺寸/位置由自管 windowFrame 键单一权威恢复（见下方 setFrame）。关闭 macOS 原生窗口状态恢复：
-        // 其 savedState 在二进制/签名变更（=版本更新）时被系统作废，与自管恢复竞争会导致"更新后尺寸回默认"
-        // （用户报告根因）。isRestorable=false 后仅自管恢复生效，跨版本更新确定性保留尺寸。
+        // Window size/position is restored by the self-managed windowFrame key as the single authority (see setFrame below). macOS native window state restoration is off:
+        // its savedState is invalidated by the system when the binary/signature changes (= a version update), and competing with our restore resets the size after updates
+        // (root cause of a user report). With isRestorable=false only our restore applies, so the size deterministically survives version updates.
         window.isRestorable = false
         super.init(window: window)
-        // AppKit 经典坑:控制器默认级联窗口会屏蔽 setFrameAutosaveName 的恢复——必须显式关闭
+        // Classic AppKit trap: the controller's default window cascading blocks setFrameAutosaveName restoration, so it must be turned off explicitly
         shouldCascadeWindows = false
 
         grid.coordinator = coordinator
-        // 暂存架接线：批量复制/移动经 coordinator 提交，"当前窗格"落点来自 grid
+        // Stash shelf wiring: batch copy/move is submitted through coordinator, and the "current pane" destination comes from grid
         stashShelf.coordinator = coordinator
         stashShelf.grid = grid
         sidebar.model.stash = stashShelf
 
-        // 手工分栏：sidebar 材质用 NSVisualEffectView 包裹；宽度/折叠自管持久化
+        // Manual split: the sidebar material is wrapped in NSVisualEffectView; width/collapse are persisted by us
         mainSplit.isVertical = true
         mainSplit.dividerStyle = .thin
         mainSplit.delegate = self
@@ -91,7 +91,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
             sv.trailingAnchor.constraint(equalTo: sidebarWrap.trailingAnchor),
         ])
 
-        // 右列 = 甲板压顶 + 窗格矩阵铺底
+        // Right column = deck on top + pane matrix filling the rest
         deck.deckDelegate = self
         let gridView = grid.view
         gridView.translatesAutoresizingMaskIntoConstraints = false
@@ -125,14 +125,14 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
             mainSplit.trailingAnchor.constraint(equalTo: host.view.trailingAnchor),
         ])
         window.contentViewController = host
-        // 自管 frame 持久化恢复——必须在 contentViewController 赋值【之后】：
-        // 该赋值会把窗口压回内容适配尺寸(600×400 钳制)，先恢复会被盖掉
-        // （用户"尺寸没有持久化"的完整根因；弃 autosave 因其携带系统平铺 tilingState）
+        // Restore the self-managed frame, which must come **after** assigning contentViewController:
+        // that assignment squeezes the window back to its content-fitted size (600×400 clamp), and restoring earlier would be overwritten
+        // (the full root cause of the user's "size is not persisted"; autosave was dropped because it carries the system tiling tilingState)
         if let saved = UserDefaults.standard.string(forKey: Self.frameDefaultsKey) {
             let r = NSRectFromString(saved)
             if r.width >= 600, r.height >= 400 { window.setFrame(r, display: false) }
         }
-        // 外部化默认布局（新窗口/新工作区生效；会话恢复会覆盖）
+        // Externalized default layout (applies to new windows/new workspaces; session restore overrides it)
         if let l = PaneLayout(rawValue: Preferences.defaultLayoutRaw), l != grid.layout {
             grid.apply(layout: l)
         }
@@ -155,7 +155,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         NotificationCenter.default.addObserver(
             self, selector: #selector(windowFrameChanged(_:)),
             name: NSWindow.didMoveNotification, object: window)
-        // 关窗前落一次最终 frame（更新触发的 terminate/关窗可能未走 didEndLiveResize——防最后一次尺寸丢失）
+        // Persist a final frame before closing (a terminate or window close may skip didEndLiveResize; prevents losing the last size)
         NotificationCenter.default.addObserver(
             self, selector: #selector(windowFrameChanged(_:)),
             name: NSWindow.willCloseNotification, object: window)
@@ -163,10 +163,10 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         sidebar.onNavigate = { [weak self] url in self?.grid.activePane.navigate(to: url) }
         grid.onActiveLocationChange = { [weak self] url in
             self?.updateTitle(for: url)
-            // 高亮跟随窗格：旧版侧栏高亮只是"上次点了谁"，换目录后一直指着旧位置撒谎
+            // The highlight follows the pane: the old sidebar highlight only showed "what was clicked last" and went on pointing at the old location after a directory change
             self?.sidebar.syncSelection(to: url)
-            // I-47：导航即落盘（防抖 1s）——否则位置只在干净退出才保存，非干净退出（热更新重启/强退/
-            // Mac 重启/崩溃）会回退到 home。restore 期间 sessionReady=false，noteStateChanged 被 guard 挡住不自覆盖。
+            // I-47: persist on navigation (1s debounce); otherwise the location is saved only on clean exit, and an unclean exit (force quit/
+            // Mac restart/crash) goes back to home. During restore sessionReady=false, so the noteStateChanged guard prevents self-overwrite.
             (NSApp.delegate as? AppDelegate)?.noteStateChanged()
         }
         grid.onActiveStatusChange = { [weak self] in
@@ -174,32 +174,32 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
             self.deck.validateActions(hasSelection: self.grid.activePane.currentSelectionCount > 0)
         }
 
-        // 工作区管理器：以当前 grid 快照播种单工作区（grid.view 已 loadView，窗格池就位）
+        // Workspace manager: seed a single workspace from the current grid snapshot (grid.view has run loadView, pane pool in place)
         workspaces = WorkspaceManager(initial: grid.sessionWindow())
         updateTitle(for: initialDirectory)
         refreshWorkspaceTabs()
-        // I-44：openWindow(selecting:) 传入的待选中项——视图模式感知定位（原 select 参数被整段丢弃，
-        // 导致 Antigravity 等第三方"打开文件位置"只到父目录不选中文件）。pending 机制扛首次异步读目录竞态。
+        // I-44: the item to select passed to openWindow(selecting:), located with view mode awareness (the select parameter used to be dropped outright,
+        // so third-party "open file location" such as Antigravity reached the parent directory without selecting the file). The pending mechanism handles the first async directory read race.
         if let select { grid.activePane.reveal(select) }
         installKeyMonitor()
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     func navigate(to url: URL) {
         grid.activePane.navigate(to: url)
     }
 
-    // MARK: UISelfTest 度量入口（M17 §5：分割线全高 / 折叠不漂移）
+    // MARK: UISelfTest measurement entry (M17 §5: full-height divider / no drift on collapse)
     var sidebarColumnFrame: NSRect { sidebarWrap.frame }
     var contentColumnFrame: NSRect { contentColumn.frame }
     var workspaceCount: Int { workspaces.count }
-    /// 自测通道（I-73）：工作区标题按序——验"到上限时外部打开没把最老那个顶掉"，
-    /// 光数个数不够（顶掉最老再追加一个，个数是不变的）。
+    /// Self-test channel (I-73): workspace titles in order, to verify "an external open at the limit did not evict the oldest";
+    /// counting alone is not enough (evicting the oldest then appending leaves the count unchanged).
     var uiTestWorkspaceTitles: [String] { workspaces.titles() }
 
-    /// 窗口关闭时由 AppDelegate 调用（事件监视器必须显式拆除）
+    /// Called by AppDelegate on window close (the event monitor must be torn down explicitly)
     func teardown() {
         NotificationCenter.default.removeObserver(self)
         if let keyMonitor {
@@ -209,20 +209,20 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         sidebar.model.stop()
     }
 
-    // MARK: 侧栏宽度自管持久化（替代 NSSplitView.autosaveName）
+    // MARK: Self-managed sidebar width persistence (replaces NSSplitView.autosaveName)
 
-    /// frame 持久化落盘（拖拽结束/移动/关窗时调；全屏态不写）
+    /// Persist the frame (called at drag end/move/window close; not written in full screen)
     func persistFrameNow() {
         guard let window, !window.styleMask.contains(.fullScreen) else { return }
         UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: Self.frameDefaultsKey)
     }
 
-    /// 帧持久化键：UITEST 走隔离键 `windowFrame.uitest`，绝不污染用户真实 `windowFrame`。
-    /// 测试沙箱铁律（I-46 用户报告"重新 build 后尺寸回默认"根因=冒烟 SETFRAME 写了产品同键，
-    /// 每次跑冒烟都把真实窗口尺寸覆盖为测试值 900×520）。
-    /// 同一条铁律扩到侧栏宽（I-46 只隔离了窗口 frame，侧栏宽仍读产品键）：
-    /// 冒烟里 I-37 的窄窗断言宽度 = 511 - sidebarWidth，跟着开发者真实侧栏宽漂，
-    /// 侧栏拖到上限 320 时余量被吃光，断言就会因为环境而红。
+    /// Frame persistence key: UITEST uses the isolated key `windowFrame.uitest`, never touching the user's real `windowFrame`.
+    /// Test sandbox hard rule (I-46 user report "size resets after rebuild": the root cause was smoke SETFRAME writing the product key,
+    /// so every smoke run overwrote the real window size with the test value 900×520).
+    /// The same hard rule extends to sidebar width (I-46 only isolated the window frame; sidebar width still read the product key):
+    /// in smoke, the I-37 narrow window assertion width = 511 - sidebarWidth, which drifted with the developer's real sidebar width,
+    /// and with the sidebar dragged to the 320 limit the margin was used up and the assertion went red because of the environment.
     static var sidebarWidthKey: String {
         ProcessInfo.processInfo.environment["NSPACE_UITEST"] != nil ? "sidebarWidth.uitest" : "sidebarWidth"
     }
@@ -239,8 +239,8 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
             UserDefaults.standard.set(false, forKey: "sidebarCollapsed")
             deck.setSidebarCollapsed(false)
         } else if w < 1 {
-            // 折叠视觉（甲板让位红绿灯）；折叠态持久化只由 toggleSidebar 落——
-            // 启动瞬时 0 宽的 didResize 绝不可写 collapsed=true（否则下次启动误折叠）
+            // Collapsed visuals (deck gives way to the traffic lights); collapse state is persisted only by toggleSidebar:
+            // the momentary 0-width didResize at launch must never write collapsed=true (it would wrongly collapse on next launch)
             deck.setSidebarCollapsed(true)
         }
     }
@@ -249,13 +249,13 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         persistFrameNow()
     }
 
-    /// 自实现侧栏折叠（⌘⌥S / 甲板钮）：宽度 0 ⟷ 记忆宽度；折叠时甲板 leading 让位红绿灯
+    /// Self-implemented sidebar collapse (⌘⌥S / deck button): width 0 ⟷ remembered width; while collapsed the deck's leading edge gives way to the traffic lights
     @objc func toggleSidebar(_ sender: Any?) {
         setSidebar(collapsed: !sidebarCollapsedState)
     }
 
-    /// 确定性折叠/展开（甲板钮/菜单经 toggle 走此；UISelfTest 直接指定目标态）。
-    /// 自管宽度直铺 frame（见 sidebarCollapsedState 注释），子视图永不 isHidden。
+    /// Deterministic collapse/expand (deck button/menu reach this via toggle; UISelfTest specifies the target state directly).
+    /// Self-managed widths set the frames directly (see the sidebarCollapsedState comment); subviews are never isHidden.
     func setSidebar(collapsed: Bool) {
         sidebarCollapsedState = collapsed
         sidebarWrap.isHidden = false
@@ -264,7 +264,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         deck.setSidebarCollapsed(collapsed)
     }
 
-    /// 两列 frame 直铺（delegate resize 与折叠切换共用；折叠=宽 0，展开=夹紧后的记忆宽）
+    /// Set both column frames directly (shared by delegate resize and collapse toggling; collapsed = width 0, expanded = clamped remembered width)
     private func applyColumnFrames() {
         let divider = mainSplit.dividerThickness
         let w: CGFloat = sidebarCollapsedState ? 0 : min(max(savedSidebarWidth, 160), 320)
@@ -277,7 +277,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
     }
 
     private func updateTitle(for url: URL) {
-        // QSpace 式标题：活动目录 | 其他可见窗格目录
+        // QSpace-style title: active directory | other visible pane directories
         let name: (URL) -> String = { $0.path == "/" ? "/" : $0.lastPathComponent }
         var parts = [name(url)]
         for pane in grid.visiblePanes where pane !== grid.activePane {
@@ -290,7 +290,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         (NSApp.delegate as? AppDelegate)?.noteStateChanged()
     }
 
-    /// 甲板控件同步（活动窗格/位置/布局/选中变化后回灌）
+    /// Sync deck controls (fed back after active pane/location/layout/selection changes)
     private func syncDeck() {
         let pane = grid.activePane
         let b = pane.activeTab.browser
@@ -300,12 +300,12 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         deck.validateActions(hasSelection: pane.currentSelectionCount > 0)
     }
 
-    /// 活动窗格/标签变化时同步视图切换器选中态（旧调用点保留）
+    /// Syncs the view switcher selection when the active pane/tab changes (old call sites kept)
     func syncViewModeControl() {
         deck.syncViewMode(grid.activePane.activeTab.viewMode.rawValue)
     }
 
-    // MARK: 书签（右键"添加到书签"经响应链到此；选中目录逐个入册）
+    // MARK: Bookmarks (context menu "Add to Bookmarks" reaches here via the responder chain; each selected directory is added)
 
     @objc func addSelectionToBookmarks(_ sender: Any?) {
         let dirs = grid.activePane.activeTab.listVC.selectedItems
@@ -320,24 +320,24 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         }
     }
 
-    // MARK: 响应链兜底（地址栏 field editor 获焦时，动作走不到窗格/内容 VC——这里是链的收口）
+    // MARK: Responder chain fallback (when the address bar's field editor has focus, actions cannot reach the pane/content VC; this is the end of the chain)
 
-    /// ⌘R 刷新。地址栏在编辑态时 firstResponder 是 NSTextField 的 field editor，实测该段链既到不了
-    /// 三个内容 VC（菜单项挂的 #selector(FileListViewController.refresh(_:))），也到不了 PaneViewController，
-    /// 于是 ⌘R 成了死键——用户报的"删空地址栏后不管我刷新还是退回上级都不恢复"，刷新这一条就卡在这里。
-    /// NSWindow 的 nextResponder 即窗口控制器，这里必然收得到，转交给活动窗格即可。
+    /// ⌘R refresh. While the address bar is editing, firstResponder is the NSTextField's field editor, and in tests that chain reaches neither
+    /// the three content VCs (the menu item targets #selector(FileListViewController.refresh(_:))) nor PaneViewController,
+    /// so ⌘R became a dead key: the refresh half of the user's "after clearing the address bar, neither refresh nor going up recovers it" stuck here.
+    /// NSWindow's nextResponder is the window controller, so this always gets it; just hand it to the active pane.
     @objc func refresh(_ sender: Any?) {
         grid.activePane.refresh(sender)
     }
 
-    /// ⌘L 前往路径。同上：侧边栏/地址栏持有焦点时链上没有 PaneViewController，⌘L 会静默失效。
+    /// ⌘L go to path. Same as above: with the sidebar/address bar holding focus, no PaneViewController is on the chain and ⌘L would silently fail.
     @objc func editPath(_ sender: Any?) {
         grid.activePane.editPath(sender)
     }
 
-    // MARK: 工作区标签（M17：自管 WorkspaceManager；⌘T/⌘W/循环 + 标签条钮都走这里）
+    // MARK: Workspace tabs (M17: self-managed WorkspaceManager; ⌘T/⌘W/cycling + tab strip buttons all come here)
 
-    /// 切换前把 grid 实时快照回灌活动槽（否则切走的工作区丢失未落盘编辑）
+    /// Before switching, feed the grid's live snapshot into the active slot (otherwise the workspace being left loses unsaved edits)
     private func snapshotIntoActive() {
         workspaces.syncActive(grid.sessionWindow())
     }
@@ -355,15 +355,15 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         openWorkspaceTab(at: nil)
     }
 
-    /// 新建工作区标签 = **复制当前工作区**：同一布局，每个可见窗格继承它当前的
-    /// 路径 / 排序 / 隐藏 / 视图模式。`directory` 非空时只把**活动窗格**换到那个目录
-    /// （外部打开走这条：v0.19.26 起它落在工作区标签上，不再往窗格里塞看不见的标签）。
+    /// New workspace tab = **duplicate the current workspace**: same layout, each visible pane inherits its current
+    /// path / sort / hidden state / view mode. A non-nil `directory` changes only the **active pane** to that directory
+    /// (external opens take this route: since v0.19.26 they land on a workspace tab, no longer stuffing an invisible tab into a pane).
     ///
-    /// `allowEvictingOldest` 为 false 时，已达工作区上限就**不新建**、改为把活动窗格就地导航过去：
-    /// 外部打开由别的 App 触发，不该因为对方点了「在访达中显示」就把用户排在最前的工作区顶掉。
+    /// With `allowEvictingOldest` false, at the workspace limit it **does not create a tab** and navigates the active pane in place instead:
+    /// an external open comes from another app, and its "Reveal in Finder" should not evict the user's front-most workspace.
     ///
-    /// 旧版 ⌘T 只播种一个窗格、只抄路径，排序等全部回落到全局默认偏好（从未设过 → 恒为「名称」）；
-    /// 其余窗格由窗格池的旧内容补位——于是"右窗格记住了修改日期、左窗格没有"（用户报告）。
+    /// The old ⌘T seeded one pane and copied only the path, with sort and the rest falling back to global default preferences (never set -> always Name);
+    /// other panes were filled with stale pool content, hence "the right pane remembers Date Modified, the left one does not" (user report).
     func openWorkspaceTab(at directory: URL?, allowEvictingOldest: Bool = true) {
         snapshotIntoActive()
         let limit = Preferences.workspaceTabLimit
@@ -377,8 +377,8 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         }
         let current = grid.sessionWindow()
         let activeIndex = current.activePaneIndex
-        // 直接拿窗格现态造快照（而不是另手抄一遍字段）：PaneGridController.restoreSession
-        // 靠「目标态 == 现态」判定跳过重建，两处字段一旦漂开，那条跳过就会失效而且没人察觉。
+        // Build the snapshot from the panes' current state directly (rather than copying fields by hand): PaneGridController.restoreSession
+        // skips rebuilds by "target state == current state", and if the two field lists drift apart that skip fails with nobody noticing.
         let fresh = SessionWindow(
             layoutRaw: current.layoutRaw,
             panes: grid.visiblePanes.enumerated().map { i, pane in
@@ -416,7 +416,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
             syncDeck()
             (NSApp.delegate as? AppDelegate)?.noteStateChanged()
         } else {
-            // 最后一个工作区 → 关窗（⌘W 语义）
+            // Last workspace -> close the window (⌘W semantics)
             window?.performClose(nil)
         }
     }
@@ -425,7 +425,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         closeWorkspace(at: workspaces.activeIndex)
     }
 
-    /// ⌘1..9 数字直达（I-13）：菜单项 tag = 工作区下标；越界由 switchTo 守卫忽略
+    /// ⌘1..9 direct access (I-13): menu item tag = workspace index; out of range is ignored by the switchTo guard
     @objc func switchWorkspaceByNumber(_ sender: NSMenuItem) {
         switchWorkspace(to: sender.tag)
     }
@@ -452,7 +452,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         (NSApp.delegate as? AppDelegate)?.noteStateChanged()
     }
 
-    /// AppDelegate 会话恢复入口：用工作区数组重建本窗口
+    /// AppDelegate session restore entry: rebuilds this window from a workspace array
     func restoreWorkspaces(_ ws: SessionWorkspaces) {
         guard !ws.workspaces.isEmpty else { return }
         workspaces = WorkspaceManager(states: ws.workspaces, activeIndex: ws.activeWorkspace)
@@ -461,19 +461,19 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         syncDeck()
     }
 
-    /// AppDelegate 会话保存入口：先回灌活动槽再交出全体工作区
+    /// AppDelegate session save entry: feeds the active slot first, then hands over all workspaces
     func workspaceSnapshot() -> SessionWorkspaces {
         snapshotIntoActive()
         return SessionWorkspaces(workspaces: workspaces.states, activeWorkspace: workspaces.activeIndex)
     }
 
-    // MARK: Tab 键循环窗格焦点 + ⌃⇥ 循环工作区（文本编辑中放行）
+    // MARK: Tab cycles pane focus + ⌃⇥ cycles workspaces (passed through during text editing)
 
     private func installKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, event.window === self.window, event.keyCode == 48 else { return event }
             let mods = event.modifierFlags.intersection([.command, .control, .option, .shift])
-            // 工作区循环修饰键走 KeyBindings 注册表（cycleWorkspace/Back），不再硬编码 ⌃/⌃⇧
+            // Workspace cycle modifiers come from the KeyBindings registry (cycleWorkspace/Back), no longer hard-coded ⌃/⌃⇧
             let fwd = KeyBindings.binding("cycleWorkspace")
             let back = KeyBindings.binding("cycleWorkspaceBack")
             if fwd.key == "\t", mods == fwd.mods { self.cycleWorkspace(backward: false); return nil }
@@ -486,16 +486,16 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         }
     }
 
-    // MARK: 布局菜单命令（甲板分段/菜单共用；同步甲板选中态）
+    // MARK: Layout menu commands (shared by the deck segments and menu; syncs the deck selection)
 
-    /// 菜单布局切换后同步甲板选中态
+    /// After a menu layout switch, sync the deck selection
     @objc func applyLayout(_ sender: NSMenuItem) {
         grid.applyLayout(sender)
         deck.syncLayout(grid.layout)
         (NSApp.delegate as? AppDelegate)?.noteStateChanged()
     }
 
-    // MARK: 聚焦搜索（⌘F 当前文件夹 / ⌥⌘F 全局）
+    // MARK: Focused search (⌘F current folder / ⌥⌘F global)
 
     @objc func showSearchHere(_ sender: Any?) { showSearch(scopeGlobal: false) }
     @objc func showSearchGlobal(_ sender: Any?) { showSearch(scopeGlobal: true) }
@@ -510,7 +510,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         })
     }
 
-    /// 回车定位：目录（非包）直接进入；文件/包进父目录并选中（复用 prepareReveal 显露链）
+    /// Enter to locate: directories (not packages) are entered directly; files/packages go to the parent with the item selected (reuses the prepareReveal reveal chain)
     private func revealSearchHit(_ url: URL) {
         let pane = grid.activePane
         var isDir: ObjCBool = false
@@ -526,20 +526,20 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
     }
 }
 
-// MARK: - 甲板动作出口（带选中态/校验的控件）
+// MARK: - Deck action outlets (controls with selection state/validation)
 
 extension MainWindowController: TopDeckDelegate {
     func deckToggleSidebar() { toggleSidebar(nil) }
-    /// 点垃圾桶钮 = 在**应用内**导航到废纸篓（绝不外抛给访达）
+    /// Clicking the trash button = navigate to the Trash **inside the app** (never handed off to Finder)
     func deckOpenTrash() { grid.activePane.goTrash(nil) }
-    /// 右键垃圾桶钮 → 清空废纸篓（按当前窗格所在卷取篓，与打开/落点口径一致）
+    /// Right-clicking the trash button -> Empty Trash (picks the trash by the current pane's volume, same rule as opening/drops)
     func deckEmptyTrash() {
         coordinator.emptyTrash(at: TrashLocation.trash(for: grid.activePane.uiTestCurrentURL),
                                in: window)
     }
-    /// 拖到垃圾桶钮 = 移到废纸篓（经内核，本层零写型 API）。
-    /// 落到**来源窗**的 coordinator：跨窗拖放时撤销栈与吐司都该归发起那一侧，
-    /// 否则 ⌘Z 在来源窗按不动，吐司还弹在一个可能被挡住的窗上。
+    /// Dragging onto the trash button = move to Trash (through the kernel; this layer has zero write APIs).
+    /// Lands on the **source window's** coordinator: for cross-window drags the undo stack and toast belong to the initiating side,
+    /// otherwise ⌘Z does nothing in the source window and the toast appears on a possibly covered window.
     func deckDropOnTrash(_ urls: [URL], from sourceWindow: NSWindow?) {
         let owner = (NSApp.delegate as? AppDelegate)?
             .mainWindowController(for: sourceWindow) ?? self
@@ -569,7 +569,7 @@ extension MainWindowController: TopDeckDelegate {
     }
 }
 
-// MARK: - 手工分栏约束（min160/max320，可折叠到 0）
+// MARK: - Manual split constraints (min160/max320, collapsible to 0)
 
 extension MainWindowController: @preconcurrency NSSplitViewDelegate {
     func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMinimumPosition: CGFloat,
@@ -579,11 +579,11 @@ extension MainWindowController: @preconcurrency NSSplitViewDelegate {
                    ofSubviewAt dividerIndex: Int) -> CGFloat { 320 }
 
     func splitView(_ splitView: NSSplitView, canCollapseSubview subview: NSView) -> Bool {
-        false   // I-22：折叠自管（sidebarCollapsedState 直铺 frame），禁用 AppKit 私有折叠机制
+        false   // I-22: collapse is self-managed (sidebarCollapsedState sets frames directly); AppKit's private collapse mechanism is disabled
     }
 
     func splitView(_ splitView: NSSplitView, resizeSubviewsWithOldSize oldSize: NSSize) {
-        // 窗口缩放时侧栏保持宽度、内容区吃增量（Finder 语义）；折叠态由自管状态决定
+        // On window resize the sidebar keeps its width and the content takes the delta (Finder semantics); collapse comes from our own state
         applyColumnFrames()
     }
 }

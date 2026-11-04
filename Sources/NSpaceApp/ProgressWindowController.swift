@@ -2,8 +2,8 @@ import AppKit
 import NSpaceKernel
 import NSpaceContracts
 
-/// 操作进度窗（单例）：订阅 kernel.projections()，每操作一行。
-/// >0.5s 未终态才 orderFront；全部终态 2s 后自动关闭；失败行就地红字。
+/// Operation progress window (singleton): subscribes to kernel.projections(), one row per operation.
+/// orderFront only if not terminal after >0.5s; closes automatically 2s after everything is terminal; failed rows show red text in place.
 @MainActor
 final class ProgressWindowController: NSWindowController {
     static let shared = ProgressWindowController()
@@ -53,15 +53,15 @@ final class ProgressWindowController: NSWindowController {
         updateEmptyState()
     }
 
-    /// 空态:无任务时给"暂无任务"说明,而不是一块空白(用户报告)
+    /// Empty state: show a "no tasks" note instead of a blank area (user report)
     private func updateEmptyState() {
         emptyLabel.isHidden = !rows.isEmpty
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
-    /// 工具栏"任务状态"图标：手动开关任务窗
+    /// Toolbar "task status" icon: manually toggles the task window
     @objc func toggleVisible(_ sender: Any?) {
         if window?.isVisible == true {
             window?.orderOut(nil)
@@ -83,7 +83,7 @@ final class ProgressWindowController: NSWindowController {
         }
     }
 
-    // MARK: 投影消费
+    // MARK: Projection consumption
 
     private func apply(_ p: OperationProjection) {
         let row: ProgressRowView
@@ -102,7 +102,7 @@ final class ProgressWindowController: NSWindowController {
         scheduleVisibility()
     }
 
-    /// 字节速率：相邻两次投影的字节增量 / 时间增量
+    /// Byte rate: byte delta / time delta between adjacent projections
     private func rate(for p: OperationProjection) -> Double? {
         let now = Date()
         defer { rates[p.id] = (p.bytesDone, now) }
@@ -112,7 +112,7 @@ final class ProgressWindowController: NSWindowController {
         return Double(p.bytesDone - prev.bytes) / dt
     }
 
-    // MARK: 显隐时序（>0.5s 才显；全终态 2s 后关）
+    // MARK: Visibility timing (show after >0.5s; close 2s after all terminal)
 
     private var hasActive: Bool { rows.values.contains { !$0.isTerminal } }
 
@@ -130,7 +130,7 @@ final class ProgressWindowController: NSWindowController {
             }
         } else {
             pendingShow?.cancel(); pendingShow = nil
-            // 全终态：无论窗口是否显示都要清理累积的行（隐藏窗口也需回收）
+            // All terminal: clear accumulated rows whether or not the window is showing (a hidden window must recycle them too)
             if !rows.isEmpty, pendingHide == nil {
                 pendingHide = Task { [weak self] in
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -150,7 +150,7 @@ final class ProgressWindowController: NSWindowController {
     }
 }
 
-/// 单操作行：kind 图标 + 进度条 + 当前文件 + 字节速率 + 取消按钮；失败就地红字
+/// One operation row: kind icon + progress bar + current file + byte rate + cancel button; failures show red text in place
 @MainActor
 final class ProgressRowView: NSView {
     var onCancel: (() -> Void)?
@@ -209,7 +209,7 @@ final class ProgressRowView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     @objc private func cancelTapped() { onCancel?() }
 
@@ -262,7 +262,7 @@ final class ProgressRowView: NSView {
         case .newFile: "doc.badge.plus"
         case .compress: "doc.zipper"
         case .extract: "arrow.up.bin"
-        case .delete: "trash.slash"      // 永久删除：带斜杠的桶，与「移到废纸篓」明显区分
+        case .delete: "trash.slash"      // Permanent delete: slashed can, clearly distinct from "Move to Trash"
         }
     }
 }

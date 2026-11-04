@@ -2,14 +2,14 @@ import Foundation
 import CoreServices
 import NSpaceContracts
 
-// 私有关注点：FSEventStream 生命周期 + C 回调 trampoline。
-// 全部可变状态由 lock 串行化，故对外以 @unchecked Sendable 呈现（锁保证数据竞争自由）。
+// Private concern: FSEventStream lifecycle + C callback trampoline.
+// All mutable state is serialized by lock, hence @unchecked Sendable externally (the lock guarantees freedom from data races).
 
 final class WatchPump: @unchecked Sendable {
     private let lock = NSLock()
     private let path: String
     private let continuation: AsyncStream<Void>.Continuation
-    // 专用队列承接 FSEvents 回调，绝不占用主线程（后台零功耗律）。
+    // A dedicated queue takes FSEvents callbacks, never the main thread (background zero-power rule).
     private let queue = DispatchQueue(label: "com.nspace.directorywatch", qos: .utility)
 
     private var stream: FSEventStreamRef?
@@ -18,9 +18,9 @@ final class WatchPump: @unchecked Sendable {
     private(set) var startupError: DirectoryWatchError?
 
     init(path: URL, continuation: AsyncStream<Void>.Continuation) {
-        // FSEvents 回报 realpath 规范路径（/var→/private/var 等）。
-        // 注意 Foundation 的 resolvingSymlinksInPath 会刻意剥掉 /private 前缀，
-        // 与 FSEvents 口径相反——必须用 POSIX realpath 对齐，否则过滤误杀全部真信号
+        // FSEvents reports canonical realpath paths (/var → /private/var etc).
+        // Note that Foundation's resolvingSymlinksInPath deliberately strips the /private prefix,
+        // the opposite of FSEvents: POSIX realpath must be used to align, or the filter would kill every real signal
         if let rp = realpath(path.path, nil) {
             self.path = String(cString: rp)
             free(rp)
@@ -30,9 +30,9 @@ final class WatchPump: @unchecked Sendable {
         self.continuation = continuation
     }
 
-    /// 回调线程调用：仅当事件命中"目录自身或直接子项"时投递信号。
-    /// FSEvents(FileEvents) 对 watch 路径是递归上报——深层子树的变化与"该目录列表"无关，
-    /// 不过滤会把后台构建等子树噪声放大成 0.3s 一次的整目录重载（空闲 CPU 25%+ 的元凶）。
+    /// Called on the callback thread: delivers a signal only when an event hits "the directory itself or a direct child".
+    /// FSEvents (FileEvents) reports recursively for the watched path: deep subtree changes are irrelevant to "this directory's listing",
+    /// and without filtering, background build subtree noise is amplified into a full directory reload every 0.3s (the culprit behind 25%+ idle CPU).
     func emit(paths: [String]) {
         lock.lock(); let dead = stopped; let root = path; lock.unlock()
         guard !dead else { return }
@@ -50,21 +50,21 @@ final class WatchPump: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         guard stream == nil, !stopped else { return }
 
-        // info 传 unretained self：WatchPump 生命周期覆盖 stream（stop/deinit 必先拆流），无悬垂。
+        // info passes unretained self: WatchPump's lifetime covers the stream (stop/deinit always tear the stream down first), so nothing dangles.
         var context = FSEventStreamContext(
             version: 0,
             info: Unmanaged.passUnretained(self).toOpaque(),
             retain: nil, release: nil, copyDescription: nil)
 
         let flags = UInt32(kFSEventStreamCreateFlagFileEvents
-            | kFSEventStreamCreateFlagNoDefer)   // NoDefer: 首个变化即刻上报，其后才按 latency 合并
+            | kFSEventStreamCreateFlagNoDefer)   // NoDefer: first change reports immediately, later ones coalesce by latency
 
         guard let s = FSEventStreamCreate(
             kCFAllocatorDefault, watchCallback, &context,
             [path] as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             0.3, flags) else {
-            startupError = DirectoryWatchError(.transient, "FSEventStream 创建失败：\(path)")
+            startupError = DirectoryWatchError(.transient, "Could not create FSEventStream: \(path)")
             continuation.finish()
             return
         }
@@ -76,7 +76,7 @@ final class WatchPump: @unchecked Sendable {
         } else {
             FSEventStreamInvalidate(s)
             FSEventStreamRelease(s)
-            startupError = DirectoryWatchError(.transient, "FSEventStream 启动失败：\(path)")
+            startupError = DirectoryWatchError(.transient, "Could not start FSEventStream: \(path)")
             continuation.finish()
         }
     }
@@ -109,7 +109,7 @@ final class WatchPump: @unchecked Sendable {
     }
 }
 
-// C 回调 trampoline：经 info 指针取回 WatchPump（unretained），解析事件路径后过滤投递。
+// C callback trampoline: recovers WatchPump (unretained) via the info pointer, parses event paths, filters and delivers.
 private func watchCallback(
     _ streamRef: ConstFSEventStreamRef,
     _ info: UnsafeMutableRawPointer?,
@@ -119,7 +119,7 @@ private func watchCallback(
     _ eventIds: UnsafePointer<FSEventStreamEventId>
 ) {
     guard let info else { return }
-    // 未用 UseCFTypes：eventPaths 是 char** 数组
+    // UseCFTypes is not set: eventPaths is a char** array
     let raw = eventPaths.assumingMemoryBound(to: UnsafePointer<CChar>?.self)
     var paths: [String] = []
     paths.reserveCapacity(numEvents)

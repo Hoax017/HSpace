@@ -1,29 +1,29 @@
 import AppKit
 
-// 方向契约（direction contract）—— 照抄 docs/design/M17-deck-spec.md 开头（唯一权威）
-// THESIS: 原生 macOS 专业工具标准做到极致——Finder 的材质语言 × QSpace 的密度与拓扑；
-//        特色走结构与做工，不走色彩（用户否决一切"web 花哨配色"，seed f8a2afe5 的骰子结果被用户的 canon 出口取代）。
-// OWN-WORLD: 现有主题系统（Theme.accent / appearanceMode / accentColorHex）+ 系统材质
-//        （NSVisualEffectView .titlebar/.sidebar）+ SF Symbols + 发丝分隔线 + 4pt 网格。去掉全部内容后
-//        仍可辨识的是拓扑：一条贯通全高的分割线，左列暂存牌堆压顶，右列三层甲板。
-// STORY: 打开即是四件事同屏可扫——哪个窗格有焦点、路径在哪、暂存架里有什么、任务跑到哪。
-// FIRST VIEWPORT: 左列 = 红绿灯行(28) + 暂存架(148) + 书签/iCloud/位置；右列 = 工作区标签条(28)
-//        + 图标工具条(36) + 窗格矩阵(每窗格自带地址栏) + 状态栏(22)。
+// Direction contract, copied from the top of docs/design/M17-deck-spec.md (the sole authority)
+// THESIS: take the native macOS professional tool standard to the limit: Finder's material language × QSpace's density and topology;
+//        character comes from structure and craft, not color (the user vetoed all "fancy web color schemes"; the seed f8a2afe5 dice roll was superseded by the user's canon outlet).
+// OWN-WORLD: the existing theme system (Theme.accent / appearanceMode / accentColorHex) + system materials
+//        (NSVisualEffectView .titlebar/.sidebar) + SF Symbols + hairline separators + 4pt grid. Strip all content
+//        and the topology still identifies it: one full-height divider, the stash pile on top of the left column, a three-layer deck in the right column.
+// STORY: open it and four things can be scanned on one screen: which pane has focus, where the path is, what is in the stash shelf, how far tasks have run.
+// FIRST VIEWPORT: left column = traffic light row(28) + stash shelf(148) + bookmarks/iCloud/locations; right column = workspace tab strip(28)
+//        + icon toolbar(36) + pane matrix(each pane has its own address bar) + status bar(22).
 // FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review,
 //        the verdict, and DESIGN.md.
 
-/// 甲板动作出口（MainWindowController 实现）：需带选中态/校验的控件走此协议，
-/// 纯响应链动作（AirDrop/终端）由甲板直接 target=nil 上抛第一响应者。
-/// 废纸篓钮不在响应链一列——它有两种意图（点=打开、投放=移入），都走本协议。
+/// Deck action outlets (implemented by MainWindowController): controls that need selection state/validation go through this protocol;
+/// pure responder chain actions (AirDrop/terminal) are sent up by the deck directly with target=nil to the first responder.
+/// The trash button is not in the responder chain group: it has two intents (click = open, drop = move in), both through this protocol.
 @MainActor
 protocol TopDeckDelegate: AnyObject {
-    /// 点垃圾桶钮 = **打开废纸篓**（恒可用，不看选中态）
+    /// Clicking the trash button = **open the Trash** (always available, regardless of selection)
     func deckOpenTrash()
-    /// 右键垃圾桶钮 = 清空废纸篓（**不可逆**，出口自带确认弹窗）
+    /// Right-clicking the trash button = Empty Trash (**irreversible**, the outlet brings its own confirmation alert)
     func deckEmptyTrash()
-    /// 拖文件到垃圾桶钮 = 移到废纸篓（旧的"钮=删除"语义在这里保留下来，没丢）。
-    /// `sourceWindow` = 拖拽发起窗：跨窗拖放时撤销与吐司必须归它，
-    /// 否则 ⌘Z 在来源窗按不动、吐司弹在一个可能被挡住的窗上。
+    /// Dragging files onto the trash button = move to Trash (the old "button = delete" semantics are kept here, not lost).
+    /// `sourceWindow` = the window that started the drag: for cross-window drags undo and toast must belong to it,
+    /// otherwise ⌘Z does nothing in the source window and the toast appears on a possibly covered window.
     func deckDropOnTrash(_ urls: [URL], from sourceWindow: NSWindow?)
     func deckToggleSidebar()
     func deckGoBack()
@@ -34,29 +34,29 @@ protocol TopDeckDelegate: AnyObject {
     func deckNewWorkspace()
     func deckSelectWorkspace(_ index: Int)
     func deckCloseWorkspace(_ index: Int)
-    /// 导航历史（长按后退/前进段弹出；最近的在前）
+    /// Navigation history (popped up by long-pressing the back/forward segment; most recent first)
     func deckHistory(forward: Bool) -> [URL]
     func deckJumpHistory(forward: Bool, index: Int)
 }
 
-/// 自绘顶部甲板（M17 §1/§3/§6.2）：NSVisualEffectView(.titlebar) 内两行——
-/// 工作区标签条(28) + 发丝线 + 图标工具条(36) + 发丝线。密度对齐 QSpace（钮 24×24 / SF13 / 间距 4）。
-/// 工具条 A1 左右分野：左=侧栏│导航│视图三段（就近内容），弹性留白兼窗口拖动把手，右=动作│布局五段。
-/// 甲板空白处可拖动窗口，双击按系统 AppleActionOnDoubleClick 缩放/最小化。零新配色（Theme.accent/系统语义色/材质）。
+/// Custom top deck (M17 §1/§3/§6.2): two rows inside NSVisualEffectView(.titlebar):
+/// workspace tab strip(28) + hairline + icon toolbar(36) + hairline. Density matches QSpace (buttons 24×24 / SF13 / spacing 4).
+/// Toolbar A1 left/right split: left = sidebar│navigation│view segments (near the content), flexible space doubling as a window drag handle, right = actions│five layout segments.
+/// Blank deck space drags the window; double-click zooms/minimizes per system AppleActionOnDoubleClick. No new colors (Theme.accent/system semantic colors/materials).
 @MainActor
 final class TopDeckView: NSVisualEffectView {
     static let tabRowHeight: CGFloat = 40
     static let toolbarRowHeight: CGFloat = 36
-    /// 侧栏折叠时红绿灯落在甲板左上，标签行让位（仅折叠态；§1，收敛 4pt 阶梯 = 80）
+    /// With the sidebar collapsed the traffic lights sit at the deck's top left, so the tab row gives way (collapsed state only; §1, rounded to the 4pt scale = 80)
     static let trafficLightInset: CGFloat = 80
 
     weak var deckDelegate: TopDeckDelegate?
 
-    /// 工作区标签条（复用/泛化现 TabBarView 语法；§2）
+    /// Workspace tab strip (reuses/generalizes the current TabBarView grammar; §2)
     let workspaceTabBar = TabBarView()
-    /// 版本徽章（M22）：标签条最右端"＋"左侧；仅显示与转发点击（BG-1）
+    /// Version badge (M22): far right of the tab strip, left of "+"; display and click forwarding only (BG-1)
     let versionBadge = VersionBadgeView()
-    /// 两行容器（UISelfTest 度量高度 28/36 用；§5）
+    /// The two row containers (used by UISelfTest to measure heights 28/36; §5)
     let tabRow = NSView()
     let toolbarRow = NSView()
 
@@ -80,28 +80,28 @@ final class TopDeckView: NSVisualEffectView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
-    // MARK: 构建
+    // MARK: Build
 
     private func build() {
-        // ── 行1：工作区标签条 ───────────────────────────────────────────
+        // ── Row 1: workspace tab strip ─────────────────────────────────────
         workspaceTabBar.translatesAutoresizingMaskIntoConstraints = false
         workspaceTabBar.itemHeight = 28
         workspaceTabBar.useTransparentBackground()
         workspaceTabBar.onSelect = { [weak self] i in self?.deckDelegate?.deckSelectWorkspace(i) }
         workspaceTabBar.onClose = { [weak self] i in self?.deckDelegate?.deckCloseWorkspace(i) }
         workspaceTabBar.onNew = { [weak self] in self?.deckDelegate?.deckNewWorkspace() }
-        // 版本徽章嵌入标签条尾部配件槽（"＋"左侧；M22）
+        // Version badge embedded in the tab strip's trailing accessory slot (left of "+"; M22)
         workspaceTabBar.setTrailingAccessory(versionBadge)
         tabRow.translatesAutoresizingMaskIntoConstraints = false
         tabRow.addSubview(workspaceTabBar)
 
-        // ── 行2：图标工具条（§6.1 官方 SF Symbols；§6.2 A1 左右分野）──────
-        // 左簇：侧栏开关（sidebar.leading）
+        // ── Row 2: icon toolbar (§6.1 official SF Symbols; §6.2 A1 left/right split) ──────
+        // Left cluster: sidebar toggle (sidebar.leading)
         buildIconButton(sidebarButton, symbol: "sidebar.leading", fallback: "sidebar.left",
                         tooltipKey: "menu.toggleSidebar", action: #selector(sidebarClicked), target: self)
-        // 左簇：导航三段（chevron.backward / chevron.forward / arrow.up）
+        // Left cluster: three navigation segments (chevron.backward / chevron.forward / arrow.up)
         navControl.segmentCount = 3
         navControl.trackingMode = .momentary
         let navSpecs = [("chevron.backward", "menu.back"), ("chevron.forward", "menu.forward"),
@@ -113,11 +113,11 @@ final class TopDeckView: NSVisualEffectView {
         }
         navControl.target = self
         navControl.action = #selector(navClicked(_:))
-        // 长按后退/前进段 → 弹出该方向历史菜单（§3；短按仍走 momentary 单击动作）
+        // Long-pressing back/forward -> pops up that direction's history menu (§3; a short press stays the momentary click action)
         let navLongPress = NSPressGestureRecognizer(target: self, action: #selector(navLongPressed(_:)))
         navLongPress.minimumPressDuration = 0.4
         navControl.addGestureRecognizer(navLongPress)
-        // 左簇：视图三段（square.grid.2x2 / list.bullet / rectangle.split.3x1）
+        // Left cluster: three view segments (square.grid.2x2 / list.bullet / rectangle.split.3x1)
         viewModeControl.segmentCount = 3
         viewModeControl.trackingMode = .selectOne
         let viewSpecs = [("square.grid.2x2", "menu.viewAsIcons"), ("list.bullet", "menu.viewAsList"),
@@ -130,7 +130,7 @@ final class TopDeckView: NSVisualEffectView {
         viewModeControl.target = self
         viewModeControl.action = #selector(viewModeClicked(_:))
 
-        // 右簇：动作四钮（响应链 target=nil 上抛活动窗格 FileListViewController；任务钮定向 ProgressWindowController）
+        // Right cluster: four action buttons (responder chain target=nil up to the active pane's FileListViewController; the tasks button targets ProgressWindowController)
         buildIconButton(airdropButton, symbol: "airdrop", fallback: "dot.radiowaves.left.and.right",
                         tooltipKey: "toolbar.airdrop",
                         action: #selector(FileListViewController.airdropSelected(_:)), target: nil)
@@ -141,22 +141,22 @@ final class TopDeckView: NSVisualEffectView {
                         tooltipKey: "toolbar.tasks",
                         action: #selector(ProgressWindowController.toggleVisible(_:)),
                         target: ProgressWindowController.shared)
-        // 垃圾桶钮语义（v0.19.17，用户报告）：**点击恒为打开废纸篓**，不看选中态。
-        // 为什么不做"有选中就删、没选中就打开"：用户手上几乎总有选中项（截图里就有），
-        // 那样一个想去废纸篓的人会把选中的文件删掉。删除留在 ⌘⌫/右键菜单/拖到本钮上。
+        // Trash button semantics (v0.19.17, user report): **a click always opens the Trash**, regardless of selection.
+        // Why not "delete if something is selected, open otherwise": users almost always have something selected (the screenshot did),
+        // so someone heading for the Trash would delete the selected files. Deletion stays on ⌘⌫/context menu/dragging onto this button.
         buildIconButton(trashButton, symbol: "trash", fallback: nil, tooltipKey: "toolbar.trash",
                         action: #selector(trashClicked), target: self)
-        // 提示语要带「拖进来 = 移到废纸篓」这句用法说明，但**无障碍标签**不该是整句：
-        // buildIconButton 用同一个 key 既当 AX 标签又当 toolTip，旁白会把整句念出来。
+        // The tooltip should include the usage hint "drag here = move to Trash", but the **accessibility label** should not be a whole sentence:
+        // buildIconButton uses one key for both AX label and toolTip, and VoiceOver would read the whole sentence.
         trashButton.toolTip = L10n.t("toolbar.trash.help")
         trashButton.onDropFiles = { [weak self] urls, src in
             self?.deckDelegate?.deckDropOnTrash(urls, from: src)
         }
-        // 清空废纸篓挂在**右键菜单**上（同 Dock 里的废纸篓）：
-        // 不进空白区目录菜单——那份菜单有"恰好 5 项"的断言，加一项会撞它；
-        // 也不做成左键，左键已经是"打开废纸篓"，一个不可逆动作不该和导航共用一次点击。
+        // Empty Trash lives on the **context menu** (like the Trash in the Dock):
+        // not on the blank-space directory menu, which has an "exactly 5 items" assertion that one more item would break;
+        // and not on left click, which is already "open Trash": an irreversible action should not share a click with navigation.
         trashButton.onEmptyTrash = { [weak self] in self?.deckDelegate?.deckEmptyTrash() }
-        // 右簇：布局五段（rectangle 同族；PaneLayout.symbolName 与 §6.1 表一致）
+        // Right cluster: five layout segments (rectangle family; PaneLayout.symbolName matches the §6.1 table)
         layoutControl.segmentCount = PaneLayout.allCases.count
         layoutControl.trackingMode = .selectOne
         for (i, layout) in PaneLayout.allCases.enumerated() {
@@ -168,7 +168,7 @@ final class TopDeckView: NSVisualEffectView {
         layoutControl.target = self
         layoutControl.action = #selector(layoutClicked(_:))
 
-        // A1 左簇：侧栏｜导航｜视图（簇间 8pt + 发丝竖线 = 视觉 16pt 簇距）
+        // A1 left cluster: sidebar | navigation | view (8pt between clusters + hairline = 16pt visual gap)
         let leftStack = NSStackView(views: [
             sidebarButton, hairlineV(), navControl, hairlineV(), viewModeControl,
         ])
@@ -176,7 +176,7 @@ final class TopDeckView: NSVisualEffectView {
         leftStack.alignment = .centerY
         leftStack.spacing = 8
         leftStack.translatesAutoresizingMaskIntoConstraints = false
-        // A1 右簇：动作四钮（内部 4pt）｜布局五段
+        // A1 right cluster: four action buttons (4pt inside) | five layout segments
         let actionsStack = NSStackView(views: [airdropButton, terminalButton, tasksButton, trashButton])
         actionsStack.orientation = .horizontal
         actionsStack.alignment = .centerY
@@ -191,7 +191,7 @@ final class TopDeckView: NSVisualEffectView {
         toolbarRow.addSubview(leftStack)
         toolbarRow.addSubview(rightStack)
 
-        // ── 发丝分隔线 ───────────────────────────────────────────────────
+        // ── Hairline separators ─────────────────────────────────────────────
         let hair1 = hairlineH(), hair2 = hairlineH()
         for v in [tabRow, hair1, toolbarRow, hair2] {
             v.translatesAutoresizingMaskIntoConstraints = false
@@ -200,7 +200,7 @@ final class TopDeckView: NSVisualEffectView {
 
         tabRowLeading = workspaceTabBar.leadingAnchor.constraint(equalTo: tabRow.leadingAnchor)
         NSLayoutConstraint.activate([
-            // 行1
+            // Row 1
             tabRow.topAnchor.constraint(equalTo: topAnchor),
             tabRow.leadingAnchor.constraint(equalTo: leadingAnchor),
             tabRow.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -209,12 +209,12 @@ final class TopDeckView: NSVisualEffectView {
             workspaceTabBar.trailingAnchor.constraint(equalTo: tabRow.trailingAnchor),
             workspaceTabBar.topAnchor.constraint(equalTo: tabRow.topAnchor),
             workspaceTabBar.bottomAnchor.constraint(equalTo: tabRow.bottomAnchor),
-            // 发丝线1
+            // Hairline 1
             hair1.topAnchor.constraint(equalTo: tabRow.bottomAnchor),
             hair1.leadingAnchor.constraint(equalTo: leadingAnchor),
             hair1.trailingAnchor.constraint(equalTo: trailingAnchor),
             hair1.heightAnchor.constraint(equalToConstant: 1),
-            // 行2：左簇顶格 leading，右簇顶格 trailing，中段弹性留白 = 窗口拖动把手
+            // Row 2: left cluster flush with leading, right cluster flush with trailing, flexible middle = window drag handle
             toolbarRow.topAnchor.constraint(equalTo: hair1.bottomAnchor),
             toolbarRow.leadingAnchor.constraint(equalTo: leadingAnchor),
             toolbarRow.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -224,7 +224,7 @@ final class TopDeckView: NSVisualEffectView {
             rightStack.trailingAnchor.constraint(equalTo: toolbarRow.trailingAnchor, constant: -8),
             rightStack.centerYAnchor.constraint(equalTo: toolbarRow.centerYAnchor),
             leftStack.trailingAnchor.constraint(lessThanOrEqualTo: rightStack.leadingAnchor, constant: -8),
-            // 发丝线2（甲板底）
+            // Hairline 2 (deck bottom)
             hair2.topAnchor.constraint(equalTo: toolbarRow.bottomAnchor),
             hair2.leadingAnchor.constraint(equalTo: leadingAnchor),
             hair2.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -233,7 +233,7 @@ final class TopDeckView: NSVisualEffectView {
         ])
     }
 
-    // MARK: 同步（活动窗格/位置/布局变化时由 MainWindowController 回灌）
+    // MARK: Sync (fed back by MainWindowController on active pane/location/layout changes)
 
     func updateWorkspaces(titles: [String], active: Int) {
         workspaceTabBar.update(titles: titles, active: active)
@@ -248,16 +248,16 @@ final class TopDeckView: NSVisualEffectView {
         if layoutControl.selectedSegment != idx { layoutControl.selectedSegment = idx }
     }
 
-    /// 导航段 enabled 反映 canGoBack/Forward/Up
+    /// Navigation segment enabled state reflects canGoBack/Forward/Up
     func syncNav(canBack: Bool, canForward: Bool, canUp: Bool) {
         navControl.setEnabled(canBack, forSegment: 0)
         navControl.setEnabled(canForward, forSegment: 1)
         navControl.setEnabled(canUp, forSegment: 2)
     }
 
-    /// 动作钮校验（FG-1：与原工具栏 autovalidate 等价）：AirDrop 需选中；
-    /// 终端/任务/废纸篓恒可用——垃圾桶钮现在是"打开废纸篓"，跟选中态无关
-    /// （旧版 `trashButton.isEnabled = hasSelection` 让它长期灰着，用户因此认为"没有废纸篓功能"）。
+    /// Action button validation (FG-1: equivalent to the old toolbar autovalidate): AirDrop needs a selection;
+    /// terminal/tasks/trash are always available: the trash button now means "open Trash", unrelated to selection
+    /// (the old `trashButton.isEnabled = hasSelection` kept it gray so long that the user concluded "there is no Trash feature").
     func validateActions(hasSelection: Bool) {
         airdropButton.isEnabled = hasSelection
         terminalButton.isEnabled = true
@@ -265,27 +265,27 @@ final class TopDeckView: NSVisualEffectView {
         trashButton.isEnabled = true
     }
 
-    /// 侧栏折叠态：标签行让位红绿灯（§1）
+    /// Sidebar collapsed state: the tab row gives way to the traffic lights (§1)
     func setSidebarCollapsed(_ collapsed: Bool) {
         tabRowLeading.constant = collapsed ? Self.trafficLightInset : 0
     }
 
-    // MARK: 动作转发
+    // MARK: Action forwarding
 
     @objc private func sidebarClicked() { deckDelegate?.deckToggleSidebar() }
 
     @objc private func trashClicked() { deckDelegate?.deckOpenTrash() }
 
-    // ---- 自测通道（I-62）----
+    // ---- Self-test channel (I-62) ----
     var uiTestTrashButtonEnabled: Bool { trashButton.isEnabled }
     func uiTestClickTrash() { trashButton.performClick(nil) }
-    /// 真实拖放接线：注入接缝证明不了 AppKit 会把拖拽送到这个钮上（要 registerForDraggedTypes 过）
+    /// Real drag wiring: an injection seam cannot prove AppKit will deliver drags to this button (it must have registerForDraggedTypes)
     var uiTestTrashAcceptsFileURLDrags: Bool {
         trashButton.registeredDraggedTypes.contains(.fileURL)
     }
-    /// 垃圾桶钮右键菜单：走 **AppKit 真正调用的那条路** `menu(for:)`，不是直调 buildContextMenu()。
-    /// 第一版直调构建函数——撤掉 `menu(for:)` override 它照样绿，证明的只是"菜单能造出来"，
-    /// 不是"右键真能唤出来"。
+    /// Trash button context menu: goes through **the path AppKit really calls**, `menu(for:)`, not buildContextMenu() directly.
+    /// The first version called the builder directly and stayed green with the `menu(for:)` override removed, proving only "the menu can be built",
+    /// not "a right click really brings it up".
     func uiTestTrashContextMenu() -> NSMenu? {
         guard let ev = NSEvent.mouseEvent(with: .rightMouseDown, location: .zero,
                                           modifierFlags: [],
@@ -294,7 +294,7 @@ final class TopDeckView: NSVisualEffectView {
                                           eventNumber: 0, clickCount: 1, pressure: 1) else { return nil }
         return trashButton.menu(for: ev)
     }
-    /// 走垃圾桶钮真实的投放落地逻辑（pasteboard 可注入，不碰系统拖拽剪贴板）
+    /// Goes through the trash button's real drop landing logic (pasteboard is injectable, the system drag pasteboard is untouched)
     func uiTestDropOnTrash(from pasteboard: NSPasteboard, sourceWindow: NSWindow? = nil) -> Bool {
         trashButton.acceptDrop(from: pasteboard, sourceWindow: sourceWindow)
     }
@@ -308,7 +308,7 @@ final class TopDeckView: NSVisualEffectView {
         }
     }
 
-    /// 长按导航段弹历史菜单：段 0=后退 / 段 1=前进（段 2 上层无历史，忽略）
+    /// Long-pressing a navigation segment pops up the history menu: segment 0 = back / segment 1 = forward (segment 2, up, has no history and is ignored)
     private struct NavHistoryPick { let forward: Bool; let index: Int }
 
     @objc private func navLongPressed(_ gr: NSPressGestureRecognizer) {
@@ -347,7 +347,7 @@ final class TopDeckView: NSVisualEffectView {
         deckDelegate?.deckSetLayout(layouts[sender.selectedSegment])
     }
 
-    // MARK: 窗口拖动 + 双击缩放（自定义标题栏惯例；mouseDownCanMoveWindow=false 以便截获双击）
+    // MARK: Window dragging + double-click zoom (custom title bar convention; mouseDownCanMoveWindow=false so double-clicks can be intercepted)
 
     override var mouseDownCanMoveWindow: Bool { false }
 
@@ -356,21 +356,21 @@ final class TopDeckView: NSVisualEffectView {
         if event.clickCount == 2 {
             performDoubleClickAction(on: window)
         } else {
-            window.performDrag(with: event)  // 系统托管拖动（尊重 Spaces/贴边）
+            window.performDrag(with: event)  // system-managed drag (respects Spaces/edge snapping)
         }
     }
 
-    /// 双击甲板空白 = 系统缩放行为（依系统偏好 AppleActionOnDoubleClick）
+    /// Double-clicking blank deck space = system zoom behavior (per the system preference AppleActionOnDoubleClick)
     private func performDoubleClickAction(on window: NSWindow) {
         let action = UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") ?? "Maximize"
         switch action {
         case "Minimize": window.performMiniaturize(nil)
         case "None": break
-        default: window.performZoom(nil)  // Maximize/Zoom（默认）
+        default: window.performZoom(nil)  // Maximize/Zoom (default)
         }
     }
 
-    // MARK: 工具
+    // MARK: Tools
 
     private func buildIconButton(_ button: NSButton, symbol name: String, fallback: String?,
                                  tooltipKey: String, action: Selector, target: AnyObject?) {
@@ -391,7 +391,7 @@ final class TopDeckView: NSVisualEffectView {
         ])
     }
 
-    /// 簇间发丝竖线（20pt 高，separatorColor）
+    /// Vertical hairline between clusters (20pt tall, separatorColor)
     private func hairlineV() -> NSView {
         let v = NSView()
         v.wantsLayer = true
@@ -404,7 +404,7 @@ final class TopDeckView: NSVisualEffectView {
         return v
     }
 
-    /// 水平发丝线（NSBox separator，系统语义色）
+    /// Horizontal hairline (NSBox separator, system semantic color)
     private func hairlineH() -> NSView {
         let box = NSBox()
         box.boxType = .separator
@@ -412,9 +412,9 @@ final class TopDeckView: NSVisualEffectView {
     }
 }
 
-/// 甲板垃圾桶钮：点击=打开废纸篓（action 由 TopDeckView 接），拖文件进来=移到废纸篓。
-/// 投放形状照抄 BreadcrumbBar.SegmentButton（同一套判卷/高亮/落地口径，不另发明）。
-/// 本层零写型 API——落地一律经 coordinator → OperationKernel（BG-1）。
+/// Deck trash button: click = open Trash (action wired by TopDeckView), dragging files in = move to Trash.
+/// Drop shape copied from BreadcrumbBar.SegmentButton (same volume/highlight/landing rules, nothing newly invented).
+/// This layer has zero write APIs: landings always go through coordinator -> OperationKernel (BG-1).
 @MainActor
 final class TrashDeckButton: NSButton {
     var onDropFiles: (([URL], NSWindow?) -> Void)?
@@ -428,9 +428,9 @@ final class TrashDeckButton: NSButton {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
-    /// 右键菜单：只有一项「清空废纸篓」。构建与点击共用（自测可直接取这份菜单）
+    /// Context menu: a single item, "Empty Trash". Shared by building and clicking (self-tests can fetch this menu directly)
     func buildContextMenu() -> NSMenu {
         let menu = NSMenu()
         let item = menu.addItem(withTitle: L10n.t("menu.emptyTrash"),
@@ -444,7 +444,7 @@ final class TrashDeckButton: NSButton {
 
     @objc private func emptyTrashClicked() { onEmptyTrash?() }
 
-    /// 落地接缝：pasteboard 可注入，自测走私有板（不碰用户真实拖拽剪贴板）
+    /// Landing seam: pasteboard is injectable, self-tests use a private board (the user's real drag pasteboard is untouched)
     @discardableResult
     func acceptDrop(from pasteboard: NSPasteboard, sourceWindow: NSWindow? = nil) -> Bool {
         guard let urls = pasteboard.readObjects(
@@ -482,7 +482,7 @@ final class TrashDeckButton: NSButton {
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
         setDropHighlight(false)
-        // 应用内拖拽时 draggingSource 是发起视图，据此拿到来源窗
+        // For in-app drags draggingSource is the initiating view, which gives the source window
         return acceptDrop(from: sender.draggingPasteboard,
                           sourceWindow: (sender.draggingSource as? NSView)?.window)
     }

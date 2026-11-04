@@ -2,9 +2,9 @@ import AppKit
 import NSpaceContracts
 import ArchiveEngine
 
-/// 右键菜单构造器：按选中态生成菜单；命令按 selector 名路由到各内容视图（列表/图标/分栏）的响应链动作。
-/// target 只需实现同名 @objc 动作即可复用（未实现的动作项自动灰显——诚实禁用）。
-/// 空白区右键 → 目录级菜单（新建/粘贴/显示简介当前目录）。
+/// Context menu builder: generates the menu from the selection; commands route by selector to the responder-chain actions of each content view (list/icon/column).
+/// A target only has to implement @objc actions of the same name to reuse it (unimplemented items gray out automatically: honest disabling).
+/// Right-click on empty space → directory-level menu (New/Paste/Get Info for the current directory).
 @MainActor
 enum FileContextMenuBuilder {
 
@@ -15,7 +15,7 @@ enum FileContextMenuBuilder {
             : itemMenu(selection: selection, directory: directory, target: target)
     }
 
-    // MARK: 目录级菜单（空白区）
+    // MARK: Directory-level menu (empty space)
 
     private static func directoryMenu(directory: URL, target: AnyObject) -> NSMenu {
         let menu = NSMenu()
@@ -33,7 +33,7 @@ enum FileContextMenuBuilder {
         return menu
     }
 
-    // MARK: 条目菜单（有选中）
+    // MARK: Item menu (with a selection)
 
     private static func itemMenu(selection: [FileItem], directory: URL,
                                  target: AnyObject) -> NSMenu {
@@ -57,7 +57,7 @@ enum FileContextMenuBuilder {
             key: "c", mods: [.command, .shift], symbol: "link")
         menu.addItem(.separator())
 
-        // 添加到书签：仅选中含真实目录时出现（FG-1）；action 走响应链到 MainWindowController
+        // Add to Bookmarks: shown only when the selection contains a real directory (FG-1); the action travels the responder chain to MainWindowController
         if selection.contains(where: { $0.isDirectory && !$0.isPackage }) {
             let bm = menu.addItem(withTitle: L10n.t("menu.addBookmark"),
                                   action: #selector(MainWindowController.addSelectionToBookmarks(_:)),
@@ -72,8 +72,8 @@ enum FileContextMenuBuilder {
         }
         add(menu, "menu.duplicate", #selector(FileListViewController.duplicateItems(_:)), target,
             key: "d", mods: .command, symbol: "plus.square.on.square")
-        // 在废纸篓里：「移到废纸篓」没有意义（已经在里面了），换成「放回原处」。
-        // 只在这个位置出现——常驻一个在别处永远灰着的项，就是 I-25 那种永败按钮。
+        // In the Trash, "Move to Trash" is meaningless (already there), so it becomes "Put Back".
+        // Shown only here: a permanent item that is always gray elsewhere would be the same never-working button as I-25.
         if TrashLocation.isInsideTrash(directory) {
             add(menu, "menu.putBack", #selector(FileListViewController.putBackItems(_:)), target,
                 symbol: "arrow.uturn.backward")
@@ -83,12 +83,12 @@ enum FileContextMenuBuilder {
         }
         menu.addItem(.separator())
 
-        // 归档：压缩任意选中 / 解压支持的归档（FG-1 诚实禁用：无支持项则不出"解压"）
+        // Archives: compress any selection / extract supported archives (FG-1 honest disabling: no "Extract" without a supported item)
         addArchiveItems(menu, selection: selection, single: single, target: target)
         menu.addItem(.separator())
 
-        // 条目菜单也带「新建文件夹/文件」：内容铺满列表时根本找不到空白区可右键
-        // （用户报告：「没有留出空白的位置，我没有地方点」）。右键任何一行都能新建。
+        // The item menu also offers New Folder/New File: when content fills the list there is no empty space to right-click
+        // (user report: "there's no blank area left, I have nowhere to click"). Any row can create new items.
         add(menu, "menu.newFolder", #selector(FileListViewController.newFolderHere(_:)), target,
             key: "N", mods: [.command, .shift], symbol: "folder.badge.plus")
         add(menu, "menu.newFile", #selector(FileListViewController.newFileHere(_:)), target,
@@ -105,7 +105,7 @@ enum FileContextMenuBuilder {
         return menu
     }
 
-    // MARK: 打开方式子菜单（列 App + 图标 + 默认项标注 + 其他…）
+    // MARK: Open With submenu (lists apps + icons + default marker + Other…)
 
     private static func openWithSubmenu(for url: URL, target: AnyObject) -> NSMenuItem {
         let item = NSMenuItem(title: L10n.t("menu.openWith"), action: nil, keyEquivalent: "")
@@ -137,7 +137,7 @@ enum FileContextMenuBuilder {
         return item
     }
 
-    // MARK: 归档项（压缩标题随选中数/名动态；解压仅当选中含支持的归档时出现）
+    // MARK: Archive items (compress title follows the selection count/name; extract appears only when the selection has a supported archive)
 
     private static func addArchiveItems(_ menu: NSMenu, selection: [FileItem],
                                         single: FileItem?, target: AnyObject) {
@@ -158,7 +158,7 @@ enum FileContextMenuBuilder {
             symbol: "arrow.up.bin.fill")
     }
 
-    // MARK: 构造工具
+    // MARK: Construction helpers
 
     @discardableResult
     private static func add(_ menu: NSMenu, _ key: String, _ action: Selector,

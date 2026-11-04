@@ -1,1245 +1,362 @@
 # Changelog
 
-本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。0.y.z 为开发期版本：每完成一个里程碑 bump minor 并打 git tag。
+> Entries before the fork were condensed from the upstream changelog. Every version listed here is an upstream release; the original detail is in the git history. The self-updater that some entries describe was removed in the fork.
+
+This project follows [Semantic Versioning](https://semver.org/). 0.y.z are development versions: each finished milestone bumps the minor version and gets a git tag.
 
 ## [0.19.27] - 2026-09-14
 
-### 修复：带空格的搜索词找不到文件（不是大小写问题）
-
-用户报告：在 `~/.claude` 里搜 `override md` 显示「未找到」，而目录里就摆着 `OVERRIDE.md`，
-并判断是「搜索不支持大小写归一化」。
-
-**实测把这个诊断推翻了**：两条通道本来就大小写不敏感（通道B 用
-`localizedCaseInsensitiveContains`、通道A 用 Spotlight 的 `CONTAINS[cd]`），
-单独搜 `override` 一直能命中 `OVERRIDE.md`。真凶是那个**空格**——整串 `"override md"`
-被当作一个连续子串去找，而文件名里那个位置是点号。`md override` 换个词序同样找不到，
-正是这一条的佐证。
-
-现在查询按空白切词，**每个词都要命中**（AND，顺序无关，大小写/变音不敏感）。
-两条通道共用 `QueryTerms` 这一个纯函数口径：通道B 逐名比对，通道A 把每个词各编一条
-`CONTAINS[cd]` 再 AND 起来。
-
-**顺带修掉两个会当场出事的边界：**
-
-- `NSMetadataQuery` **拒绝只含一个子谓词的复合谓词**（既有注释记过 OR 的同款限制，
-  AND 一样）。包一个 1 元素的 AND 会抛 `NSInvalidArgumentException` 直接崩掉进程——
-  而单词查询正是最常见的用法。这条是新写的单测跑出来的，不是想出来的。
-- 入口守卫从「原串非空」改成「**切词后非空**」：全是空白的查询切出零个词，
-  而 `andPredicateWithSubpredicates([])` 是**恒真**谓词，会把整块磁盘当命中推给主线程。
-
-### 搜索结果排序：大小写与查询一致的排前面
-
-用户要求「优先展示匹配大小写的，然后后面是不匹配大小写的，但是字符一样的」。
-
-匹配质量打分原先把查询和文件名双双 `lowercased()`，大小写信息被彻底抹平。
-现在每个词额外判一次「能否在名字里**原样**找到」，一致则加 50 分。
-
-加成上限 50，**小于任何两档之间的间距**（最小间距 200）：它只在同一档里排先后，
-绝不让一个弱匹配因为大小写碰巧一致就越过强匹配。有一条专门的断言钉住这个不变量。
-
-打分层也必须跟着切词——否则会出现「引擎找得到、排序判 0 分沉到最底下」的分裂，
-用户看到的仍然像是没搜到（整串 `"override md"` 既不是 `override.md` 的子串、
-也不是它的子序列，原实现在这里恒返回 nil）。
-
-### 测试
-
-- 单测 138 → **147**。搜索引擎侧：带空格查询跨标点命中、词序无关、AND 不是 OR、
-  纯空白查询立即收尾、`QueryTerms` 纯函数；排序侧：多词能算出分、任一词不沾边即 nil、
-  大小写一致者更高、**加成不许越档**。
-- ui-smoke 240 → **242**：I-74 两条，验面板这一层真按大小写优先排、且带空格的查询
-  在排序里同样有效。
-- 三处修复各自反证：撤掉分词 → 两条搜索断言红；撤掉大小写加成 → 排序断言红；
-  撤掉打分层切词 → 多词打分断言红。
-- **一处夹具设计错误，被自己的断言抓到**：第一版把 `NSOVERRIDE.md` / `nsoverride.md` /
-  `NsOverride.md` 建在同一目录里想验大小写——APFS 默认大小写不敏感，这三个是**同一个文件**，
-  写三次只剩一个。大小写排序改到纯函数层验，文件系统上只验分词。
+- Search splits queries on whitespace and every term must match (AND, any order, case- and diacritic-insensitive); both channels share `QueryTerms`. `override md` missed `OVERRIDE.md` because of the space, not because of case.
+- Boundary guards: `NSMetadataQuery` crashes on a compound predicate with one subpredicate, so a single term is not wrapped in AND; a whitespace-only query ends at once, because an empty AND would match the whole disk.
+- Ranking splits terms too, and a term found in its exact case adds 50 points. That is below the 200-point minimum gap between tiers, so case only reorders within a tier.
+- I-74. Tests: 147 unit, 242 ui-smoke.
 
 ## [0.19.26] - 2026-09-13
 
-### 移除：窗格内多标签（M13「每窗格多标签」退役）
-
-用户原话「删掉就行，这个目前设计不是很好，删掉这个定义，cmd+t 来唤起新工作区就行，
-这样还能方便关闭」。
-
-**为什么它该走**：`PRODUCT.md` 的产品定位从头到尾只认「窗口级工作区标签」，
-窗格标签是 `spec.md` 单方面写进核心闭环的实现层概念——两份文档一直在打架。
-而它的实际处境更糟：`showPaneTabBar` 默认关，标签栏高度 0，所以建出来的标签**用户看不见**；
-偏偏外部打开（微信 / Chrome / iTerm2 的「在 Finder 中打开」）一直往里塞标签，
-用户真实会话里一个窗格堆到了 5 个——看不见就关不掉、也回不去。
-那不是一层功能，是一个隐形的泄漏点。
-
-**动了什么：**
-
-- 窗格从「一组标签 + 活动下标」变成**一个浏览上下文**。`activeTab` 这个访问器名保留
-  （全仓两百余处调用点因此一行没动），底下的数组、`activeTabIndex`、
-  `openNewTab` / `closeTab` / `switchTab` 全部删除。
-- **外部打开改落工作区标签**：`AppDelegate` 从 `pane.openNewTab(at:)` 改成
-  `wc.openWorkspaceTab(at:)` —— 复制当前布局、活动窗格落到目标目录。
-  顶部标签条常显、带关闭钮，这正是用户要的「方便关闭」。
-- ⌥⌘T / ⌥⌘W / 「显示隐藏窗格标签栏」三个菜单项、三条快捷键注册、
-  `Preferences.paneTabLimit` 及其设置项一并退役。
-- `spec.md` 三处核心条目（核心体验闭环、验收清单、存储契约）与北极星表述同步到工作区口径；
-  `M23-feature-matrix.md` 删去三行。
-
-### 存储契约变更 + 一次性迁移
-
-`SessionPane` 从 `tabs: [SessionTab] + activeTabIndex` 变成 `tab: SessionTab`。
-旧档案在解码那一次迁移：**只留当时的活动标签**，其余丢弃。
-
-活动标签而不是第一个——用户真实会话里活动下标普遍不是 0（外部打开一路往后堆），
-取错就等于把他正在看的目录换成很久以前那个。不展开成多个工作区：
-最多的一个窗格有 5 个标签，全展开会炸出二十几个工作区，那不是「删掉这层」该有的结果。
-
-### 测试
-
-- 单测 135 → **138**：迁移留活动标签（连排序/隐藏/视图模式一并带过来）、
-  越界下标不让整份会话解码失败（那等于所有窗口一起丢）、迁移后写回只出现新结构。
-  反证：把「取活动标签」改成「取第一个」，两条测试 7 处断言报红。
-- ui-smoke 243 → **238**（净减 5：删去 6 条窗格标签断言、新增 1 条退役证明）。
-  - I-52 / I-60 改验新落点，并**加了路径这一维**——只数「工作区 +1」验不出它开在**哪儿**，
-    而落错目录正是这次改动最可能出的错。反证：把外部打开改成原地导航，两条都红。
-  - I-71 从「⌥⌘T 后标签栏可见」改成**退役证明**：⌥⌘T / ⌥⌘W 不再绑任何菜单项。
-    只删旧断言不留证据的话，哪天这两个键被重新接上也没人会知道。
-
-### 对抗审查抓到的三条回归（同一根因族，已修）
-
-落点从「窗格标签」换成「工作区标签」带来一个没预料到的代价：工作区标签**重得多**——
-它复制整套布局，而 `PaneGridController.restoreSession` 是无条件重建每个窗格的。
-
-1. **外部打开会把其余窗格一起重建**，连 `BrowserState` 换新：切回去 ⌘[ 后退失灵、
-   选中消失、列表滚回顶部。修法是在 `restoreSession` 里加「目标态 == 现态即跳过」——
-   `SessionPane` 本就是 `Equatable`，而「复制当前工作区」造的快照里非活动窗格逐字段相同，
-   这道判断恰好只放过没被改路径的窗格。顺带 `openWorkspaceTab` 改为直接复用
-   `pane.sessionPane()` 造快照，避免两处字段漂开让那道跳过悄悄失效。
-2. **到工作区上限时，别的 App 点一次「在访达中显示」就顶掉用户最老的工作区**。
-   外部打开改走 `allowEvictingOldest: false`：到顶就就地导航，不新建也不驱逐。
-3. **一次 reveal N 个文件 = N 个工作区**（四宫格下 20 次窗格重建）。
-   `openFileURLs` 改为先按父目录归并，落点数从「文件数」降回「目录数」。
-
-新增 I-73 三条断言守住它们：非活动窗格选中保住、同目录多文件只开一个工作区**且目标文件被选中**、
-到上限时最老工作区标题不变。第二条同时补上了「外部打开**文件**」这条日常路径的覆盖——
-此前 I-52/I-60 都只开目录，而用户天天点的是文件。
-
-另清理审查点出的残留：死代码 `displayName(_:)`、`setPaneTabBarsVisible` 的孤立文档注释、
-`spec.md` §3.2 状态机里已删除的「标签隐藏/标签显示」转移、`DESIGN.md` 里仍写着窗格含标签栏
-并引用死键 `showPaneTabBar`、以及一批仍说「新标签」的设置文案与代码注释。
-I-71 的退役证明改为**只查不执行**：它断言的是「这个键什么都没绑」，而真派发一次，
-等于在自测里执行一个我们并不知道是什么的命令。
+- Removed per-pane tabs (M13 pane tabs retired). They were invisible by default while external opens kept piling into them, and `PRODUCT.md` only ever defined window-level workspace tabs. A pane is now one browsing context; the `activeTab` accessor name stays, and ⌥⌘T, ⌥⌘W, the pane tab bar menu item and `paneTabLimit` are gone.
+- External opens land in a workspace tab via `openWorkspaceTab`. They never evict the oldest workspace (at the limit they navigate in place), and a multi-file reveal is grouped by parent folder.
+- Storage: `SessionPane` went from `tabs + activeTabIndex` to `tab`. Old sessions migrate once, keeping only the active tab (not the first, and not expanded into workspaces); an out-of-range index does not fail the session decode.
+- `restoreSession` skips panes whose target state equals their current state, so history, selection and scroll survive. I-71 is now a retirement proof that ⌥⌘T and ⌥⌘W are unbound; I-73 covers the three review regressions.
 
 ## [0.19.25] - 2026-09-13
 
-### 修复：⌘T 仍然不继承排序（上一版修错了键）
-
-用户原话「还是没有解决，我 command+t 了还是按照名称排序，而不是按照修改日期排序，
-**你得自己通过测试才行**」。
-
-上一版（0.19.24）改的是 `PaneViewController.openNewTab`，那是 **⌥⌘T** 走的路；
-用户按的 **⌘T** 绑的是 `MainWindowController.newWorkspaceTab`，两条路毫不相干。
-测试也只验了改过的那条，于是全绿却一点没碰到用户按的那个键。
-
-`newWorkspaceTab` 旧实现只播种**一个**窗格、只抄路径，排序/隐藏/视图模式全部回落到
-全局默认偏好（从未设过 → 恒为「名称」升序）；其余窗格由窗格池的旧标签补位——
-这正好解释了用户看到的「右窗格记住了修改日期、左窗格没有」。
-
-现在 ⌘T = **复制当前工作区**：同一布局，每个可见窗格各带一个新标签，
-继承该窗格活动标签的路径 / 排序 / 隐藏 / 视图模式（同 QSpace）。
-
-**测试从用户按的那个键进**：在真实已装配的主菜单里按 keyEquivalent 找到菜单项，
-再把它的 action 沿被测窗口的响应链派发。不用 `NSApp.performKeyEquivalent`——
-那条路沿 **key 窗口**找目标，而自测跑在用户正在用的机器上，App 常常不是活动应用、
-keyWindow 为 nil，实测「键被接住=true 但被测窗口纹丝不动」。
-
-### 修复：⌥⌘T 新建标签「没反应」
-
-两个独立原因，缺一条都还是没反应：
-
-1. **标签栏默认隐藏**，新标签建出来了却落在 0pt 高的栏里——一个看不见的标签就是 bug。
-   现在偏好只决定单标签时是否显示，**多个标签一律强制可见**。
-2. **响应链够不到窗格**。焦点在侧栏、地址栏、甲板时 firstResponder 不在任何窗格里，
-   `PaneViewController.newTab` 永远收不到。现在 `MainWindowController` 兜底收口到活动窗格。
-
-### 修复：顶部标签条点文字不切换、可点面积太小
-
-用户原话「顶部 tab 的可点击面积太小了，还有鼠标点击无法切换，只有快捷键可以切换」。
-
-真机 hitTest 实测：胶囊**正中**的原始命中返回的是 **NSScrollView**，不是胶囊也不是标签。
-那个滚动视图在全尺寸标题栏窗口里带自动内缩，命中几何与画出来的胶囊错位
-（关掉 `automaticallyAdjustsContentInsets` 后原始命中变成 NSStackView，仍到不了胶囊）。
-`NSScrollView.mouseDown` 什么都不做，点击就死在那——只有快捷键能切换。
-
-现在标签栏按 x 直接把命中派给胶囊，绕过那层几何；上下 6pt 死区一并消除。
-另加 `acceptsFirstMouse`：从别的 App 点回来的第一下就切换，不用点两次。
-
-**一处被证伪的假设留在注释里**：我一度认定是胶囊里的 NSTextField 吞掉了点击，
-还写了探针"证实"它——真机 hitTest 实测标签是穿透的，那条根因不成立，对应改动已撤。
-
-### 修复：清倒废纸篓的确认框，回车会真的清空
-
-`alert.window.defaultButtonCell = 取消按钮.cell` 压根不成立：那是绘制期的旧 API，
-不会把 `"\r"` 从「清空」搬到「取消」上。sheet 是 key 窗口时 AppKit 顺手同步一次，
-所以之前在前台跑绿过；App 非活动时同步不发生，默认键仍在「清空」上——
-**回车真的会把废纸篓清空**。这不是断言读不到，是安全不变量当时就不成立。
-
-现在把「取消」放在第一按钮位。实测键位（不是推测）：AppKit 按**标题**认出「取消」
-并给它 Escape，这条规则压过「第一按钮拿 Return」——于是回车不绑任何按钮、Esc 取消。
-刻意保持这样：一个按钮只能绑一个键，Esc 是取消弹框的通用手势，
-回车在破坏性弹框里本就该无响应。
-
-反证读数直接印证了缺陷：撤掉修复后 `已关闭=true`（回车关掉了弹框），
-而修复后 `发出回车=true 已关闭=false 三项仍在=true`。
-
-### 测试
-
-- ui-smoke 239 → **243**：I-70（⌘T 复制工作区，双栏两侧设成**不同**的非默认排序，
-  确保单靠一个全局默认抄不出这两组值）、I-71（⌥⌘T 后标签栏真可见、栏高 22）、
-  I-72（点文字即切换、行顶缘可点、接受第一下）。
-- I-63 / I-64 两条的判据从 `defaultButtonCell` 改为**按钮自己的 keyEquivalent**，
-  并同时要求「清空」身上没有回车——只证取消有、不证清空没有，两个按钮同时绑回车照样绿。
-- **修掉一处仪器脆弱**：I-54 三轮抖红一次。根因是字段编辑器异步装配，
-  原来只 sleep 30ms 就取 `currentEditor()`，拿不到时整块 keyDown 被静默跳过——
-  路径压根没敲进去，断言却只报「选中数=0」。改成轮询等就绪并把它写进读数。
+- ⌘T now duplicates the current workspace: same layout, and each visible pane inherits path, sort, hidden-files and view mode (the previous fix had changed the ⌥⌘T path instead). Tests enter through the real menu item (I-70).
+- Tabs became visible whenever a pane had several, and the pane tab commands fell back to the active pane when focus was outside any pane (I-71).
+- Workspace tab bar: a click on the text did nothing because the hit landed on the `NSScrollView`. The bar now dispatches hits by x, removes the 6pt dead bands, and accepts first mouse (I-72).
+- Empty Trash confirmation: Return really emptied the Trash when the app was inactive. Cancel is now the first button, which gets Escape, so Return is bound to nothing (I-63, I-64).
 
 ## [0.19.24] - 2026-09-13
 
-### 修复：⌘T 新标签不继承当前标签的排序
-
-用户原话「每次 new tab 的时候双列只有右侧的那一列是记忆了按照修改日期排序，左边的没变」。
-
-真因：新标签一律回落到**全局默认偏好** `Preferences.defaultSortKey`（从未设过 → 恒为「名称」升序），
-**不继承派生它的那个标签**。右窗格看起来"记住了"只是因为那边没按过 ⌘T——它是会话恢复出来的旧标签。
-会话文件里同一窗格十几个标签全是手动改出来的 `dateModified/desc`，就是这条缺口的痕迹。
-
-现在新标签继承当前标签的**排序 / 显示隐藏 / 视图模式**三项（同 QSpace）。
-模板必须在「达标签上限先关最老」之前取——被关掉的可能正是活动标签本身。
-无当前标签（窗格初建、会话恢复）仍走全局默认。
-
-### 测试
-
-- ui-smoke 236 → **239**：I-69 两条——新标签三项都继承、且列头指示器在新标签上真同步
-  （I-58 的反向同步链要真跑到，不只是 model 字段对了）。
-- **测试自己的一处假维度，反证时抓到**：隐藏那一维第一版写死 `true`，而机器上「默认显示隐藏文件」
-  本来就开着，撤掉继承它照样 `true`——那一维恒真、验不出继承。改成取**全局默认的反**，
-  三维各自反证：`name/asc`、`隐藏=true≠源的 false`、`list`。
+- New tabs inherit sort, hidden-files and view mode from the current tab instead of the global default; the template is taken before the tab limit closes the oldest tab (I-69).
 
 ## [0.19.23] - 2026-09-11
 
-### 修复：侧栏点一次不跳，得先点别的再点回来
-
-用户原话「点了左侧跳转到下载了，但是他没跳转，我必须先点 project 文件夹然后他跳转到
-project 之后再点下载，他才有反应」。
-
-**两个独立缺陷，缺一条都还是不跳：**
-
-1. **侧栏高亮根本不跟随窗格**。它只是"你上次点了谁"——用面包屑、双击、后退前进换了目录之后，
-   高亮一直指着旧位置。既在撒谎（截图里高亮着「下载」，内容区却在 `xwechat_files`），
-   也让"再点它一次"变成无效操作。现在 `onActiveLocationChange` 同步高亮，
-   当前目录不在书签里就**清空高亮**，不留旧的冒充"你在这儿"。
-2. **没有点击驱动的导航路径**。导航只挂在 `outlineViewSelectionDidChange` 上，
-   而点**已经选中**的那一行 selection 不变 → 这个回调根本不触发。
-   现在补上 `outline.target/action`，点击无条件走一次导航；
-   选中真变过的点击由 `selectionDidChange` 处理，用一个标志去重，不重复导航
-   （AppKit 顺序：选中在 mouseDown 追踪期变化，action 在 mouseUp 发出）。
-
-### 测试
-
-- ui-smoke 233 → **236**：I-68 三条——换目录后高亮不再指旧位置、**点已高亮的行仍然跳转**、
-  停在书签目录时高亮指向它（并验 `outline.action/target` 真接上了）。
-- 反证一次撤两处得 `FAIL=3`，读数正是用户描述的症状：`当前高亮=Downloads`（撒谎的旧高亮）、
-  `再点后到达=false`（点了没反应）。
-
-### 过程中自己踩的两个坑，都由新断言当场抓到
-
-- **合成 mouseDown 把自测挂死**。第一版探针用 `outline.mouseDown(with:)` 去"走真实链"，
-  但 NSOutlineView 的 mouseDown 会开鼠标追踪循环，headless 下等不到 mouseUp 永不返回——
-  连主线程上的 180s 看门狗都一起被饿死，整个自测卡住不报错。
-  改成可测接缝 `handleClick(row:)`，另加一条断言证明 `action/target` 真的接上了
-  （接缝测不到接线，那条洞得单独补）。
-- **程序化同步高亮会吞掉下一次点击**。去重标志 `selectionChangedInThisClick` 第一版写在
-  suppress 守卫**之前**，于是 `syncSelection` 也会把它置位，紧接着那次真实点击被去重逻辑吞掉。
-  而真实 App 每次换目录都同步一次——**用户报的 bug 会原样活下来**。I-68 当场红，
-  把置位移到守卫之后。
+- Sidebar highlight now follows the pane and clears when the current folder is not bookmarked, instead of showing a stale location.
+- Clicking an already selected sidebar row now navigates: `outline.target/action` was added, with a flag to avoid double navigation (I-68). A self-test seam `handleClick(row:)` replaces synthetic `mouseDown`, which hung the self-test.
 
 ## [0.19.22] - 2026-09-08
 
-三条用户报告。
-
-### 新增：冲突面板缺「两者保留」
-
-用户原话「只有合并、取消等，但是没有加（1）（2）这种让他改名然后解决冲突」。
-
-引擎侧 `.keepBoth` **早就实现了**（含批内撞名去重：两条同名源不会都算出 `a 2` 撞车），
-`ConflictDecision` 里也一直有这个 case——**旧版只是没给按钮**。现在三按钮变四按钮
-（取消/合并/两者保留/替换），命名口径沿用既有的 `keepBothName`：`文件 2.txt`。
-「合并」只对文件夹可用，「两者保留」对文件和文件夹都可用（改名共存两者都成立）。
-
-### 修复：⌘C 之后选中框消失
-
-用户原话「其他操作不应该影响选中状态，除非选中的文件消失，比如剪切的时候」。
-
-根因：`redraw()` 用的是 `tableView.reloadData()`，而 **`reloadData()` 会清空选中**。
-`applySnapshot` 有一整套从 `selectionURLCache` 还原选中的逻辑，`redraw()` 一条都没走。
-而"重绘"语义里行根本没变（它只是把剪切项灰显），选中就不该变。
-改成 `reloadData(forRowIndexes:columnIndexes:)`——按行/列重载会保留选中。列表与分栏视图同修。
-
-剪切也一样：它只灰显、没删任何东西，所以选中同样必须留着。
-
-### 变更：分组头改成印在背景条上，取消折叠
-
-用户原话「应该像 qspace 一样的分组，是直接印在背景栏中的分组，而不是像现在这样是可伸缩的」。
-
-- 组头去掉折叠三角，加浅底色，成为一条**印在背景上的标题条**。
-- **折叠能力整块拿掉**（不是留个恒空集合）：一个长得像按钮却什么都不做的箭头，
-  比没有箭头更糟——它在承诺一件做不到的事。
-- **列表与图标视图一起改**，不留"一半可折一半不可折"的分裂状态。
-- 组头行不再吃单击去切折叠，但仍然不可选（否则单击会把选中跳到组头下面那一行）。
-- 「仅显示此组 / 显示全部组」的**组过滤没有取消**——那是另一件事，右键仍在。
-
-这换掉了两条既有断言（`M26 折叠首组项消失其他不动`、`M26v2 图标视图折叠首组`）。
-新断言不是"没崩"，而是验真实效果：点组头后行数/项行数/选中三者一个不变，且组头单元格
-真有底色（`layer.backgroundColor.alpha > 0.01`）、图标组头**本类没有覆写 mouseDown**
-（判"有没有这个方法"没用，NSView 本来就有）。
-
-### 测试
-
-- ui-smoke 230 → **233**：I-67 两条（复制/剪切后选中不丢，多选 + 直查 `tableView.selectedRowIndexes`
-  而非任何缓存）、M27 加一条（文件冲突「两者保留」可用）。
-- 一次撤三处反证得 `FAIL=5`，读数正是预测的形状：`复制后 2→0`（reloadData 清掉选中）、
-  `可点=false`、`有底色=false`。
-
-### 修复（测试稳定性）：`I-63 清倒确认回车只取消` 的抖动
-
-这条是另一个会话写的，走真门 6 轮红 2 次。诊断出来是 `获焦=false → 已关闭=false`：
-合成的回车在 App 非活动时投不进去（别的 App、或并发跑起来的另一个 NSpace 实例抢了焦点）。
-加 `NSApp.activate` 之后 3 轮又红 2 次，说明激活本身也不可靠。
-
-**门槛重设在真不变量上**：保证"回车删不掉"的机制是**默认按钮 = 取消**，
-那件事不需要 key window 就能验。现在门槛 = 弹框真出现 + 默认按钮是取消 + 文件一个没少；
-「回车已投进去并关掉弹框」只在 App 真的活动时才要求，否则只作诊断输出。
-真门四轮全绿；反证撤掉 `defaultButtonCell = 取消` 那一行，得 `默认按钮是取消=false`。
+- Conflict panel gains Keep Both, using the existing `keepBothName` naming (`file 2.txt`); it works for files and folders, while Merge stays folders only (M27).
+- ⌘C and cut no longer clear the selection: `redraw()` now reloads by row and column instead of calling `reloadData()` (I-67).
+- Group headers became a tinted title strip printed on the background, like QSpace. Collapsing was removed from list and icon views, since an arrow that does nothing is worse than none; group filtering stays.
+- I-63 flake: the gate is now the real invariant (Cancel is the default and no file is lost); Return delivery is only required when the app is active.
 
 ## [0.19.21] - 2026-09-08
 
-五条用户报告。
-
-### 新增：⌘V 把剪贴板内容粘成新文件
-
-QSpace 能做，NSpace 旧版直接 `NSSound.beep()`——从浏览器或截图复制来的东西在这儿完全落不了地。
-
-- `OperationSpec` 加 `contents: Data?`（纯附加、带默认值，既有调用点零改动）。展示层不许自己写盘
-  （BG-1），内容随 `newFile` Command 交给内核，由 LocalOps 落地。
-- **图片优先于文本**：浏览器复制图片时剪贴板里**同时**有 PNG 和一段 HTML 文本，文本优先会让用户
-  拿到一个 `.txt` 而不是图片。顺序即优先级：PNG → TIFF → PDF → RTF → 纯文本。
-- 重名在**扩展名之前**加序号：`粘贴的文本 2.txt`，不是 `粘贴的文本.txt 2`。
-  不带内容时命名口径一分不变（既有 newFile 断言不受影响）。
-- 空剪贴板/空字符串不造文件（否则会产出一个空 `.txt` 骗人），给一句诚实吐司。
-
-### 修复：内容铺满列表时没有空白处可右键
-
-用户原话「没有留出空白的位置，我没有地方点」。两处都做：
-
-- **条目右键菜单补「新建文件」**（旧版只有「新建文件夹」）——右键任何一行都能新建。
-- **列表底部恒留 40pt 可右键的空白**：走 `scrollView.contentInsets` 而不是加假空行——
-  加假行会污染表的数据源，行数、选中、分组计数全要跟着说谎。那条带子落在 clip view 上，
-  由新的 `BlankAreaScrollView.menu(for:)` 出目录级菜单。
-
-因此空白区菜单从 5 项变 6 项，两处既有断言同步更新（这是用户要求的规格变更，不是绕过）。
-
-### 新增：新建文件的快捷键
-
-`⌥⌘N`（新建文件夹是 `⇧⌘N`）。同时补进「文件」菜单——旧版只有新建文件夹。
-
-### 修复：单击已选中项不触发重命名，只有 Enter 能
-
-按用户明示的语义：**选中之后左键单击 = 重命名，双击 = 进入**。
-
-实现要点：必须**等满一个双击间隔**再动手，否则用户想双击进入时会先看到重命名框闪一下。
-待触发的重命名带 token，被双击 / 键盘 / 右键 / 选中变更中任一打断即作废。
-谓词是纯函数，只有「恰好单选 + 点在那个已选中的行 + 无修饰键 + 单击 + 非组头」为真——
-多选那一手势归 I-43 的「抢先收敛选区」，收敛本身就是一次选中变更，紧接着弹重命名框很突兀。
-废纸篓里不给改名（改了也只是改废纸篓里那份）。
-
-### 新增：设置项搜索框
-
-顶部搜索框 + 结果列表，点结果 → 切到对应页签 + 滚到该控件 + 闪一层强调色描边。
-
-索引**从已装配的视图树现取**，不要求每页额外注册：手写一张「(标题键, 页签)」表会和页面漂——
-加了一项忘了登记，搜索就搜不到，而且没有任何东西会报红。从渲染出来的控件反查，
-索引永远等于界面本身。实测索引到 **215 项**。
-
-### 测试
-
-- 单测 150 → **153**：newFile 带内容写入、重名在扩展名前去重、不带内容时命名不变。
-- ui-smoke 226 → **230**：I-65 六条（剪贴板推导优先级、⌘V 真落地、单击重命名谓词六种情形、
-  底部留白可右键、新建文件快捷键不冲突）+ I-66 四条（索引建起、输入即出结果、
-  点结果真跳页、清空后收起）。
-- 全部经反证，一次撤四处得 `FAIL=3`。
-- **又抓到一处我自己的假绿**：「新建文件有快捷键」第一版写 `!display.isEmpty`——
-  `KeyBindings.display` 对未绑定返回的是破折号「—」**不是空串**，把默认绑定抽掉照样绿。
-  改判 `binding(id).key` 非空，反证得 `新建文件=— 真有键=false`。
-- I-66 的跳转断言先故意切到别的页再点结果，否则「本来就在那一页」会真空通过；
-  搜索词取索引里真实存在的一条的前缀，不写死中文词（文案改了该红，但不该因为我猜错词而红）。
-
-### 说明
-
-本轮开始时发现 `UISelfTest.swift` 已被**另一个会话**重构（`run()` 拆成具名场景函数）并提交了
-「废纸篓内联清倒按钮」（`4caacb7`，含一条比我原先更强的 I-64——真开确认框按回车验它只取消）。
-已确认归属、未回退任何一行，本轮新场景按新的具名函数约定接入。
+- ⌘V pastes clipboard content as a new file. Order is PNG, TIFF, PDF, RTF, plain text; a counter goes before the extension; an empty clipboard makes no file. `OperationSpec.contents` carries the data so the UI does not write to disk (BG-1, I-65).
+- Row menus gain New File, and lists keep 40pt of right-clickable blank space through `contentInsets`, not fake rows. New File is bound to ⌥⌘N.
+- Clicking the selected row renames after a double-click interval; double-click, keyboard, right-click or a selection change cancels it. Renaming is not offered in the Trash.
+- Settings search: the index is read from the assembled view tree (215 items), so it cannot drift from the UI (I-66).
 
 ## [0.19.20] - 2026-09-08
 
-### 废纸篓操作
-
-- 点击甲板垃圾桶进入废纸篓后，地址栏右端直接显示「清倒」按钮，不必寻找右键菜单。
-- 离开废纸篓根、进入其子目录或编辑地址时收起按钮，并归还占位宽度；退出编辑后恢复。
-- 清倒使用所属窗口的原生确认框，默认「取消」。永久删除执行入口收为私有，只由确认结果触发。
-- 地址编辑与自测共用同一条入口，移除自测中「只返回 true、并未点击按钮」的假点击。
-
-### 验证与构建
-
-- 清倒夹具包含普通文件、隐藏文件和非空目录，走真实确认按钮到内核删除，保留废纸篓目录本身。
-- 回车取消通过向真实弹框发送键盘事件验证，不用 keyEquivalent 属性代替行为。
-- 放回原处经真实条目右键菜单执行，验证原路径与文件内容；来源仍以 NSpace 自己的台账为准。
-- 真实废纸篓上的清倒验证只点击取消，核对项目清单不变；子目录夹具自建、放回并清理，不依赖用户数据。
-- 将 2300 多行的异步自测拆为独立场景，保留执行顺序。受控 release 构建用时 106 → 61 秒，
-  单编译进程峰值 RSS 约 3.9 → 1.1 GiB；这是同机两轮样本，不是干净构建对照。本轮没有复现先前报告的 30GB。
-- 新增 NSPACE_UITEST_ONLY=trash 专项入口，完整 ui-smoke 仍强制校验全部废纸篓断言。
-- 本轮实测：132 个单测、19 个套件通过；完整 UI 回归 220 PASS / 0 FAIL；pod-lint 与全量 grid-lint 通过。
+- In the Trash root, the address bar shows an inline Empty button that hides on leaving the root or while editing the path. It uses a native confirmation defaulting to Cancel, and permanent deletion is reachable only from that result.
+- `UISelfTest` was split from a 2300-line async function into named scenarios in the same order, cutting a controlled release build from 106 to 61 seconds (two samples on one machine, not clean-build figures).
+- Added the `NSPACE_UITEST_ONLY=trash` focused entry. Tests on the real Trash only click Cancel; 132 unit tests and 220 ui-smoke assertions pass.
 
 ## [0.19.19] - 2026-09-07
 
-上一版列进「仍未做」的两条，用户明示要做，都做了。
-
-### 新增：清空废纸篓（不可逆）
-
-`OperationSpec.Kind` 新增 `.delete`，**另起一个胶囊 `Eraser`** 承接它，而不是往 LocalOps
-那个已经在跑的成熟节点的 switch 里加分支——永久删除的爆炸半径和其余本地操作不在一个量级，
-它该有自己的边界、自己的守卫、自己的自证。
-
-**围栏根写进契约,不写进注释**：`.delete` 必须带 `destination` 作为围栏根，每个 source
-都要落在围栏之内，否则**整批拒绝**（不做"删一半"）；围栏自身也不许被删。
-撤掉这道守卫的反证很硬：另一个临时目录里的文件**也被真删了**——那正是它挡的东西。
-`/tmp/fence-evil` 这种前缀相似的路径、以及 `..` 穿越写法，都在测试里逐一钉过。
-
-入口在**垃圾桶钮的右键菜单**（同 Dock 里的废纸篓）：
-- 不进空白区目录菜单——那份菜单有「恰好 5 项」的断言;
-- 也不做成左键——左键已经是「打开废纸篓」，一个不可逆动作不该和导航共用一次点击。
-- 确认弹窗：破坏性按钮标红，**默认按钮落在「取消」上**，一路回车不会执行。
-- 读篓内容用 `options: []` 取全量：按显示过滤会漏掉点文件，「清空」就成了半句真话。
-
-### 新增：放回原处
-
-先做了一件决定设计的实测——**macOS 的 put-back 元数据读不到**：废纸篓项上唯一的扩展属性是
-`com.apple.provenance`（空，与来源无关），`mdls` 无任何来源线索，连 Finder 自己的
-AppleScript `original item` 都返回 **-1728** 拿不到。
-
-所以只能自己记账：**新胶囊 `TrashLedger`**（actor + 原子落盘，照 StashStore 形状），
-在 NSpace 把东西移到废纸篓时记下「原路径 → 落点」。搬回复用的是撤销废纸篓那条既有链路
-（含"回收站曾因重名改名 → 搬回后再更名回原名"），不另写一份，否则两处会各自漂。
-
-**诚实边界**：只对 NSpace 自己删掉的项有效。别的应用删的项没有记录，菜单项就
-**不出现**（不是灰着——常驻一个永远灰的项就是 I-25 那种永败按钮）：条目右键菜单
-在废纸篓里出「放回原处」、不出「移到废纸篓」，篓外反之。真调到没有记录的项时，
-吐司明说「不是由 NSpace 移入废纸篓的，无法放回」。
-
-**台账自净**：读取时丢弃「废纸篓里已经不存在那一项」的条目，落盘随之收缩。
-一份不会发现自己过期的台账比没有台账更坏——它会把后来被推翻的事当既成事实交给下一个读它的人。
-
-### 新增：首批免节流的自动化覆盖
-
-上一版说「端到端断言会变成易抖的计时断言，我选择不写」。那个判断只对了一半：
-端到端确实会抖，但**这件事根本不用计时来测**——`hasYielded` 在 `append` 返回那一刻
-就是终值。把它和 `bufferedCount` 暴露成 internal 探针，断言变成：
-首批 → `hasYielded == true && bufferedCount == 0`；第二批小批 → `bufferedCount == 1`（节流仍生效）。
-确定性、零计时。反证撤掉首批免节流那一支，三条断言一起红。
-
-### 测试
-
-- 单测 136 → **150**，套件 17 → **19**（两个新胶囊各自带物理自证，pod 四公理机检通过）:
-  - `EraserTests` 6 条：围栏纯逻辑（含前缀相似 / `..` 穿越 / 围栏自身）、拒绝越界、
-    无围栏拒绝、真删文件与目录、部分失败如实回报、全败仍抛。
-  - `TrashLedgerTests` 5 条：记账读回、经盘上跨"重启"、自净过期条目、forget、无记录返回 nil。
-  - `SearchEngineTests` +1：首批免节流（确定性）。
-- ui-smoke 206 → **212**：I-63 六条（右键菜单入口、清空真删且保留篓本身、放回原处闭环、
-  无记录不许假装、菜单按位置切换）。
-- 沙箱铁律：**清空那半只在自建临时夹具上验，一次都不碰用户真实废纸篓**；放回那半必须经
-  真实废纸篓（那才是真目标），但只动自建 token 项、且必须放回成功，收尾按 token 清净。
-  实测跑完真实废纸篓零残留、用户真实台账未被自测创建（UITEST 走隔离 support 目录）。
-- **又抓到一处我自己的假绿**：「垃圾桶钮右键菜单含清空废纸篓」第一版直调 `buildContextMenu()`,
-  撤掉 `menu(for:)` override 它照样绿——证明的只是"菜单能造出来"，不是"右键真能唤出来"。
-  改走 AppKit 真正调用的 `menu(for:)` 并加验 action/target 已接线，反证得 `-1 项 命中=false 已接线=false`。
-
-### 仍未做
-
-- 跨卷废纸篓的「清空」按当前窗格所在卷取篓（与打开/落点口径一致），但**多卷同时清空**没做:
-  用户得逐卷进去清。没有真红引出它，先不做。
+- Empty Trash: `.delete` is handled by a new `Eraser` pod, not a LocalOps branch, because of its blast radius. `destination` is a required fence root: any source outside it rejects the whole batch, and the fence itself cannot be deleted. The entry is the trash button's context menu, defaulting to Cancel.
+- Put Back: macOS put-back metadata is unreadable, so the new `TrashLedger` pod records original paths for items NSpace trashed and drops stale entries on read. The menu item only appears when a record exists.
+- First-batch search throttling bypass is now tested deterministically through the `hasYielded` and `bufferedCount` probes.
+- Not done: emptying several volumes at once; each volume is emptied separately. Tests: 150 unit, 212 ui-smoke (I-63); emptying only runs on temporary fixtures, never the real Trash.
 
 ## [0.19.18] - 2026-09-07
 
-清掉 v0.19.17 里被对抗审查确认、但当时列进「已知未做」的缺陷。全部红先行或反证过。
-
-### 修复（数据完整性）：部分失败的废纸篓操作会静默吞掉已落地的那部分
-
-混选里有一项动不了时（篓里的项、被锁的项、已消失的项），`LocalOps.trashEntries`
-在中途 `throw`：**前面已经真删掉的那些随 throw 一起丢**——内核只在成功路径
-`receipts[id] = receipt`，coordinator 拿到 nil，于是既不注册撤销、也不弹吐司、也不报错
-（`.failed` 只在「任务」窗里呈现，而那是个用户通常没开的独立窗）。
-用户的文件真进了废纸篓，而他撤不回来、也不知道发生了什么。
-废纸篓可浏览之后这条路更好走了——篓里的项本身就动不了。
-
-「部分成功」是真实存在的结局，不是异常，所以它必须能被表达出来：
-
-- **契约**（`NSpaceContracts`，纯附加、带默认值，既有调用点零改动）：新增
-  `OperationFailure{url, errorClass, message}`，`OperationReceipt` 增 `failures: [OperationFailure] = []`。
-- **节点**：`trashEntries` 逐项容错，把失败累进 `failures` 而不是首错即终止;
-  **一件都没做成仍然 throw**——部分成功语义不许把"全败"也粉饰成完成。
-- **内核**：状态由回执判定（`failures` 非空 → `.failed`，状态说真话），
-  但**回执两种结局都存下来**，真落地的那部分不能随状态一起被丢掉。
-- **UI**：`run()` 在任一终态都取回执（不再只在 `.completed` 取）；为真落地的那部分注册撤销;
-  吐司如实说「已移到废纸篓 N 项，M 项失败：<第一条原因>」。
-
-红先行：先写 `partialTrashFailureStillReportsWhatLanded`（真文件 + 不存在的路径），
-实测红为 `Caught error: 源不存在: ghost-never-existed.txt`——那一刻 `lands.txt` 已经真进了废纸篓。
-另加 `totalTrashFailureStillThrows` 守住「全败仍 throw」这半边。
-
-### 修复：段命中余量把折叠阈值推高了，同宽度下少显一层路径
-
-v0.19.17 给段加了左右各 4pt 命中余量，但那 8pt 是**加在每级上**的，于是折叠阈值
-每级右移 8pt。审查实测：dualH、600 窗、侧栏折叠、4 层路径，改前全展示、加了余量后
-退化成折叠。现在把 `chevronWidth` 从 16 收到 8——**余量从箭头槽里让出来**，
-每级总宽 = 字形 + 8 + 8 = 字形 + 16，与改前完全一致，阈值不动。
-箭头字形实测 7pt，装得进 8pt；且命中盒现在是全高 20pt，面积 8×20=160pt²
-仍比改前的 16×6.5=104pt² 大 54%。I-37 内容右缘实测 237 → 221。
-
-### 修复：点非活动窗格的地址栏，它导航了但没被激活
-
-多窗格布局下点另一个窗格的面包屑：那个窗格会跳路径，但 `activePaneIndex` 不变,
-于是窗口标题、甲板动作钮校验、状态栏全停在旧窗格上。列表/图标/分栏视图早就经
-`onInteract` 报了活，只有地址栏漏了。`onNavigate` / `onBeginEditing` 现在先
-`onRequestFocus?()` 再执行动作。
-
-### 修复：跨窗拖到甲板垃圾桶，撤销与吐司落错了窗
-
-从 A 窗把文件拖到 B 窗的甲板垃圾桶钮上时，`deckDropOnTrash` 用的是**接收窗**的
-coordinator：吐司弹在一个可能被挡住的窗上，撤销注册在 B 的 UndoManager 上，
-于是 ⌘Z 在 A 窗按不动。`TrashDeckButton.performDragOperation` 现在带上
-`(sender.draggingSource as? NSView)?.window`，`AppDelegate.mainWindowController(for:)`
-反查来源窗的控制器；查不到才回落到自身。
-
-### 修复：结果封顶被时间发射打乱了对齐
-
-改前批次恒为 50，`keptCount` 正好落在 2000。加了时间发射后批次大小不定,
-`append()` 是整批插完才判上限，会越顶最多 49 条。现在逐条守——**先判上限再
-`seenPaths.insert`**（反过来会把没留下的路径标成"已见过"）。
-
-### 修复：稀疏查询首个结果还要再等 300ms
-
-扫描侧 150ms 发射窗之后，`append()` 又压 300ms 节流，首个结果上屏要 ~450ms。
-首批直接推出去，后续才节流。
-
-### 修复（测试卫生）：侧栏宽没有 UITEST 键隔离
-
-I-46 当初只隔离了 `windowFrame`，`sidebarWidth` 仍读产品键。I-37 窄窗断言的栏宽
-= 511 - sidebarWidth，跟着开发者真实侧栏宽漂；拖到上限 320 时余量被吃光，
-断言会因为环境而红。现在 `sidebarWidthKey` 与 `frameDefaultsKey` 同一条铁律。
-
-### 测试
-
-- 单测 133 → **136**：部分失败回报、全败仍抛、不对齐批次下封顶精确落在上限。
-- ui-smoke 202 → **206**：每级总宽回归、点非活动窗格地址栏激活、按窗口反查控制器、
-  侧栏宽键隔离。
-- **又抓到一处我自己的假绿**：「封顶精确等于上限」第一版打在端到端夹具上——那 2200 个
-  命中都在同一目录、批次恒 50，`keptCount` 本来就正好落 2000，撤掉修复照样绿。
-  改成直接驱动 `append()` 喂 7 条一批（7 不整除 2000），反证得 `实得 2002`（=286×7）。
-  端到端那条恢复成诚实的宽断言（≤ 上限且逼近上限）。
-- 三条 UI 断言一次撤三处反证：`FAIL=3` 且无连带，彼此独立。
-
-### 仍未做
-
-- **清空废纸篓 / 放回原处**：需新增内核 kind + 新胶囊节点，且是不可逆删除——等明示。
-- **首批免节流没有自动化覆盖**：它是延迟改善，端到端断言会变成计时断言（易抖），
-  这里选择不写，而不是写一条测不准的。测不出来 ≠ 没问题，如实记在这里。
+- Partial trash failures no longer lose what landed. `OperationReceipt` gains `failures` (additive contract change), `trashEntries` tolerates per-item errors and still throws if nothing succeeded, and the UI registers undo and reports "N moved, M failed".
+- Breadcrumb hit margins no longer raise the collapse threshold: `chevronWidth` went from 16 to 8, so the per-level width is unchanged.
+- Clicking an inactive pane's address bar now activates that pane. Dragging onto another window's trash button routes undo and the toast to the source window.
+- Search: the result cap is enforced per item, before `seenPaths.insert`; the first batch skips the 300ms throttle. `sidebarWidth` gets a UITEST key like `windowFrame`.
 
 ## [0.19.17] - 2026-09-07
 
-三个用户报告的 bug。每条根因都用真机读数钉死，改完各自反证过；另有一次对抗审查抓出的
-内存 blocker 与两处假绿测试，一并修掉。
-
-### 修复：搜「.claude」搜不到，但列表里看得见
-
-**四个独立真因，缺一个都还是搜不到。**
-
-1. **遍历顺序**。`FileManager.enumerator` 是惰性前序 DFS：拿到一个 depth-1 目录后会把它整棵
-   子树走完才回到下一个兄弟。真机实测（root=`~`，198.6 万项）:
-   `~/.claude` DFS **15.5s** 才被枚举到（第 75 万项）、`~/.claude.json` **34.2s**（第 163 万项）;
-   BFS 下两者都在 **0.006s**（第 104 / 214 项）。新增 `LevelOrderWalk` 层序遍历节点。
-   全树总成本 43.6s vs 42.4s（+2.8%）。
-2. **发射条件**。通道B 只有 `batch.count >= 50` 和「整棵扫完」两个发射点。`~` 下搜 `.claude`
-   只有 135 条命中，第一批要等到 **17.9s**（第 50 条命中），扫完要 45s。加了 150ms 时间发射;
-   时钟读取被 `!batch.isEmpty` 短路，2M 次迭代里几乎不付这个钱（`uptimeNanoseconds` 10ns/次）。
-3. **结果封顶饿死通道B**。通道A 在首个 gathering 通知（0.3s）里就能一次读满 2000 条,
-   `append()` 随即 `keptCount >= maxResults` → `teardown()` → `scanTask.cancel()`，通道B
-   攥在栈上的 batch 直接作废。于是**任何 Spotlight 命中 ≥2000 的词，「包含隐藏文件」是个静默空开关**。
-   加 `scanReserve = 500` + 纯函数 `spotlightReadBudget(kept:scanAlive:)`。
-4. **跳过名单里的目录本身永远不可能成为命中**：skip 分支在匹配测试**之前** `continue`，
-   搜 `Library` / `node_modules` / `.git` 搜不到那个文件夹自己。`LevelOrderWalk` 把 `visit`
-   放在「是否下钻」之前。
-
-端到端实测：修前首批 17.9s，**修后 0.151s**（118 倍），且首批就把四条 `~/.claude*` 全带上屏。
-
-**对抗审查抓到的 blocker（我引入的）**：BFS 峰值 RSS 从旧 DFS 的 512MB 涨到 **1219MB**。
-根因不是 frontier 数组（那只 2MB），是扫描跑在 `Task.detached` 里没有 RunLoop 排水，
-`contentsOfDirectory`/`resourceValues` 的自动释放对象一路堆到扫完。每目录一个
-`autoreleasepool` → **51.6MB**，比旧实现还低 10 倍，代价 +3%。取消粒度也从「每目录」
-收回到「每项」（旧 DFS 就是每项，不能因为换遍历而退化）。
-
-### 新增：废纸篓（右上角垃圾桶钮）
-
-改前那个钮 action 是 `moveToTrash` 且 `isEnabled = hasSelection`，**空选中时长期灰着**,
-而且应用内**没有任何**通往废纸篓的路径（侧栏种子位置、前往菜单、面包屑都没有）。
-
-- **点击 = 打开废纸篓**，恒可用，在应用内导航（`TrashLocation` 新接缝）。
-  不做「有选中就删、没选中就打开」：用户手上几乎总有选中项，那样一个想去废纸篓的人
-  会先把文件删掉。删除的既有入口全部保留（⌘⌫ / 条目右键 / Backspace 习惯设置）。
-- **拖文件到钮上 = 移到废纸篓**（`TrashDeckButton`，`acceptDrop(from:)` 接缝可注入）。
-- 第二条入口：**前往菜单 → 废纸篓**（`goTrash`，默认不绑快捷键，可在设置里自定）。
-- `moveToTrash` 补上它一直缺的吐司（copy/move 早就有，trash 没有——用户只看到行消失,
-  这本身就是「感觉没有废纸篓功能」的一部分）。
-- **按卷取废纸篓**：外置盘上浏览时跳该卷的 `.Trashes/<uid>`，与 `fm.trashItem` 的实际落点
-  一致（旧版硬编码 `~/.Trash`，按钮说的和做的是两个地方）。
-- **已在废纸篓里的项诚实拒绝**：实测 `fm.trashItem` 对已在废纸篓的文件是安全空操作
-  （返回同一路径、文件仍在、不抛错），所以没有数据风险；但那样会弹一句「已移到废纸篓 N 项」
-  的假话。量词用 `contains` 不是 `allSatisfy`——混选用 `allSatisfy` 会放行然后报虚高的数。
-  判据覆盖任意深度（`~/.Trash/某文件夹/文件` 不许绕过）。
-- **废纸篓里禁用「粘贴 / 新建文件夹 / 新建文件 / 制作副本」**（Finder 同样禁用）。废纸篓可
-  浏览之后这些入口才第一次可达：放进来的活文件既无撤销、也无「放回原处」元数据，
-  将来清空废纸篓就真没了。三视图同修。
-
-**未做（需要你拍）**：清空废纸篓 / 放回原处。`OperationSpec.Kind` 只有
-copy/move/trash/duplicate/newFolder/newFile/rename/compress/extract，**没有永久删除**;
-要做得新增内核契约 + 新胶囊节点，且是不可逆操作。放回原处则依赖 Finder 私有的 put-back
-元数据，无公开 API，NSpace 自己的 `TrashedItem.original` 只覆盖本会话内被它删掉的项。
-当前可用的替代：从废纸篓把文件**拖出**到别的文件夹（既有 move 路径已经能用）。
-
-### 修复：地址栏要点到文件夹正中心才跳转，偏一点变成输入模式
-
-`BreadcrumbBar.place()` 把子视图高度收成 `intrinsicContentSize.height` 再垂直居中：
-20pt 的栏里段按钮只有 **14pt**、chevron 只有 **6.5pt**，上下都是死区，点进去就穿透到
-`mouseDown` → `onBeginEditing`。实测死区占比：段 30%、chevron 68%（换算到 24pt 地址行是
-42% / 73%）。段宽还等于文字宽、零内边距，于是「点到名字右边一点」落在 chevron 上弹子菜单。
-
-- `place()` 改为 **frame 即命中盒**，占满栏全高（字形居中交给 cell 画，视觉不变）。
-- 段左右各加 4pt 命中余量，走共享纯函数 `segmentHitWidth(glyphWidth:)`，layout 与自测同源。
-- 投放高亮移到内缩子层，避免全高强调色块顶到地址行边缘。
-- **折叠分支补「装得下底线」**（对抗审查用真实 `layout()` 实测到的回归）：
-  `root + 「…」 + 强制可见末段`这个种子本身也可能装不下，旧版无条件铺开，`lastContentRight`
-  直接越过 `bounds.width`。段宽 +8 抬高了这个阈值。现在种子装不下就连根段一起折进「…」
-  （层级仍全可达），并逐个按剩余预算 clamp——结构上不可能溢出。
-
-### 测试
-
-- 胶囊级单测 128 → **133**：BFS 深度单调（与目录枚举顺序无关的确定性构造）、
-  **BFS 接线**（打在 `scan()` 真实产出上）、稀疏命中不被压到扫完、跳过目录自身可命中、
-  预留预算公式。
-- ui-smoke 189 → **202**：I-61（面包屑命中盒 7 条，含极窄栏不溢出）、I-62（废纸篓 6 条）。
-- 全部经反证：每处修复单独撤掉，对应断言确定性报红；且各条断言可分离归因，无冗余。
-- **修掉两处我自己的假绿**：
-  - `levelOrderWalkEmitsNonDecreasingDepths` 只钉 walk 自己，把 `scan()` 换回 DFS 它照样
-    3/3 全绿 → 补 `scanDeliversShallowHitsBeforeDeepOnes` 打在 `scan()` 产出上。
-  - 「极窄栏不溢出」第一版用 120pt，种子恰好装得下，撤掉底线照样绿 → 改 48pt（种子成本
-    实测 104pt，可用宽 32pt，必然走底线分支），反证得 `内容右缘 112 ≤ 栏宽 48`。
-  - I-62「废纸篓内容真被列出」原先依赖用户真实废纸篓非空（清空废纸篓的机器上必红），
-    改为先做拖放、篓里必有自建夹具项再采样；盘上口径跟随模型的 `includeHidden`，不写死。
-- pod-lint 新增 4 道定点不变量（各自反证有牙）：读预算必经 `spotlightReadBudget`、
-  不许绕过预留、`scan()` 必走 `LevelOrderWalk`、`LevelOrderWalk` 必带 `autoreleasepool`。
-  **grep 必须先剔注释行**——第一版没剔，代码里删掉 `autoreleasepool` 后注释仍命中，门形同不存在。
-- I-62 挡在 `NSPACE_UITEST_ONLY=i37` 聚焦调试门之外：它是全套里唯一会写用户真实 `~/.Trash` 的场景。
-
-### 已知未做（对抗审查确认存在，本次不动）
-
-- `LocalOps.trashEntries` 是首错即终止：混选里有一个删不掉的项时，前缀已被真删、
-  run 判 `.failed`、receipt 被丢弃，于是既不注册撤销也不弹吐司也不报错。**这是既有缺陷**,
-  不是本次引入；修它要改胶囊的错误语义（部分成功回执），单独排。
-- 跨窗口拖放：从 A 窗拖文件到甲板垃圾桶钮时，撤销与吐司落在接收窗而不是来源窗。
-- `sidebarWidth` 没有 UITEST 键隔离（窗口 frame 有），I-37 窄窗断言的栏宽会随用户真实
-  侧栏宽变化。既有测试卫生问题，本次段宽 +8 让它更靠近边界。
+- Hidden-file search (`.claude`) had four causes, all fixed: DFS order (new `LevelOrderWalk`), emission only on batch size or completion (150ms time-based emission added), Spotlight filling the cap and starving the scan (`scanReserve` 500 and `spotlightReadBudget`), and skipped folders never matching themselves. First batch 17.9s to 0.151s. A per-directory `autoreleasepool` fixes BFS peak RSS (1219MB to 51.6MB).
+- Trash: the deck button now always opens the Trash in-app and accepts dropped files, deliberately not "delete if there is a selection". Added Go menu > Trash (`goTrash`), a per-volume Trash, a toast for `moveToTrash`, an honest refusal for items already in the Trash, and disabled paste, new and duplicate inside it.
+- Breadcrumb frames now fill the bar's height, so clicks no longer fall through into edit mode. Segments get a 4pt side margin via `segmentHitWidth`, and collapsing has a hard fit floor that cannot overflow.
+- I-61, I-62. pod-lint gained four invariants and now strips comments before grepping. Tests: 133 unit, 202 ui-smoke.
 
 ## [0.19.16] - 2026-09-06
 
-### 修复
-- **Chrome「在访达中显示」冷启动时新开窗口而不是新标签（I-60，用户报告）**：竞态。`application(_:open:)` 由 LaunchServices **同步**送达,而 `restoreSessionOrDefault()` 是 `async`（`await sessionStore.load()`）。外部打开先到时窗口数为 0,`activeMainWindowController()` 返回 nil,代码落进 `openWindow(...)` 开新窗;随后会话恢复又开出会话里的窗——于是两个窗。
-  改为:`sessionReady` 未置位前把外部打开 URL 排进 `pendingExternalOpens` 队列,`sessionReady = true` 之后立刻 `flushPendingExternalOpens()`,让它走与热启动完全相同的「落到现有窗口新标签」路径。
-  真机实测:修前 2 窗,修后 1 窗（会话内 1 窗）,连续两轮一致。
-
-### 测试
-- ui-smoke 187 → 189：新增 I-60 两条断言——「会话未就绪的外部打开只排队不开窗（队列 0→1,窗口 1→1）」+「冲刷后落到现有窗口新标签（窗口 1→1,标签 1→2）」
-- 经反证确认有牙：撤掉排队后 `FAIL I-60 …（队列 0→0,窗口 1→1）`
-
-### 测试基础设施
-- **I-59 抖动根治**：`FileOpsCoordinator.copyPaths` 加可注入 `pasteboard` 参数（默认 `.general`,产品行为零变化）,三视图 `copyPath(to:)` 转发。I-59 改用一次性私有 `NSPasteboard`。
-  起因是实测撞到一次假失败——断言读回的是 `Write │ impeccable 设计钩子`,机器上**别的进程**在测试窗口期写了系统剪贴板。全局剪贴板谁都能改,拿它做断言载体本就不成立。顺带不再需要"保存/还原用户剪贴板"。
-- 6 轮验证 189 PASS / 0 FAIL（改前 4 轮中 1 轮因上述外部写入假失败）
+- Cold-start race: a Chrome reveal could open a second window, because `application(_:open:)` arrives before the async session restore. External opens now queue in `pendingExternalOpens` until `sessionReady` (I-60).
+- `copyPaths` takes an injectable pasteboard, so I-59 uses a private `NSPasteboard` instead of the shared global one.
 
 ## [0.19.15] - 2026-09-04
 
-### 修复
-- **点文件夹空白处按 ⌘⇧C 复制不了当前文件夹路径（I-59，用户报告）**：只有选中文件时才能拷贝路径。**双因，缺一不可**：
-  - `copyPath(_:)` 只传 `selectedURLs`，空选中即空数组，`FileOpsCoordinator.copyPaths` 的 `guard !urls.isEmpty` 直接吞掉
-  - `validateMenuItem` 把 `copyPath` 归在 `return hasSelection` 组里，空选中时**菜单项被禁用**，⌘⇧C 在空白处根本派发不出去
-  现改为：空选中回落到当前目录（Finder 在空白处 ⌥⌘C 同样给当前文件夹），且 `copyPath` 恒可用。**三视图同病同修**（列表 / 图标 / 分栏，分栏回落到焦点列所在目录）
-- 顺带补齐图标视图缺失的 `currentDirectory`（列表与分栏早已有）
-
-### 测试
-- ui-smoke 184 → 186：新增 I-59，三视图逐一验证「清空选中 → 走各视图真实的 `copyPath(_:)` → 剪贴板 == 当前目录」
-- 经反证确认有牙：撤掉回落后三视图全 `✗(SENTINEL)`——剪贴板纹丝不动，精确复现"快捷键没反应"
-- 测试会保存并还原用户真实剪贴板（产品 API 硬编码写 `NSPasteboard.general`，测试无从避开，但必须还回去）
-- 分栏改为**轮询视图侧当前目录**而非固定 sleep：列链异步逐列加载，固定等待实测 1/5 轮会拿到还没就位的旧列
+- ⌘⇧C on empty space copies the current folder path in all three views: `copyPath` now falls back to the current directory and stays enabled (I-59).
 
 ## [0.19.14] - 2026-09-04
 
-### 修复
-- **排序状态"丢失"（I-58，用户报告）**：选了按修改日期排序，重启后看起来回到了默认；双栏时右栏的列头也不跟着变。**真相不是排序没保存**——`session.json` 里 `sortKey=dateModified/desc` 存得好好的，内容也确实按修改日期排。丢的是**列头的排序箭头**：数据流一直是**单向**的，只有「用户点列头 → `sortDescriptorsDidChange` → `model.sort`」，从没有反向的 `model.sort → tableView.sortDescriptors`（全仓产品代码零处给 `sortDescriptors` 赋值，只有测试在赋值）。于是会话恢复、新建窗格/标签、重建可选列之后，箭头都停在默认的「名称」上，看起来就是"排序丢了"。现补上反向同步，挂在三个入口：首次装载 / 快照应用（恢复·切目录·FSEvents 刷新）/ 重建可选列
-
-### 测试
-- ui-smoke 182 → 184：新增 I-58 两条。**为什么 I-50 绿着却没抓到**：它驱动排序的方式正是「设置 `tableView.sortDescriptors`」——也就是已经存在的那条正向路径，且只断言写盘，结构性地测不到恢复方向。I-58 改为**直接改 `model.sort`**（模拟 `restore` 的写法，不经列头），并把**指示器与模型分开断言**
-- 经反证确认有牙：撤掉修复后确定性 FAIL，诊断串精确复现用户现象——`模型=dateModified/false 指示器=name/true`
+- The sort was saved, but the column header arrow was not restored because `sortDescriptors` was never set from the model. A model-to-header sync was added on first load, snapshot apply and optional-column rebuild (I-58).
 
 ## [0.19.13] - 2026-09-04
 
-### 清理
-- **删除永败死代码 `FinderIntegration.requestDefaultFolderHandler`**：macOS 把 `public.folder` 锁死给 Finder，`setDefaultApplication(toOpen: .folder)` 恒返回 `paramErr(-50)`（实测连已公证的第三方 App——VS Code——也设不了，且换普通类型 `public.plain-text` 立刻能弹确认框，坐实是 `public.folder` 这一项被系统专门封禁）。该方法零调用者、只会失败，删除；设置页早在 I-25 就已改为诚实状态陈述而非永败按钮，无 UI 变化
+- Removed the dead `FinderIntegration.requestDefaultFolderHandler`: macOS locks `public.folder` to Finder, so `setDefaultApplication` always returns -50.
 
 ## [0.19.12] - 2026-09-02
 
-### 修复
-- **同一目录的不同写法被重复压进后退栈，⌘[ 看起来"原地不动"（I-57）**：`BrowserState.navigate(to:)` 用的是 **URL 原样相等**（`url != current`），而 `/a/b` 与 `/a/b/`、含 `.`/`..` 的形式 `absoluteString` 都不同——于是同一个目录被压进历史，用户按后退什么也没发生。地址栏粘贴带尾斜杠的路径正是最容易撞上的入口。改为比较 `standardizedFileURL.path`；**不**解析符号链接——那要 stat，失效的网络卷上会把导航热路径拖住（同"把路径解析挪到后台"的理由）
-
-### 测试
-- ui-smoke 181 → 182。该断言经**反证**确认有牙：改回 URL 原样比即 `后退历史 24→25`，确定性 FAIL
+- `BrowserState.navigate` compares `standardizedFileURL.path`, so spellings like `/a/b` and `/a/b/` no longer push duplicate history entries. Symlinks are deliberately not resolved, to keep stat off the navigation path (I-57).
 
 ## [0.19.11] - 2026-09-02
 
-### 修复
-- **删空地址栏后去开设置窗/搜索面板/切别的 App，回来仍是空白输入框（I-57）**：窗口失去 key 时 **AppKit 根本不发** `controlTextDidEndEditing`（独立探针实测：`resignKey` 之后 field editor 仍在、`isHidden` 仍是 `false`），失焦复位这条路对它完全无感知。现在补订阅 `NSWindow.didResignKeyNotification`——但**只在文本为空时才收**：⌘L 全选后切到 Finder/终端复制一段路径、再切回来 ⌘V 粘贴，正是本轮要服务的头号用例；无条件复位会把编辑框关掉、焦点交回文件列表，那记 ⌘V 就命中列表的 `pasteItems`，**把一个纯浏览动作升级成往当前目录粘贴文件的写盘操作**。空文本意味着用户没有任何待粘贴内容可丢，收掉是纯收益
-
-### 测试
-- ui-smoke 178 → 181，新增 I-57 三条，均针对审计点名的**断言强度**问题：
-  - 窗口失 key：空地址栏自收 **且** 有内容一律保留（后半条专门守住"未来某次过度修复"会砸掉粘贴用例）
-  - 「面包屑回显」改为**验内容**（面包屑 URL == 当前目录）+ **验 field editor 真释放**。旧断言只验 `!isHidden`，把 `breadcrumb.isHidden = false` 那行删掉照样绿，是假绿灯
-  - **⌘L 走真实响应链**（`tryToPerform(editPath:)`）而非 `uiTestBeginPathEditing` 复制体——菜单绑定 → 响应链 → `editPath` 这条链此前一次都没被执行过
-- I-57(a) 经**撤掉修复反证**确认有牙：无观察者时 `空收=false`，确定性 FAIL
+- The address bar now closes when the window resigns key, but only if its text is empty. Unconditional closing would turn "⌘L, copy elsewhere, ⌘V" into a file paste into the current folder (I-57).
+- Assertions were strengthened: breadcrumb content, field editor release, and ⌘L through the real responder chain.
 
 ## [0.19.10] - 2026-09-02
 
-### 修复
-- **读盘途中切视图模式，待定位目标永久丢失（I-56）**：`prepareReveal` 挂在当前视图上，切到另一个视图（⌘1/⌘2/⌘3）时不搬家——目标再也不会被选中，而且那条 pending 会留在旧视图里，成为日后突然"幽灵跳选"并抢走键盘焦点的定时炸弹。`FileRevealTarget` 新增 `takePendingReveal()`，切视图模式时取走并挂到新视图上（三视图统一）
-- **补全的重入标志存在 check-then-act 竞态（I-56）**：`completing` 的读（`controlTextDidChange` 的 guard）与写（异步块内）隔着一个 runloop hop，同一趟 runloop 里两次文本变更会双双通过 guard、叠开两层补全（嵌套事件循环）。改为**调度时**置位；归位改用 `defer`，任何提前 return 也不会让标志滞留（滞留 = 补全从此彻底失效）
-- **路径错误提示对 VoiceOver 完全无声（I-56）**：此前只有一声 beep + 视觉红字，视障用户无从知道错在哪。现在同时 post `announcementRequested`
-
-### 测试
-- ui-smoke 177 → 178：新增 I-56 待定位目标搬家断言。**该断言的第一版是假绿灯**——只看"最终有没有选中"时，撤掉修复照样 PASS（选中会经共享 model 的 onUpdate 多播落上去）。改为直接断言转移动作本身（旧视图 pending 被取走、新视图 pending 挂上），撤掉修复即确定性 FAIL
-
-### 说明
-- **`PathCompleter` 只补目录、补不出文件名**：审计提过，但这与 Finder ⌘⇧G「前往文件夹」的行为一致，也是该胶囊契约的明文约定（"仅目录，带尾随 /"）。地址栏的本职是导航，故**不改**
-- 全仓无任何 `accessibilityLabel` 用法，无障碍是项目级空白而非地址栏专属缺陷；这里只补了错误提示的播报（有实际信息损失的那一处），不做孤立的 token 式改造
+- A pending reveal now moves to the new view when the view mode changes, via `takePendingReveal()` (I-56).
+- The completion re-entrancy flag is set at scheduling time and reset with `defer`. Path errors are announced to VoiceOver.
+- Not changed: `PathCompleter` stays directories-only, matching Finder ⌘⇧G and the pod's contract. There is no project-wide accessibility labelling yet.
 
 ## [0.19.9] - 2026-09-02
 
-### 修复
-- **编辑地址栏时切窗格布局会让键盘全哑（I-56）**：`rebuildGrid()` 会 `removeFromSuperview` 掉旧的视图层级，挂在被移除视图上的 firstResponder 被 AppKit 打回**窗口本身**（不是任何 NSView）——此后键盘完全无响应，用户得先随便点一下才恢复。地址栏正在编辑时（firstResponder 是 field editor）最容易撞上。现在重建后显式把焦点收口到活动窗格
-
-### 测试
-- ui-smoke 176 → 177：新增 I-56。该断言经**撤掉修复反证**确认有牙——无修复时实得窗口本身而非 NSView，确定性 FAIL
+- Rebuilding the pane grid while editing the address bar left the keyboard dead; focus now moves to the active pane after `rebuildGrid()` (I-56).
 
 ## [0.19.8] - 2026-09-02
 
-### 修复
-- **无效路径的抖动动画会让地址栏"瞬移"半个身位（I-55）**：动画以 `frame.midX` 为基准，但 AppKit 图层背衬视图的 `anchorPoint` 是 (0,0)、`layer.position` 等于 frame **原点**而非中心——实测 `position.x=4` 而 `frame.midX=198`，于是每次路径输错，地址栏先向右瞬移 194pt 再弹回，看起来像整条控件抽风。改为以 `layer.position.x` 为基准
-- **分栏模式粘贴文件路径什么都没选中（I-55）**：列链是异步重建的，某一列还装着上一个目录的陈旧内容时，`applyDesiredSelectionIfLoaded` 会当场把待选中清空 → 正确内容载入后再也不会选中。现在只有「本列确实就是这些目标所在的目录」才认定为真的不存在并消费掉，否则保留等正确内容载入；同时补上大小写兜底
-- **外部打开的兜底选窗取的是"最后创建的窗口"而非最前窗（I-55）**：`keyWindow`/`mainWindow` 都拿不到时退到 `windowControllers.last`，用户关掉新窗或多窗切换后它会指向背后、甚至已不可见的窗口，外部打开就落到看不见的地方。改为取 `NSApp.orderedWindows` 里最前的可见主窗
-- **切走 App 丢弃未回车路径的判据收紧（I-55）**：改用「焦点是否落到本窗口里的另一个控件」判断——落到窗内别的控件 = 用户真放弃编辑（bug#3 那条路径，照常复位）；整个 App/窗口失活时 AppKit 会把 firstResponder 收回窗口本身（不是某个 NSView），据此跳过复位
-
-### 测试
-- ui-smoke 174 → 176：I-55 补两条（抖动基准点实测对比 `layer.position.x` 与 `frame.midX`；分栏模式粘贴文件路径仍能选中）
-- **I-47/I-50 会话落盘断言改为轮询**：原本固定 `sleep(1400ms)` 对着 1s 防抖只剩 400ms 余量，套件变长或机器变忙就假失败（实测 1/6 复现）。改轮询后既稳又更快，6/6 轮 0 FAIL
+- The invalid-path shake now uses `layer.position.x`, not `frame.midX`; the bar was jumping 194pt (I-55).
+- Pasting a file path works in column view: a stale column no longer consumes the desired selection.
+- The external-open fallback picks the frontmost visible main window, and focus-loss reset now only applies when focus moves to another control in the window.
+- I-47 and I-50 session assertions poll instead of using a fixed sleep.
 
 ## [0.19.7] - 2026-09-02
 
-### 修复
-- **粘贴的路径大小写与盘上不一致时定位失败（I-55）**：APFS/HFS+ 默认大小写不敏感，`fileExists` 能过，但定位用的是精确字符串比较——于是"跳到父目录了却什么都没选中"，静默失败。现在解析结果做大小写归一（只在**仅大小写不同**时采纳规范路径，不顺带解析符号链接以免改掉用户看到的路径层级），且三视图的按 URL 定位统一走 `DirectoryViewModel.itemIndex(forURL:)`，带大小写兜底
-- **粘贴隐藏文件路径像"没反应"（I-55）**：目标是隐藏文件而当前没在显示隐藏文件时，只会跳到父目录、什么都不选中。用户是**明确点名**要这个文件的，现在为该标签自动打开"显示隐藏文件"（每标签独立，⌘⇧. 随时关掉）
-- **落空的定位请求会变成"幽灵跳选"定时炸弹（I-55）**：`pendingReveal` 从不作废——目标被隐藏过滤掉或已被删除时它一直挂着，等到用户日后任意一次刷新、或进入某个恰好含同名项的目录时突然跳选并抢走键盘焦点。现在目标目录一旦载入完仍找不到目标就地作废
-- **Tab 键把编辑态连同已输入内容一起吃掉（I-55）**：地址栏里按 Tab 走的是 AppKit 默认的移焦，编辑框随即失焦复位，打了一半的路径蒸发。现在 Tab = 补全（唯一候选直接填入、多候选补到最长公共前缀），对齐 Finder ⌘⇧G / 终端 / 浏览器地址栏
-- **地址栏不接受拖放（I-55）**：Finder 的「前往文件夹」面板和各家浏览器地址栏都能把拖进来的文件/文件夹变成路径，现在 NSpace 也可以
-- **失效网络卷会把 App 卡成菊花（I-55）**：路径解析要读盘，此前在主线程同步 `stat`，遇到失效的网络卷 / 自动挂载点会阻塞几十秒。现在解析整体挪到后台，结果回主线程落地；解析期间用户改了内容或关掉地址栏则结果作废
-- **失焦复位会把焦点从用户刚点的地方抢回来（I-55）**：复位时无条件 `makeFirstResponder(focusTarget)`——用户点隔壁窗格，光标却跳回这边。改为失焦路径不夺焦
-- **切走 App 会丢掉没回车的路径（I-55）**：⌘Tab / ⌘H / ⌘M 也会触发失焦复位，把打了一半或粘好还没回车的路径连同编辑态一起丢掉。现在整个 App 失活不算"放弃编辑"（Safari/Chrome 同款），只有在**窗内**点别处才复位——那条才是 bug#3 要修的路径
-- **补全候选拼不出正确路径时不再硬塞（I-55）**：`charRange` 之前那段与候选对不上时（如输入 `~`、候选却是展开后的绝对路径），没有任何"替换这一段"的写法能拼对，此前会把整条绝对路径丢回去让 AppKit 替换末段，拼出 `~/Users/me/` 这种垃圾。现在这种情况一条候选都不给（popup 不弹），用户仍可按 Tab 走我们自己实现的补全——那条直接整体改写文本，恒正确
-
-### 测试
-- ui-smoke 165 → 174：新增 **I-55**（大小写不一致仍能定位、隐藏文件自动显示并选中、落空 pending 就地作废、Tab 补全唯一候选且不被踢出输入框、多候选补最长公共前缀、地址栏已注册 fileURL 拖放、拖文件填成路径、补全候选 head 对不上时全裁而对得上时返回末段）
-- 拖放用**私有 NSPasteboard** 驱动真实落地逻辑，绝不碰用户真实剪贴板（沿用沙箱铁律）
+- Address bar and reveal edge cases (I-55): case-mismatched paths are normalized, a named hidden file turns hidden files on for that tab, and an unresolved `pendingReveal` is cancelled once the folder loads.
+- Tab completes (a unique match, or the longest common prefix) instead of leaving the field; the address bar accepts dropped files.
+- Path resolution moved off the main thread so dead network volumes cannot hang the app. Losing focus no longer steals focus back, and switching apps keeps an unsubmitted path.
+- Completion candidates that cannot form a correct path are no longer offered. Tests: 174 ui-smoke.
 
 ## [0.19.6] - 2026-09-02
 
-### 修复 / 变更
-- **地址栏三连 bug（I-53/I-54，用户报告）**：
-  - **⌘L 呼出后全选**：以前是把光标移到行尾，输入/粘贴变成「追加」而不是「替换」。现在对齐 Finder ⌘⇧G / Safari，⌘L 即全选，敲字或粘贴直接替换整条路径
-  - **粘贴路径按 Enter 跳不动**——查出两个**互相独立**的真因，都已修：
-    - ① **路径串解析太窄**：旧代码只 `trimmingCharacters(in: .whitespaces)`，而这个字符集**不含换行符**。从终端、文本编辑器、网页复制的路径几乎都带尾随 `\n` → 直接判"不存在"只抖动。`file:///…`（Finder/Safari 复制链接）、`%20` 百分号编码、双/单引号包裹、拖进终端那种反斜杠转义空格，同样一律失败。现在改成**候选解释列表 + 取第一个盘上真实存在者**，覆盖上述全部形态并兼顾 NFC/NFD 归一化；**原样候选永远排最前**，所以名字里真的含反斜杠或引号的文件不会被"聪明"的反转义误伤
-    - ② **补全 popup 吃掉了 Enter**：`PathComplete` 返回的是**完整绝对路径**，AppKit 却只把候选写回末段词的 range —— 采纳任一候选就把路径拼成 `/Users/me//Users/me/Downloads/`。而 `PathCompleter` **只列目录**，所以粘文件夹路径必有候选必弹 popup、Enter 被拿去采纳候选；粘 `.apk` 没候选不弹、能跳。这正是"apk 跳不了、文件夹**有时候**也跳不了"两种坏法的来源。现在：粘贴（一次涌入多字符）不弹补全，手敲字符照常补全；补全候选裁成"该填进该 range 的那一段"，采纳后即正确路径
-  - **粘贴文件路径可定位**：粘 `.apk` 等文件路径 → 进入其父目录并**选中该文件**；`.app`/`.bundle` 这类"盘上是目录"的包按 Finder 语义当文件处理（选中而非钻进包内部）；断链符号链接也能定位
-  - **地址栏不再残留空白**：删空后失焦、编辑中导航（后退/上级/切标签）、⌘R 刷新，三条路径都会收掉编辑态让面包屑回显当前目录。其中 ⌘R 此前是**死键**——地址栏获焦时 firstResponder 是 field editor，菜单动作既到不了三个内容 VC 也到不了 `PaneViewController`，现在由 `MainWindowController` 在响应链收口处接住（⌘L 在侧边栏获焦时同样失效，一并兜住）
-- **路径无效时给出文字提示**：以前只有抖动 + beep，看不出错在哪。现在地址栏右端内联红字区分「路径不存在 / 无访问权限」，1.5 秒淡出；且**输错不再把你踢出输入框**（保留编辑态并全选，可直接重敲——对齐 Finder ⌘⇧G）
-- **全局热键呼出时会多开一个空窗**：`GlobalHotkey.toggle()` 在 `NSApp.unhide(nil)` 之后**同步读 `isVisible`** 判断"有没有主窗"，但 unhide 是异步的、此刻一律读到 false → 误判成没有主窗又开一个。改为查询窗口台账（`windowWillClose` 里同步维护）。同时呼出置顶不再用 `NSApp.windows.first`——已 `close()` 但尚未析构的窗口仍留在里面，会被 `makeKeyAndOrderFront` "复活"成用户以为早就关掉的僵尸窗
-- **窗格视图未装载时同步位置会提前逼出 loadView**：`refreshChrome()` 补齐 `isViewLoaded` 守卫（`restore(from:)` 早有同款守卫，`applyLocation()` 这条路上漏了）。新窗口初始目录、外部打开 reveal 都走这条，会扰乱建窗与焦点时序
-
-### 测试
-- ui-smoke 156 → 165：新增 **I-54 地址栏路径解析矩阵**（26 条：剪贴板形态 `plain`/`\n`/CRLF/前后空格/尾随斜杠/`file://` 编码与未编码/双引号/单引号/反斜杠转义/中文/相对/`./`/`~`/根目录 × 目标类型 文件夹/`.apk`/`.app` 包/符号链接→目录/符号链接→文件 × 真含引号与反斜杠的名字 × 负例）+ 端到端 5 条（⌘L 全选后粘贴整段替换、无效路径三连、⌘R 经**真实响应链**送达、粘贴当前目录内的文件仍能原地选中、粘贴不弹补全而手敲仍补全、补全候选是末段而非全路径）
-- I-52 回归定位：另开隔离 worktree 编译 HEAD 对照 + 逐 hunk 二分，锁定为本次改动触发、根因在 `GlobalHotkey` 的既有异步竞态；修复后 **6/6 轮 0 FAIL / 165 PASS**，耗时也从失败轮的 58s 稳定回到 51-52s
+- ⌘L selects the whole path. Pasted paths now resolve through a candidate list, covering trailing newlines, `file://`, percent encoding, quotes and backslash escapes, and the literal form always comes first (I-53, I-54).
+- Pasting no longer opens the completion popup, which had been swallowing Enter, and candidates are trimmed to the last segment.
+- Pasting a file path selects the file, with packages treated as files. Empty-address cases all reset, ⌘R is handled at `MainWindowController`, and invalid paths show inline red text while staying in edit mode.
+- `GlobalHotkey.toggle()` uses the window ledger, avoiding an extra empty window after the async `unhide` and revived closed windows. `refreshChrome()` gained an `isViewLoaded` guard.
 
 ## [0.19.5] - 2026-08-29
 
-### 修复 / 变更
-- **外部/浏览器「打开文件位置」每次都弹新窗口（I-52，用户报告）**：从浏览器等定位文件到 NSpace，以前每次都开一个**新窗口**（开多了满屏都是），而且设置里那个「外部打开到」选项语义拧了——默认值叫「新标签页」却走的是开新窗口的分支。现在理顺并对齐用户预期：
-  - **默认改为「现有窗口新标签页」**：复用当前窗口，在活动窗格新建一个标签定位并选中，不再每次弹新窗
-  - 可在 **设置 → 使用习惯 → 外部打开目录到** 切换：「现有窗口新标签页」（默认）/「新窗口」（每次弹新窗）
-  - 旧的「活动窗格」取值自动等同于「现有窗口新标签」（无现有窗口时才开新窗）
-
-### 测试
-- ui-smoke 146 → 148：新增 I-52（经真实 `application(_:open:)` → openFileURLs 链——默认落点复用现有窗口、活动窗格标签 +1、窗口数不变；「新窗口」则窗口数 +1）；17 单测套件全绿
+- External "show file location" reuses the current window with a new tab by default instead of opening a new window each time. Settings > Behaviour offers new tab or new window, and the old `activePane` value maps to new tab (I-52).
 
 ## [0.19.4] - 2026-08-28
 
-### 修复
-- **新版发布后更新按钮迟迟不出现（I-51，用户报告）**：自动检查更新的节流原为 20 小时，意味着当天启动过一次后，就算随后发布了新版，也要等约一天（或手动检查）徽章才会亮起「↑ 更新」。降到 **1 小时**，更新更及时地浮现
-- 检查失败（断网 / GitHub API 限流）此前也会刷新「上次检查时间」，把下次自动重试一并挡住；改为**仅成功才记录时间**，失败时下次启动即可重试（GitHub 未认证限流约一小时自愈）
-- 说明：手动「检查更新」（设置 → 通用）本就不受节流限制，任何时候都能立即强制检查；版本比较为标准语义化比较，`0.19.4 > 0.19.3` 判定正确
+- Auto update check throttle reduced from 20 hours to 1 hour, and only successful checks record the check time (I-51).
 
 ## [0.19.3] - 2026-08-28
 
-### 修复
-- **排序选择不持久化（I-50，用户报告）**：点列头切换排序后，重启又回到旧排序。根因与 I-47 同类——改排序（`sortDescriptorsDidChange`）只改了当前排序、没触发会话保存，于是排序变更只在干净退出那一刻才落盘；非干净退出（热更新重启/强退/Mac 重启）就丢了。修复：改排序即触发落盘（1s 防抖），排序选择在任意退出方式下都记得住
-
-### 变更
-- **文件夹置顶改为 Finder 式：只在按名称排序时生效（I-50，用户点名）**：以前「文件夹置顶」对所有排序列都生效，导致你明明选了「按时间」，文件夹仍浮在最上、不是纯按时间。现在对齐 macOS Finder——**按时间/大小/种类排序时一律纯按该列排**（文件夹与文件按时间交错），只有**按名称**排序时文件夹才置顶。设置项也改名为「按名称排序时文件夹置顶」
-
-### 测试
-- DirectoryReaderTests 新增 `foldersFirstOnlyAppliesToNameSort`（名称排序文件夹置顶、时间排序文件夹按时间混排不上浮）；ui-smoke 145 → 146（改排序即落盘：隔离会话记住排序列/方向）；17 单测套件全绿
+- Changing the sort now saves the session (1s debounce), so it survives an unclean exit (I-50).
+- Folders-first now applies only when sorting by name, matching Finder; the setting was renamed accordingly.
 
 ## [0.19.2] - 2026-08-28
 
-### 修复
-- **分组排序错乱：今天被挤到最底（I-49，用户报告）**：日期分组时「今天」组本该在最前，却跑到了最末（完整组序变成 昨天→本周→本月→今年更早→今天）。根因是**「文件夹置顶」开启时**，列表内部顺序是「先所有文件夹按日期、再所有文件按日期」，不是全局按日期单调；而分组是按「组第一次出现的位置」排序的——文件夹先把 昨天/本周/本月/今年更早 各组建立起来，而「今天」若只有一个**文件**（没有今天的文件夹），它排在文件段最前但整体靠后，于是「今天」组被挤到了所有文件夹组之后。修复：分组顺序改为按**相对时间新近度**排（今天>昨天>本周>本月>今年更早>往年按年），跟随排序方向（日期降序→今天在最前；升序→今天在最后），**不再受「文件夹置顶」打乱**；每个组内部仍保持排序（含文件夹置顶）
-- **外部/浏览器"打开文件位置"定位后选中无蓝色高亮（I-48，用户报告）**：从浏览器等打开链接再定位到具体文件，文件确实被选中了（状态栏显示"已选 1 项"）但那一行不显示蓝色高亮。根因是定位选中后没有把列表/网格设为窗口的第一响应者——NSTableView/NSCollectionView 只有在获得焦点时选中才显示强调蓝，否则显示未强调的灰色（深色模式下几乎看不见），reveal 落到新窗口时尤其明显。修复：三种视图定位落位后让对应视图获焦，选中即显蓝色强调
-
-### 测试
-- ui-smoke 143 → 145：I-49（foldersFirst 打乱夹具下「今天」组仍排最前）+ I-48（reveal 后表格成为窗口第一响应者）；M26/M29 分组既有断言零回归；15+2 单测套件全绿
+- Date groups are ordered by recency and follow sort direction (I-49); "Today" could sink to the bottom when folders-first was on.
+- Revealed selections show the blue highlight, because the view now becomes first responder (I-48).
 
 ## [0.19.1] - 2026-08-27
 
-### 修复
-- **重启后返回 home、不记忆上次工作区（I-47，用户报告）**：干净退出（⌘Q）其实一直正常（`applicationWillTerminate` 兜底保存 + restore 实测能回到上次目录）——真凶是**导航不触发会话保存**：`onActiveLocationChange` 只更新窗口标题、没调 `noteStateChanged`，所以你切换文件夹后的位置只在干净退出那一刻才落盘。一旦是**非干净退出**（热更新重启、强制退出、Mac 重启/注销、崩溃），最后导航的位置就没保存，下次启动回退到上一次保存（常为 home）。修复：导航即触发落盘（SessionStore 内 1s 防抖合并），无论何种方式退出都记得住上次的文件夹/工作区
-- 影响面：现在每次切换目录后 ≤1s 自动记住；恢复会话仍完整还原窗口/布局/窗格/标签/路径/排序/视图模式（M11）
-
-### 测试沙箱铁律（连带加固）
-- 因"导航即落盘"会在测试导航夹具时写 session，把 `sessionStore` 与 `frecencyStore` 在 UITEST 下统一切到隔离临时目录（`AppDelegate.supportDirectory`），**绝不把测试夹具路径污染进用户真实会话/搜索排序**（延续 I-46 windowFrame、M28 frecency 的隔离；实测冒烟全程真实 `session.json` 零改动）
-
-### 测试
-- ui-smoke 141 → 143：I-47「导航即落盘」（导航夹具后隔离会话在防抖内记住该目录）+「UITEST 存储隔离」；实测真实会话不被冒烟触碰；真机验证 restore 往返（启动→退出保持上次目录、无回 home、无崩溃）；15+2 单测套件全绿
+- Navigation now saves the session (1s debounce), so an unclean exit no longer returns to home (I-47).
+- `sessionStore` and `frecencyStore` use an isolated directory under UITEST, so test fixtures never reach real user data.
 
 ## [0.19.0] - 2026-08-27
 
-### 里程碑：M28 使用习惯学习排序（Listary 式 frecency + 匹配质量融合，用户点名）
-- **搜索自动按习惯排序**：聚焦搜索结果不再需要手动选位置才排得好——现按「匹配质量 + 使用频次×新近（frecency）」自动排序。你越常打开、越近打开的文件/文件夹，搜同名时越靠前。短查询更靠使用习惯、长查询更靠匹配质量（对齐 Listary 观测行为）
-- **全应用学习**：不只搜索面板——整个 App 里打开文件、进入文件夹、搜索定位都会记账，故冷启动即反映你的真实习惯（一个你天天用但从没经搜索打开过的文件也会靠前）
-- **匹配质量分层**：精确名 > 名前缀 > 词边界 > 名子串 > 路径子串 > 缩写/子序列（如 "prfi8" 命中 "program files 86"），参照 fzf/fzy 的词首/连续命中加权
-- **设置开关**（使用习惯页，默认开）：不喜欢可关，回到原来的排序（全局到达序 / 局部离根近序）
-
-### 实现
-- 新增 `Frecency` 胶囊：`FrecencyStore`（actor 持久化 count+lastAccess，30 天半衰期指数衰减，超容量按分淘汰最低）+ `SearchRanking`（纯逻辑：匹配打分 + 与 frecency 的融合，权重随查询长度调节）。四公理合规（构造注入无单例、独立自证测试、零跨胶囊依赖）
-- 记账经 `FileOpsCoordinator.recordAccess` 单一实例注入（`PaneViewController.navigate` 记文件夹、三视图 `open()` 记文件、搜索打开记账）；`SearchPanelController` 搜索开头 `await snapshot()` 后用 `rankLess` 融合比较器接管排序，复用流式线性归并（不退回 O(n²)）
-- **测试沙箱铁律**：UITEST 下 frecency 记账写隔离临时目录（`AppDelegate.frecencyDirectory`），绝不把测试夹具路径污染进用户真实搜索排序（同 I-46 windowFrame 隔离的教训）
-
-### 测试
-- Frecency 胶囊 11 单测（衰减 30 天减半、新近压过久远高频、匹配分层序、融合短/长查询主导、record 累加、持久化往返、超容量淘汰保留热路径）；15→17 套件全绿
-- ui-smoke 138 → 141：M28 智能排序开（高 frecency 命中排最前）/ 关（回退到达序）/ UITEST frecency 隔离 ×3
+- M28 habit-learning search: results rank by match quality plus frecency, with short queries weighted toward habit and long ones toward match. A setting (on by default) turns it off.
+- Tiers: exact name, prefix, word boundary, substring, path substring, then subsequence abbreviation.
+- New `Frecency` pod: `FrecencyStore` (actor, 30-day half-life, evicts lowest scores) and `SearchRanking` (pure logic). Accesses are recorded app-wide through `FileOpsCoordinator.recordAccess`.
 
 ## [0.18.6] - 2026-08-27
 
-### 修复
-- **多选后单击选区内文件收敛为单选卡顿 0.5-1s（I-43，用户报告）**：真机插桩探针（合成点击 + `super.mouseDown` 阻塞计时 + 选中变更时间戳）实测坐实根因——`NSTableView` 对「纯单击已选中的行」会等一个双击间隔（`NSEvent.doubleClickInterval`，默认约 0.5s）才把多选收敛为单选（为区分双击=打开）；单击未选中行没有这个歧义，故即时。实测点选区内 0.672s、点选区外 0.132s，与用户描述完全吻合。修复：对「无修饰键 + 单击 + 当前多选 + 点在已选中行」场景，让 `super.mouseDown` 照常处理（拖拽、双击语义完全不变），若期间未发起拖拽则在其返回后立即把选中收敛为单选，绕过那 0.5s 等待（实测降至 0.160s）。拖动多选、双击打开均不受影响
-
-### 测试
-- ui-smoke 137 → 138：新增 `shouldPreemptCollapse` 纯谓词确定性断言（纯单击多选已选行=抢先收敛；修饰键/双击/选区外/单选=不介入）；行为层 0.5s→0.16s 的时序改善由真机插桩探针实测确认（探针为一次性诊断工具，定位后已从代码移除，无产品残留）；15 单测套件全过
+- Clicking inside a multi-selection collapsed after a double-click interval (about 0.5s, an `NSTableView` behaviour). `mouseDown` now collapses right after `super` unless a drag started; drag and double-click are unchanged (I-43).
 
 ## [0.18.5] - 2026-08-27
 
-### 修复
-- **Quick Look（Space）收起动效突兀（I-45，用户报告 + 澄清）**：用户澄清关键不是"慢"而是收起时**面板非要一路缩小到那个小图标才消失**，希望"直接消失"。根因是 `sourceFrameOnScreenFor` 返回行内图标的小矩形，QL 据此把面板缩放收拢到那个 22×22 的点。修复：列表/图标/分栏三视图加收起标志，按 Space 收起时 `sourceFrame` 返回 `.zero` → QL 改走**淡出**（直接消失，不再缩到图标）；开启时仍返回图标矩形，保留"从图标放大"的进入手感
-
-### 说明（诚实边界）
-- QL 缩放动画的**时长**由 macOS 内建控制、无公开 API 可编程调整；本次改的是收起的**动画类型**（缩放→淡出）而非时长，不使用私有 API。Escape 等非 Space 的关闭路径仍走系统默认动画
-
-### 测试
-- ui-smoke 136 → 137：新增 `uiTestQLSourceFrame` 钩子断言（收起态 sourceFrame=.zero 淡出、开启态=行内图标矩形缩放）；QL 面板动画本身属无法无头断言项，仅验分支逻辑；15 单测套件全过
+- Dismissing Quick Look with Space now fades out instead of shrinking into the icon: `sourceFrame` returns `.zero` while dismissing, and opening still zooms from the icon (I-45).
+- Quick Look animation duration is system-controlled and no private API is used. Escape and other paths keep the default animation.
 
 ## [0.18.4] - 2026-08-27
 
-### 修复
-- **第三方"打开文件位置"不定位选中文件（I-44，用户报告 Antigravity IDE）**：从 Antigravity 等 App 点"在 Finder 中显示/打开文件位置"，NSpace 接管后只跳到父目录、不选中目标文件。诊断：`openFileURLs` 审计面包屑证实 reveal 请求确已到达（含真实文件路径），故非事件未处理——根因是 `MainWindowController(initialDirectory:select:)` 的 `select` 参数**整段被丢弃、从未应用**。另发现两处 reveal（外部打开的活动窗格分支、搜索结果"在 NSpace 中定位"）硬编码走列表视图，图标/分栏视图下同样不选中。修复：PaneViewController 暴露视图模式感知的 `reveal(_:)`（列表/图标用 pending-reveal、分栏用 desiredSelection，均能扛异步读目录竞态），窗口初始化接通 `select` + 三处 reveal 统一改走该入口
-- **重新 build 后窗口尺寸回默认（I-46，用户报告；I-41 之外的独立根因）**：根因是 `scripts/ui-smoke.sh` 的 UITEST 帧持久化场景把测试尺寸（900×520）写进了**产品同一个** `windowFrame` 真实偏好键——每次跑冒烟（含每次 build 后验证）都覆盖掉用户真实窗口尺寸，违反测试沙箱铁律。修复：UITEST 下帧持久化切到隔离键 `windowFrame.uitest`，产品 `windowFrame` 永不被测试触碰；冒烟收尾自动清理隔离键；已手工清除既有污染值（曾被覆盖为 900×520），下次启动回默认尺寸、之后任意调整即永久记忆
-
-### 说明（诚实边界）
-- **Quick Look 收起动效偏慢（I-45，用户报告）暂列待确认**：QLPreviewPanel 的开合缩放动画时长由 macOS 内建控制，无公开 API 可编程加速；三视图对**可见行**均返回正确的图标锚点（非退化 `.zero`），故可见文件本就是干净的短缩放，速度是系统常量。唯一 App 侧可改的是文件滚出可见区后收起时锚点落到屏幕外导致的"慢滑"退化。待确认卡顿属于哪种场景后再定向处理，不以私有 API 硬改系统动画
-
-### 测试
-- ui-smoke 131 → 136：I-44（openWindow(selecting:) 视图模式无关选中 + 列表/图标各自真选中目标 URL ×3 + 沙箱守卫 ×1）、I-46（UITEST 帧键隔离断言 ×1）；帧持久化 SETFRAME/EXPECTFRAME 端到端在隔离键下仍全绿；实测冒烟后产品 `windowFrame` 键冻结未被改动；15 单测套件全过
+- Third-party "show file location" (Antigravity IDE) now selects the file: the `select` argument of `MainWindowController` was being dropped, and hard-coded list reveals now go through the view-mode-aware `pane.reveal` (I-44).
+- ui-smoke was overwriting the real `windowFrame`; UITEST now uses the isolated `windowFrame.uitest` key (I-46).
 
 ## [0.18.3] - 2026-08-27
 
-### 新增（M29 人性化时间显示，用户点名 + 截图）
-- **分组按相对时间粗分**：日期排序分组不再是「2024年8月」式绝对年月，改为基于当前时刻的相对桶——今天 / 昨天 / 本周 / 本月 / 今年更早 / 往年（2025年、2024年…），由近及远、组数克制。列表与图标视图共用同一 `FileGrouping`
-- **日期列相对化（本年隐年份）**：修改/创建/添加日期列（含搜索结果、分栏预览、冲突面板、显示简介）改为——今天「今天 22:57」、昨天「昨天 22:57」、本年省年份「8月24日 22:57」、仅非本年才显年份「2025年8月24日」。对齐 Finder（其列表与「显示简介」同样用相对格式），本年不赘述「2026」年份
-
-### 实现（时钟缝）
-- `FileGrouping` 新增注入式 `nowProvider` 时钟；今天/昨天/本周/本月/本年判定全部经此 now（产品默认 `Date()`，与原 `isDateInToday` 逐位等价，零行为回归；测试可注入固定时钟确定性验证相对桶落位）
-- `Formatters.relativeDate(_:now:)` 三档本地化模板（`jmm` / `MMMdjmm` / `yMMMdjmm`——`j` 依 locale 定时制，zh 24 时制 / en 12 时制），一处替换全部 8 个 `Formatters.date` 调用点
-
-### 测试
-- `runGroupingScenario` 夹具改为注入固定时钟 `now=2026-06-17`、落 3 个不同相对桶（往年 2025-05 / 本月 2026-06-02 / 今天 2026-06-17），断言组标题为相对桶文案而非绝对年月；新增 `runRelativeTimeUnit` 纯函数确定性断言（6 桶 keyTitle 落位 g0..g5 全序 + 日期列本年隐年份/非本年显年份）
-- ui-smoke 129 → 131 全绿（M29 ×2）；15 单测套件全过
+- M29 human-friendly time: date groups use relative buckets (Today, Yesterday, This Week, This Month, Earlier This Year, then past years).
+- Date columns are relative and hide the year within the current year, matching Finder. `Formatters.relativeDate(_:now:)` replaces all 8 `Formatters.date` call sites.
+- `FileGrouping` gains an injectable `nowProvider` clock for deterministic tests.
 
 ## [0.18.2] - 2026-08-27
 
-### 修复
-- **全局搜索卡死 / CPU 暴涨（I-42，用户报告）**：根因两处叠加——① 引擎对 `NSMetadataQueryLocalComputerScope` 无结果上限，常见词命中十万级时在主线程 `drainSpotlight` 一次性读全部 `result(at:)` + 铺进表格 → 卡死；② 面板 I-38/I-40 改动把每批结果 `hits + visible` 全量重拼数组（O(n²) 主线程开销）。修复：引擎加硬上限 `SearchLimits.maxResults=2000`（`drainSpotlight` 读预算封顶 + 达上限停两通道，CPU 立即回落）；面板改为原地追加（全局 O(1) 摊销）/线性归并（局部），达上限显示「仅显示前 N 条，请细化关键词」提示
-
-### 验证
-- SearchEngineTests 新增 cap 用例（通道B 造 maxResults+200 文件断言流产出 ≤ 上限）；ui-smoke +2（灌 2000 条 O(n) 限时不卡 + 截断提示可见），127→129 全绿；15 单测套件全过
+- Global search hang and CPU spike (I-42): the engine has a hard cap, `SearchLimits.maxResults` = 2000, and the panel appends or merges linearly instead of rebuilding per batch. A truncation hint appears at the cap.
 
 ## [0.18.1] - 2026-08-27
 
-### 修复
-- **版本更新后窗口尺寸/设置回默认**（用户报告）：根因是窗口 `isRestorable` 默认为 true，macOS 原生窗口状态恢复与本应用自管的 `windowFrame` 恢复并存；而系统的 savedState 在二进制/签名变更（即版本更新）时被作废，与自管恢复竞争，导致更新后尺寸回默认——这正是"普通重启正常、版本更新才复位"的分水岭。改为 `isRestorable = false`，自管 `windowFrame` 键成为唯一权威，跨版本更新确定性保留尺寸
-- 关窗前补落一次最终 frame（更新触发的 terminate 可能不走 didEndLiveResize，防最后一次尺寸丢失）；`applicationWillTerminate` 末尾 `UserDefaults.synchronize()` 强制偏好落盘，防更新流程尽快杀进程时最后写入未持久
-- 影响面：窗口尺寸/位置、侧栏宽度、列显隐、布局/视图默认值、快捷键、书签、会话——一切基于 UserDefaults/Application Support 的设置本就存在 `~/Library` 内、更新不覆盖；本次消除唯一会被系统恢复干扰的窗口几何项
-
-### 验证
-- 帧持久化端到端（独立进程 SETFRAME→EXPECTFRAME 900×520 恢复）+ isRestorable=false 断言 + 实测写入 1333×733 经"更新式重启"精确恢复；ui-smoke 127 全绿
+- Window size reset after updates: native state restoration raced the app's own frame restore, so `isRestorable` is now false and the `windowFrame` key is the only authority (I-41).
+- The final frame is saved on close and `UserDefaults.synchronize()` runs at terminate.
 
 ## [0.18.0] - 2026-08-27
 
-### 新增
-- **M26 v2 图标视图按年/月分组**：图标网格（⌘1）现与列表一致支持「使用分组」——NSCollectionView section + 悬浮组头「2026年8月」（chevron+项数），点击组头折叠、右键「仅显示此组/显示全部组」+ 左下过滤药丸一键还原。分组开关与列表共用一处偏好与菜单
-- 分组纯逻辑抽出共享 `FileGrouping`（键格式/桶划分的唯一真源，列表与图标共用，杜绝散落 index 算术）；图标视图 section↔model 下标经集中映射（`modelIndex`/`fileItem`/`indexPath(forModelIndex:)`），选中按 URL 跨折叠/过滤/重排稳定保持
-
-### 说明（诚实边界）
-- 分栏（Miller columns）视图不做分组：Finder / QSpace 的分栏本就不分组，窄列内按月分段是反模式，故为有意的 N/A 而非缺失
-
-### 测试
-- 待办全部收口 + 补齐测试矩阵：ui-smoke 116 → 126（图标分组 section 数/折叠/过滤/选中跨 rebuild ×5 + I-34 大小列单行不折行 ×1）；已完成项（I-30/I-31/I-32/M23/M25）核实其断言在矩阵中持续通过；15 单测套件全绿
-- 列表分组重构为 `FileGrouping` 后 6 条列表断言零回归
+- M26 v2: icon view groups by year and month like the list view, with a shared switch; `FileGrouping` is the single source of truth, and selection is kept by URL.
+- Column view is deliberately not grouped: Finder and QSpace do not, and it is an anti-pattern in narrow columns.
+- I-34 size column single-line assertion added; ui-smoke 126.
 
 ## [0.17.0] - 2026-08-27
 
-### 新增（M27 冲突体验增强，QSpace 对齐）
-- **同目录复制必询**：同一文件夹内复制/粘贴不再静默生成"副本"——弹冲突面板让你选替换/合并/取消（"制作副本"⌘D 仍静默，语义分离）
-- **精简三按钮 + 按文件夹批量**：冲突面板改自绘 sheet，右对齐三按钮「取消 / 合并 / 替换」；左下角勾选框「应用到此文件夹的全部冲突」——勾选后所选动作批量套用到当前文件夹的全部冲突。跨多个文件夹时勾选框一次只作用于一个文件夹，故 N 个文件夹的多文件冲突会逐文件夹再现 N 次面板。「合并」仅目录冲突可用（文件冲突禁用）
-
-### 修复
-- **数据安全律（严重，主动加固 + 对抗评审三修）**：同目录复制时"目标"即"源"本体，若按"替换"会删掉正在拷贝的源文件——引擎对自源冲突一律把替换/合并安全收敛为改名保留。评审进一步发现并修复三处丢数据路径：①自源判定改 inode 级同一性（`fileResourceIdentifier`+符号链接解析回退），堵住符号链接/大小写别名路径下"替换"仍删源；②批量 keepBoth/rename 计入"本批已占用名"，两条同名源不再算出同一目标名互相覆盖；③"替换"的删目标从裁决阶段推迟到逐条传输时，批量中途取消/失败不再丢未传输条目的目标
-- **I-33 多选→单选选中卡顿**：同一窗格内点击每次都以"改选中前的旧值"多刷一遍窗格状态、随后 AppKit 改选中再刷一遍——同窗格点击现只确保焦点、跳过这次冗余重刷（跨窗格切换不受影响）
-
-### 验证
-- Transfer 引擎单测 11→16（新增：自源替换/合并不删源、重命名落位、撞名自动编号不覆盖、**符号链接别名自源不删源**、**批量同名源独立命名不互相覆盖**）+ 6 个 UISelfTest 断言（按文件夹批量作用域、面板次数==文件夹数、逐条推进、取消、三按钮+checkbox 结构、文件合并禁用）；ui-smoke 121 全绿，单测 15 套件全过；三镜头对抗评审确认的 3 处数据安全缺陷全部修复并加单测锁死
+- M27: copying within a folder now asks instead of silently making a copy (⌘D stays silent). The conflict sheet has Cancel, Merge and Replace plus "apply to all conflicts in this folder"; Merge is folders only.
+- Data safety: when the destination is the source, Replace and Merge become keep-both. Self-source detection uses inode identity, batch naming tracks names already taken, and deleting the destination is deferred to transfer time.
+- I-33: same-pane clicks no longer refresh pane state twice.
 
 ## [0.16.0] - 2026-08-27
 
-### 新增
-- **I-39 ⌘↑/⌘↓ 互逆导航**（QSpace 对齐）：⌘↑ 上层后自动选中来源子目录；新增「下层文件夹」⌘↓——进入所选文件夹（文件走默认程序），无选中时回退最近历史的直接子级，⌘↑⌘↓ 往返闭环。快捷键入注册表可配；菜单禁用时 ⌘↑/⌘↓ 不再泄漏为"跳选首/末行"
-- **I-40 搜索结果常驻路径列 + 局部按根近排序**：同名结果不再只靠悬浮提示区分——新增路径列（中部省略保根与最近父级两头，tooltip 全路径，面板 700→880）；局部搜索按"离搜索根近者优先"排序（根直接子级最先、逐层下推，同层字典序），全局搜索保持到达顺序
-
-### 修复
-- **I-38 搜索结果选中约 0.5s 后自动取消**：流式批次到达时逐批 reloadData 清掉用户选中——结果集更新收敛为统一入口，重载前按 URL 记忆选中、重载后还原并保持可见（排序位移下仍锁同一条目）
-- 三视图"按 URL 找行/选中"从 URL 精确相等改为标准化路径比较：目录条目 URL 带尾斜杠、导航/搜索来源不带，跨源匹配必失配（⌘↑ 选中来源子目录、搜索定位、视图切换选中迁移、分栏选中恢复同病同修）
-- 局部排序符号链接口径（对抗评审真机实锤）：Spotlight 通道回报解析后路径（/tmp⟷/private/tmp 等），单一未解析根前缀会让主通道整体判为"根外"沉底——根前缀按"原样+解析"双口径匹配
-- 流式排序性能：弃每批全量重排（大结果 O(n²) 主线程开销），改为新批排序后线性归并 + 每命中深度只算一次缓存
-
-### 验证
-- ui-smoke 断言 105 → 115 全绿；对抗评审（3 镜头 × 独立证伪）确认的 4 个测试假绿/零覆盖缝隙全部堵死：⌘↓ 断言改"选中驱动≠历史兜底"反假绿设计、吞键守卫直发按键事件验真、同层字典序全序核验、符号链接口径与根外沉底分支各自锁真值；新增面板实景截图人验
+- I-39: ⌘↑ selects the folder you came from; new ⌘↓ Down Folder enters the selection or falls back to the most recent direct child in history. The two keys no longer leak into row selection.
+- I-40: search results have a permanent path column (panel 700 to 880). Local search sorts by nearness to the root, with sort-then-merge streaming and root prefixes matched both raw and resolved.
+- I-38: streamed batches no longer clear the selection, which is restored by URL.
+- URL matching across views now compares standardized paths, fixing trailing-slash mismatches.
 
 ## [0.15.1] - 2026-08-26
 
-### 修复（I-29 根治）
-- FDA/系统面板图标空白 + 授权随构建漂移：根因 = ad-hoc 每次构建更换签名指纹，系统把每个构建当陌生 App。本机构建自动改用固定自签证书 "NSpace Dev"（env SIGN_IDENTITY 可覆写；CI 无证书自动回落 ad-hoc）；Info.plist 补 CFBundleIconName
-- 签名切换后 TCC 需最后一次重新授权（FDA 开关重拨一次），此后跨构建持久
+- I-29: ad-hoc signing changed the fingerprint every build, so local builds now use a fixed self-signed "NSpace Dev" certificate (`SIGN_IDENTITY` overrides it, CI falls back to ad-hoc) and Info.plist gains `CFBundleIconName`.
 
 ## [0.15.0] - 2026-08-26
 
-### 新增
-- **M26 列表按年/月分组 + 组过滤**（QSpace 对齐）：日期类排序自动分组「2026年8月」式悬浮组头（折叠三角+项数），点组头折叠；组头右键「仅显示此组」（过滤药丸一键还原）；"使用分组"开关外部化（显示菜单/设置/可配快捷键）
-- **I-37 地址栏智能收缩**：段名超长中部省略（完整名 tooltip）+ 中间层级折叠为「⋯」菜单（全层级永远可达）+ 宽度变化实时重算——弃横向滚动，任何深度不再溢出
-
-### 修复
-- 自测编排：路径编辑场景退出编辑态（截图不再被编辑框遮盖）；UITEST 无头环境补全 popup 嵌套事件循环挂死——测试通道走契约核验不弹真 popup（产品路径不变）
-
-### 验证
-- ui-smoke 断言 92 → 105 全绿（分组 6 断言 + 面包屑 6 断言，截图逐张人验）
+- M26: list view groups by year and month for date sorts, with collapsing, "show only this group", and an external "use groups" switch (QSpace parity).
+- I-37: the address bar truncates long names in the middle and folds middle levels into a menu, with every level still reachable, replacing horizontal scrolling.
+- Self-test fixes for path edit mode and the headless completion popup; 105 ui-smoke assertions.
 
 ## [0.14.1] - 2026-08-26
 
-### 安全与流程（I-35 脱敏事故处置）
-- 公开仓库泄露真实文件清单的截图与版式稿演示数据：全历史 filter-repo 清洗（图 blob 净除 + 旧文本 blob 词替换）并强推；README 截图改由 NSPACE_UITEST_DEMO 演示夹具生成；新增 pre-push 脱敏门禁（敏感词表本地化不入库）
-- Release 发布说明自动携带 CHANGELOG 对应版本节（用户点名：每次发版必带 changelog）
-
-### 修复
-- I-30 ⌘L 路径编辑首键 "/" 无反应：补全 popup 被文本变更事务同步吞掉——complete 延迟到下一 runloop（附反证回归断言）
-- I-31 搜索结果右键菜单缺失：补全（打开/定位/拷贝路径/加入暂存架/显示简介，FG-1 不可达项自动省）
-- I-32 多选删除后选中漂移到新行：三视图（列表/图标/分栏）选中按 URL 精确重建，无匹配显式清空
-- I-34 大小列窄宽折行撑爆行高：单行+截断
-
-### 测试
-- ui-smoke 断言 81 → 93（I-30 反证锁 ×3、I-31 剪贴板真值 ×3、I-32 沙箱删除 ×6）
+- I-35 privacy incident: a screenshot and mockup demo data leaked real file listings in the public repository. History was cleaned with filter-repo and force-pushed, README screenshots now come from the `NSPACE_UITEST_DEMO` fixture, and a pre-push sanitize gate was added with a local-only term list.
+- Release notes now carry the matching CHANGELOG section.
+- Fixes: I-30 first "/" in path editing, I-31 search result context menu, I-32 selection rebuilt by URL after a delete, I-34 size column single line.
 
 ## [0.14.0] - 2026-08-26
 
-### 里程碑：开源上线 + 热更新闭环（M25）
-- 公开仓库 github.com/SammySnake-d/NSpace（README/LICENSE/架构说明/诚实系统边界）
-- Release CI：推 tag 自动构建 .app、打 zip、上传 Release 资产（含 sha256）
-- 更新器修复三连：错误信息真实透出（LocalizedError 桥接，告别"错误 1"）；默认更新源指向真实仓库；下载包自动去 quarantine（重启不被 Gatekeeper 拦）
-- 自动下载就绪模式（默认开，可关）：发现新版 → 后台下载并就地安装 → 徽章亮 ↑ → 重启即完成
-
-### 修复
-- I-34 大小列窄宽折行撑爆行高：单行+头部截断
+- M25: public repository github.com/SammySnake-d/NSpace with README, LICENSE and architecture notes; tag-triggered Release CI uploads the zip and sha256.
+- Updater fixes: real error messages, default feed, quarantine removal, and an auto-download-ready mode (on by default).
+- I-34 size column no longer wraps.
 
 ## [0.13.0] - 2026-08-26
 
-### 新增
-- **M24 全局呼出/隐藏热键**：任意 App 中一键置顶/隐藏 NSpace（Carbon 全局热键，无需辅助功能权限；设置-通用录制组合键，即时生效）——替代 Raycast 桥接
-
-### 变更
-- 替代 Finder 页收尾：撤除永败的"设为默认"按钮（FG-1），改为诚实状态陈述；Reveal 接管开关为该页主体
+- M24 global show/hide hotkey via Carbon, with no Accessibility permission needed; recorded in Settings > General, replacing a Raycast bridge.
+- The always-failing "Set as default" button was replaced by an honest status statement (FG-1).
 
 ## [0.12.0] - 2026-08-26
 
-### 新增（I-28：Reveal 接管——用户 Typora 报障牵出的真机制）
-- 「接管打开文件位置」开关（设置-替代 Finder）：第三方 App 的"打开文件位置/在 Finder 中显示"改落 NSpace 并选中目标——全局 NSFileViewer 键（QSpace 同机制），即时生效可逆
-- 三态检测：残留失效（如已卸载的 QSpace 指针，导致定位请求毫无反应）红字警示，勾选即修复
-- 外部打开审计面包屑（debug.lastExternalOpen）
-
-### 修复
-- Typora 等 App"打开文件位置"无反应：QSpace 卸载残留的全局 NSFileViewer 指向不存在的 bundle——已清并接管到 NSpace
+- I-28: a "take over show file location" setting uses the global `NSFileViewer` key (the same mechanism as QSpace), applies at once and is reversible.
+- Three-state detection warns about a stale pointer such as an uninstalled QSpace, which had caused Typora's dead "open file location". Added the `debug.lastExternalOpen` breadcrumb.
 
 ## [0.11.4] - 2026-08-26
 
-### 核实与加锁（I-27）
-- 全面清查系统 open 调用：列表/图标/分栏/搜索/右键"打开"的目录路径全部已是 App 内导航（无一处飞 Finder），零 reveal 泄漏
-- 新增矩阵断言"目录右键打开=App 内导航"（沙箱夹具实测落点，smoke 79）
+- I-27 audit: every folder open path navigates in-app with no reveal leak, locked by a sandboxed assertion.
 
 ## [0.11.3] - 2026-08-26
 
-### 测试
-- I-26 追加：列头排序全键矩阵——六列（名称/修改/大小/种类/创建/添加）× 升降双向逐一 UI 真效果断言 + name/dateModified/kind 双向单测补全（smoke 78 断言）
+- I-26 follow-up: full sort matrix of six columns in both directions, tested through the UI and unit tests.
 
 ## [0.11.2] - 2026-08-26
 
-### 修复
-- I-26 创建日期/添加日期列点击列头无法排序：SortSpec.Key 补全 created/added，比较器补 case，设置-默认排序同步扩展；单测+UI 真效果断言双锁（smoke 73 断言）
+- I-26: Date Created and Date Added columns are now sortable; `SortSpec.Key` gains `created` and `added`, and the default sort setting was extended.
 
 ## [0.11.1] - 2026-08-26
 
-### 结论与新增（I-25 判别实验）
-- 实验实证 macOS 27 系统级锁定文件夹默认程序（五臂实验全 -50/偏好被清除；QSpace 亦无法接管）——设置页文案改为诚实说明
-- 反向直达通道：Finder 右键"服务→用 NSpace 打开"（NSServices，多选支持）+ nspace://open?path= URL 方案
+- I-25 experiment: macOS 27 locks the default folder handler (all five arms returned -50, and QSpace cannot take it over either); the settings text now says so.
+- Added reverse entry points: the Finder Services item "Open with NSpace" and the `nspace://open?path=` URL scheme.
 
 ## [0.11.0] - 2026-08-26
 
-### 新增
-- **M23 全功能自测矩阵**（用户点名"全部功能都测过才行"）：120 项功能穷举归档，自动断言 34→72 条（全验真实效果：视图真在层级、导航路径真变、文件系统真落地、剪贴板真有值、菜单项 enabled 真切换）；16 项不可自动化的列诚实排除清单+手测步骤
-- **测试沙箱铁律机械化**：assertSandboxed 守卫——可变操作只准动自建临时夹具，物理上写不出误伤用户文件的测试
-
-### 修复
-- I-24 分栏视图双坍缩（矩阵当场抓获）：纵向坍成 1pt + 横向滚动视口被解成 0 宽内容全裁——约束双修，断言升级到内容级（行数/表格高/视口宽）
+- M23 full-feature test matrix: 120 features catalogued, assertions up from 34 to 72 verifying real effects, and 16 manual-only items listed honestly.
+- The test sandbox hard rule is now mechanical: the `assertSandboxed` guard.
+- I-24: column view collapsed in both directions; both constraints fixed and assertions raised to content level.
 
 ## [0.10.2] - 2026-08-26
 
-### 修复
-- I-20b 侧栏图标全套换 Finder 原版（CoreTypes Sidebar*.icns 模板直读：个人/桌面/文稿/影片/音乐/图片/下载/应用程序）
-- I-23 工作区标签文字居中（对称内边距，关闭钮改 hover 叠加）
+- I-20b: sidebar icons use Finder's own CoreTypes `Sidebar*.icns` templates.
+- I-23: workspace tab text centred with symmetric padding; the close button is a hover overlay.
 
 ## [0.10.1] - 2026-08-26
 
-### 修复
-- I-22 侧栏折叠后无法再展开：弃 NSSplitView 私有折叠机制（isHidden 被布局盖回），折叠状态完全自管直铺两列 frame；新增"按钮路径折叠→展开→真可见"回归断言（此前断言只查尺寸不漂移，属测试盲区）
+- I-22: the sidebar could not re-expand. `NSSplitView`'s private collapse was dropped and collapse state is fully self-managed, with an assertion that the sidebar is really visible.
 
 ## [0.10.0] - 2026-08-26
 
-### 新增（TODO 全量清扫，5 worktree 并发交付）
-- **M22 版本徽章 + GitHub 热更新**：甲板标签条右端常驻 vX.Y.Z 药丸，有新版亮 ↑ 可点更新；UpdateEngine 胶囊（Releases API 检查/semver 比较/下载校验/原子替换回滚，11 项单测）；feed 地址与自动检查外部化；设置-通用加"检查更新"
-- **M15 吐司收尾**：移动/复制完成、暂存入架、推出卷、压缩为〈名〉、解压 N 项——全部 L1 成功反馈
-- **M21 做工收敛**：大小/日期列与状态栏等宽数字（刷新不抖动）、大小列单位灰阶退后、状态栏"已选"改 10% accent 药丸；M14 图标化残余排查完毕（冲突面板按 FG-1 保留文字）
-- **M19 快捷键全外部化**：布局 ⌃⌘1..5、F5/F6、⌥⌘W 迁注册表可改键；系统惯例键逐一评估保留
-
-### 变更
-- **M18 网格清零**：34 处遗留偏离全部收敛 4pt 阶梯，grid-lint 豁免基线文件删除（全量审计 0 违例）
-
-### 验证
-- 15 测试套件全绿；ui-smoke 33 断言全过（含版本徽章/药丸新断言）；GRID_LINT_ALL 全量 0；北极星 20s 落定后 0.0%×6
+- M22 version badge and GitHub self-update (`UpdateEngine` pod). M15 toasts finished for move, copy, stash, eject, compress and extract.
+- M21 finish: tabular digits, muted size units, status bar selection pill; M14 icon sweep complete, with the conflict panel keeping text under FG-1.
+- M19: layout keys, F5/F6 and ⌥⌘W moved to the key registry.
+- M18: 34 grid deviations cleared and the grid-lint baseline file deleted.
 
 ## [0.9.3] - 2026-08-26
 
-### 修复
-- I-21 ⌘W 三连：关最后窗口后可经 Dock 重开；⌘W 分层关闭（浮窗优先，主窗才关工作区标签）；关闭活动标签回退到上一个活跃标签（MRU）
-- I-15 真根因：并发 worktree 构建残留 6 条死 LaunchServices 注册致"未能打开该文件"+TCC 丢图标——已清库，build-app.sh 加常驻清理防复发
-- I-18 搜索结果双击文件夹改为当前窗格内进入（不再经 LS 弹新窗）
-- I-20 侧栏"应用程序"改用系统原版文件夹图标
-- FDA 引导：探测前置到"打开系统设置"点击时（确保自动入列），文案直说"已在列表中拨开关即可，无需点＋"
-
-### 核实
-- I-19 全局搜索"包含隐藏文件"开关一直存在于面板第二行（截图实证），加回归断言
+- I-21: ⌘W closes floating windows first, then workspace tabs, and returns to the last active tab (MRU); the Dock reopens after the last window closes.
+- I-15 real cause: dead LaunchServices registrations from concurrent worktree builds; `build-app.sh` now cleans them on every build.
+- I-18: double-clicking a folder search result enters it in the current pane. I-20: the Applications sidebar icon uses the system folder icon.
+- Full Disk Access guidance improved, and I-19 was verified as not a defect, with a regression assertion added.
 
 ## [0.9.2] - 2026-08-26
 
-### 变更
-- **M20 App 图标定稿**：弃紫底三栏旧图标，换「N」——石墨玻璃深底 + 青→蓝渐变几何 N（两竖条 = 双窗格、斜杠 = 分割线；文件夹融合方案 D/E/F/N2/N3 经用户评审否决，保留纯 N）。生成器重写为可复现管线（scripts/generate-icon.swift）。
+- M20: final app icon "N": graphite glass with a cyan-to-blue geometric N (two bars for dual panes, the slash as divider), generated by `scripts/generate-icon.swift`.
 
 ## [0.9.1] - 2026-08-26
 
-### 修复（用户反馈批次 I-11~I-17）
-- I-12 点击工作区标签无法切换：标题栏区内视图 mouseDownCanMoveWindow 默认 true 吞掉点击——TabBarView/TabItemView 覆写禁用
-- I-11 标签文字未垂直居中 + 拥挤：标签行 28→40（用户点名 1.5×），胶囊 20→28，stack 显式 centerY
-- I-16 导航/布局分段像重复按钮：去 .separated 边框，一体胶囊，分隔线只在簇间
-- I-14 默认书签种子从未注入（旧档案误判已播种）：restoreMissingSeeds 按路径去重合并 + 一次性补种 + 设置「恢复默认书签」按钮（种子可删可恢复，专属图标）
-- I-15 替代 Finder"未能打开该文件"：申请前 LSRegisterURL 强制重注册（ad-hoc 重签致 LS 记录失效）
-- 测试隔离：UITEST 模式跳过真实会话恢复（自测断言确定性初态）
-
-### 新增
-- I-13 ⌘1..9 工作区数字直达（窗口菜单 + 注册表可改键）；视图模式迁注册表默认 ⌥⌘1/2/3
-- I-17 设置-使用习惯暴露「工作区标签上限」
-- BookmarkStore.restoreMissingSeeds 幂等回归测试
+- I-12: tab clicks were eaten by window dragging; `mouseDownCanMoveWindow` is false on the tab views.
+- I-11: tab row 28 to 40, capsule 20 to 28, text centred. I-16: nav and layout segments merged into one capsule.
+- I-14: default bookmark seeds were never injected; `restoreMissingSeeds` plus a Restore Defaults button. I-15: re-register with LaunchServices before requesting.
+- I-13: ⌘1..9 jump to workspaces, and view modes moved to ⌥⌘1/2/3. I-17: workspace tab limit exposed in settings. UITEST skips real session restore.
 
 ## [0.9.0] - 2026-08-26
 
-### 新增
-- **M17 自绘顶部甲板**：弃系统 NSToolbar，右列自绘「工作区标签条 28pt + 图标工具条 36pt」（A1 左右分野：侧栏/导航/视图 —— 弹性拖动区 —— 动作/布局），左列侧栏全高贯通（红绿灯行 28pt + 暂存架 148pt + 分组），一条分割线贯穿窗顶到窗底
-- **自管工作区标签**（替代原生 NSWindow tabbing）：WorkspaceManager 持有整套分屏布局快照，⌘T/⌘W/⌘⇧]、⌘⇧[ 循环全走 KeyBindings 注册表；workspaceTabLimit 外部化（超限覆盖最老）；会话旧格式一次性无损迁移（带回归测试）
-- **暂存架 B2 hover-reveal**：常态只见牌堆+计数药丸（居中），悬停 150ms 底部浮出动作条（overlay 不改布局），拖拽悬停 accent 投放高亮
-- **确定性网格执法**：scripts/grid-lint.sh 入 pre-commit（4pt 阶梯，增量模式），34 处存量入基线待 M18 清零；M17 范围文件全部实收敛
-- 设计资产：PRODUCT.md 产品真源、docs/design/M17-deck-spec.md 方向契约、docs/design/mockup-m17.html 像素级版式稿（深浅双主题+标注层）
-
-### 修复
-- I-06 归档设置语义混淆（页顶作用域说明；双击压缩包始终走系统默认程序）
-- I-07 暂存架居中（偏移 0.2pt）
-- I-08 设置页原始键泄漏 menu.asList
-- I-09 完全磁盘访问按钮重复（收口权限页）
-- I-10 侧栏折叠右列布局 bug（随 NSToolbar 体系移除而消亡；折叠/展开 3 轮回归锁）
-- 图标定稿：任务钮 arrow.up.arrow.down（消除刷新误读）、布局五段 rectangle.split 同族、AirDrop 官方符号
-
-### 验证
-- ui-smoke 25 断言全过（含 7 条 M17 新断言）；北极星四窗格闲置 CPU 0.0%×6；窗口 frame 两阶段 E2E；GRID_LINT_ALL 全量 0；meta-doctor 0
+- M17 custom top deck replaces NSToolbar: workspace tab row plus icon toolbar, full-height sidebar, and one divider from window top to bottom.
+- Self-managed workspace tabs replace native tabbing: `WorkspaceManager` holds full layout snapshots, `workspaceTabLimit` is external, and old sessions migrate losslessly once.
+- Stash shelf B2 hover-reveal action bar; `scripts/grid-lint.sh` enforces the 4pt grid in pre-commit. Added `PRODUCT.md`, the M17 spec and the mockup.
+- Fixes I-06 to I-10, plus final icons (tasks `arrow.up.arrow.down`, layout `rectangle.split`, official AirDrop).
 
 ## [0.8.0] - 2026-08-26
 
-### 新增（4 worktree 并发批次 + 主线基线）
-- **归档**：右键"压缩 N 项"（zip/tar.gz，zip 可加密——ZipCrypto 弱加密已注明）、"解压/解压到…"（zip/tar 全家族/gz，按系统工具动态支持）；QSpace 式包裹语义（多条目建包裹文件夹、单条目忽略，可关）；暂存目录落地取消不留半成品；归档设置页（格式/保留原文件/包裹/保留压缩包）
-- **使用习惯**：Enter 行为（重命名/打开）、Backspace 行为（忽略/返回/删除/上层）、拖放行为（同卷移动跨卷复制/总是复制/总是移动）、双击空白=上层、新标签默认排序、**窗格标签上限（超限覆盖最老）**、外部打开落点（新工作区标签/活动窗格）
-- **权限页**：完全磁盘访问只读探测（绿✓/橙⚠）+ 一键系统设置；未授权首启自动弹引导（可"不再提示"）
-- **外观页**：跟随系统/浅色/深色、主题色 8 色板（活动窗格/标签/面包屑联动）、列表字号 11–14（行高联动）、活动窗格高亮开关、非活动窗格暗化 0–30%
-- **侧栏重构**：个人收藏并入书签（起始位置成为默认种子，可删可排可改名）、iCloud 独立分组、**分组标题可拖动排序**（书签可拖到最前）
-- **快捷键体系**：19 常用命令注册表化（⌘F=当前文件夹搜索、⇧⌘F=全局为新默认），设置→快捷键可录制改键即时生效
-- **列筛选**：列头右键勾选 修改/创建/添加日期/大小/种类 + 恢复默认；名称列弹性窄窗格四列俱全
-- 设置通用页：默认布局/默认视图/默认终端/隐藏文件/文件夹置顶/窗格标签栏
-
-### 改进
-- 暂存架 QSpace 顶格（去标题、牌堆左贴边+操作条紧贴、空态 40pt）；侧栏直通窗口顶；行高紧凑；收藏图标 Finder 蓝
+- Archives: compress (zip, tar.gz, optional weak ZipCrypto password) and extract with system-tool-based format support, QSpace-style wrapping, and a settings page.
+- Settings pages: Behaviour (Enter, Backspace, drag defaults, tab limits, external open target), Permissions (read-only Full Disk Access probe and first-run guide), Appearance (theme, accent, list font size, pane highlight and dimming).
+- Sidebar rework: favorites merged into bookmarks as default seeds, iCloud group, draggable group headers.
+- 19 commands moved to a registry with recordable shortcuts (⌘F current folder, ⇧⌘F global); selectable list columns; stash and density polish.
 
 ## [0.7.0] - 2026-08-25
 
-### 新增
-- **视图模式**（每窗格独立）：图标网格 ⌘1（图标 48~128 滑块、缩略图升级、拖拽/右键/空格预览同列表语义）、列表 ⌘2、Miller 分栏 ⌘3（下钻同步地址栏、文件预览列、←→ 列间移动）
-- **聚焦搜索**：⌘F 当前目录 / ⌥⌘F 全局；名称/内容勾选、种类过滤、即输即搜流式结果；**"包含隐藏文件"通道（超越 QSpace）**——Spotlight 不索引的点文件也能按名搜到；回车定位到窗格并选中
-- **Quick Look 空格预览**：多格式、多选批量、方向键连续预览、缩放动画锚行内图标
-- **暂存架重构（QSpace 式）**：侧栏顶部独立专区、大图标卡片（拖出/右键移除/tooltip 全路径）、操作条纯图标化（复制/移动/AirDrop/清空）——隐性语义优先
-- **会话恢复**：重开即回到上次的工作区标签/布局/窗格/标签页/路径/排序/视图模式（1s 防抖落盘+退出强制 flush；路径消失回退个人目录）
-- README（构建指引/TCC 签名说明/诚实限制清单/胶囊架构图）
-
-### 修复
-- **点击无法保持选中（单选/多选全废）**：FSEvents 自动刷新整表重载不恢复选中——现按 URL 恢复（用户报告）
-- **空闲 CPU 25%+ 回归**：FSEvents 对监听目录递归上报，深层子树噪声（后台构建等）被放大成 0.3s 一次整目录重载——回调按"目录自身/直接子项"过滤；坑：FSEvents 用 POSIX realpath 口径（/private/var），Foundation resolvingSymlinksInPath 刻意剥 /private，必须 realpath 对齐（views 代理发现，附回归测试）
-- 布局密度、.app 图标、只读卷、地址栏遮挡等 v0.5.x 用户反馈项均已随带验证
-
-### 性能实证（北极星）
-- 四宫格 /Applications:/usr/bin:/usr/share:~/development（含正被后台写入的目录）静置：top 6 连拍 CPU 0.0%、内存 47MB
+- View modes per pane: icons ⌘1, list ⌘2, Miller columns ⌘3. Spotlight search ⌘F and ⌥⌘F, streamed, with a hidden-files channel beyond QSpace.
+- Quick Look on Space, QSpace-style stash shelf, and full session restore (1s debounce, flush on quit, fallback to home). Added the README.
+- Fixes: selection is restored by URL on FSEvents refresh; idle CPU of 25%+ fixed by filtering events to the folder and direct children, using POSIX realpath.
+- North star measured: four panes at rest, CPU 0.0% across 6 samples, 47MB.
 
 ## [0.6.0] - 2026-08-25
 
-### 新增
-- **窗口级工作区标签**（用户指正后的架构修正）：⌘T 新建，标签对象=整个分屏布局（QSpace 语义），可拖出成独立窗口；窗格内标签栏改为可选项默认隐藏（⌥⌘T/⌥⌘W）
-- **拖拽全链路**：列表可拖出到 Finder/其他 App/窗格间；投放语义同 Finder（同卷移动/跨卷复制/⌥ 强制复制）；投放到文件夹行或空白区；拒绝目录投进自身子孙；spring-loaded 悬停 0.8s 自动进入文件夹；面包屑分段投放
-- **暂存架**：侧边栏置顶分组，拖入任意文件暂存（跨启动持久化），批量复制/移动到当前窗格、AirDrop、移除/清空；空态提示行
-- **FSEvents 实时刷新**：目录变化 ≤1s 自动重载；**后台标签/窗格/布局切走的窗格全部挂起监听（零回调零功耗）**，恢复时按 mtime 比对决定是否重载——北极星指标落地
-- **按需文件夹大小**：列表可见行的目录异步计算大小回填（并发限界 2，滚出取消，变更失效）
-- **缩略图升级**：图片/视频/PDF 可见行异步升级为真实内容缩略图（LRU 512，防陈旧）
-- **底部状态栏**：N 项（已选 M 项）| 可用空间
-- **设置窗口 ⌘,**：设为默认文件夹打开程序（Finder 接管）+ 完全磁盘访问引导
-- 新胶囊：StashStore / SessionStore（会话快照引擎，UI 接线随 M11）
-
-### 变更
-- ⌘W=关闭工作区标签，⇧⌘W=关闭窗口；窗口标题显示"活动目录 | 其他窗格目录"
+- Window-level workspace tabs (a tab is a whole split layout), with pane tabs optional and hidden by default.
+- Full drag and drop with Finder semantics and spring-loading, plus the stash shelf (persistent, batch copy or move, AirDrop).
+- FSEvents refresh with zero-cost suspension for hidden panes, on-demand folder sizes, thumbnails, status bar, and a settings window (⌘,).
+- ⌘W closes the workspace tab and ⇧⌘W the window. New pods StashStore and SessionStore.
 
 ## [0.5.1] - 2026-08-25
 
-### 改进
-- 布局密度向 QSpace 看齐（用户反馈）：列表 .plain 样式去除 inset 大留白、行高 24→22、单元格字号 13→12、列宽收紧（名称 280/日期 140/大小 76/种类 110）、标签栏 22px、地址栏 26px
+- Density moved toward QSpace: plain table style, row 24 to 22, font 13 to 12, tighter columns, tab bar 22px, address bar 26px.
 
 ## [0.5.0] - 2026-08-25
 
-### 新增（三分支并行开发合并：feat/engine-pods + feat/fileops + feat/sidebar）
-- 左侧边栏：个人收藏（个人/桌面/文稿/下载/应用程序/iCloud 云盘）、自定义书签（拖入/重排/重命名/移除，跨启动持久化）、位置（卷列表+可用空间+推出钮，挂卸载自动刷新）；⌘⌥S 或工具栏开关折叠，宽度状态记忆
-- 文件操作全链路：右键菜单（打开/打开方式/拷贝/剪切/粘贴/拷贝路径 ⌘⇧C/重命名/制作副本 ⌘D/移到废纸篓 ⌘⌫/新建文件夹 ⇧⌘N/显示简介 ⌘I/在终端打开/显示包内容）、行内重命名（失败原子回滚）、剪切态灰显、F5/F6 复制/移动到另一窗格、⌘Z 撤销废纸篓、操作进度窗（>0.5s 显示/可取消）、冲突面板（替换/跳过/两者保留/合并+应用到全部）
-- 引擎胶囊：DirectoryWatch（FSEvents 0.3s 合并/挂起恢复=后台零功耗）、FolderSize（并发限界/可取消/缓存）、IconThumb（QL 缩略图/LRU/防陈旧）——UI 接线在 0.6.0
-- 新胶囊 LocalOps（重命名/新建/废纸篓）、VolumeInfo、BookmarkStore；探针新增 watch/size/thumb 子命令
-
-### 修复
-- .app 等包的图标显示空白：包图标存于 bundle 内，改为按文件路径读取并按路径缓存（用户报告）
-- 只读卷（DMG）误显示"0 KB 可用"：改显示"只读"（用户报告）
-- fullSizeContentView 下标签栏/地址栏被工具栏遮挡：窗格顶部锚定 safeArea（用户报告）
+- Sidebar with favorites, persistent bookmarks and volumes (free space, eject).
+- Full file operations: context menu, inline rename with rollback, cut dimming, F5/F6, ⌘Z trash undo, progress window, conflict panel.
+- New pods: DirectoryWatch, FolderSize, IconThumb (UI wiring in 0.6.0), LocalOps, VolumeInfo, BookmarkStore; new probe subcommands.
+- Fixes: blank `.app` icons, "0 KB free" on read-only volumes, and the toolbar covering the tab and address bars.
 
 ## [0.4.0] - 2026-08-25
 
-### 新增
-- 多窗格布局：单窗格/双列/双行/三列/四宫格，⌃⌘1..5 或工具栏分段控件切换，切布局保留窗格状态
-- 每窗格独立多标签页：⌘T 新建、⌘W 关闭、中键关闭、胶囊样式、hover 显关闭钮
-- Tab / ⇧Tab 循环窗格焦点，活动窗格地址栏高亮描色
-- 工具栏（unified 样式）布局切换器（SF Symbols 图标 + tooltip）
-
-### 修复
-- 四宫格/多列布局某行列塌陷：NSSplitView 按子视图旧 frame 比例分配空间，复用窗格携带旧尺寸导致塌陷——加入 split 前显式预设等分 frame
+- Multi-pane layouts (single, two columns, two rows, three columns, quad) with ⌃⌘1..5 or the toolbar, preserving pane state.
+- Per-pane tabs (⌘T, ⌘W, middle-click), and Tab or ⇧Tab cycling pane focus with an address bar highlight.
+- Fixed collapsed rows and columns by presetting equal frames before adding views to `NSSplitView`.
 
 ## [0.3.0] - 2026-08-25
 
-### 新增
-- 面包屑地址栏：分段点击跳转、chevron 弹出该级子目录菜单、点击空白或 ⌘L 进入编辑模式
-- 路径编辑器：输入即补全（PathComplete 胶囊：~ 展开/大小写不敏感/仅目录）、Enter 导航、无效路径原位抖动、Esc 取消
-- 浏览历史：返回 ⌘[ / 前进 ⌘] / 上层文件夹 ⌘↑（每标签独立历史栈）
-
-### 修复
-- 内存爆炸（数秒膨胀至 4.4GB、窗口无法创建）：面包屑用 deletingLastPathComponent 向根遍历成死循环——macOS 对 "/" 返回 "/.."，永不等于自身；改为按 path 组件正向构建，并修正 BrowserState 同款隐患
+- Breadcrumb address bar with segment jumps and chevron submenus; ⌘L path editing with PathComplete.
+- History per tab: back ⌘[, forward ⌘], up ⌘↑.
+- Fixed a 4.4GB memory explosion: walking up with `deletingLastPathComponent` looped forever because macOS returns "/.." for "/".
 
 ## [0.2.0] - 2026-08-25
 
-### 新增
-- 单窗格文件列表：view-based NSTableView（固定行高/行复用），名称/修改日期/大小/种类可排序列
-- 双击文件按系统默认打开方式打开（zip→Bandizip 等）；双击文件夹窗格内导航
-- ⌘⇧. 显示/隐藏隐藏文件、⌘R 刷新、空文件夹/无权限原位空态
-- UTType 图标与种类串缓存、相对日期格式化
+- Single-pane view-based list with sortable columns; double-click opens files with the system default and enters folders.
+- ⌘⇧. hidden files, ⌘R refresh, and in-place empty and no-permission states; UTType icon and kind caches, relative dates.
 
 ## [0.1.0] - 2026-08-25
 
-### 新增
-- 元架构合规基线：META_COMPLIANCE.json（spec/backend/frontend）、spec.md 七节、pod-lint-swift.sh、pre-commit 执法（meta-doctor + pod-lint + 测试）
-- 无 Xcode 构建管线：SwiftPM + build-app.sh 组装 .app + 签名；CoreGraphics 生成图标；CLT swift-testing 宏插件/rpath 固化（scripts/test.sh）
-- OperationKernel：业务中立操作内核（排队/取消/进度切面/Run 状态机原子提交/AsyncStream 投影）
-- DirectoryReader 胶囊：resource key 预取 + Finder 式排序 + 代际 token
-- Transfer 胶囊：预扫描→冲突裁决（替换/跳过/两者保留/合并）→copyfile 字节级进度 + APFS 克隆快路径 + 同卷 rename + 协作式取消（无半成品）
-- nspace-probe CLI 探针：list / copy 子命令（三级验收阶梯）
+- Meta-architecture baseline: META_COMPLIANCE.json, spec.md, pod-lint-swift.sh, pre-commit enforcement.
+- Xcode-free build with SwiftPM and `build-app.sh`; CLT swift-testing setup in `scripts/test.sh`.
+- OperationKernel, plus the DirectoryReader and Transfer pods (conflict resolution, byte-level copyfile progress, APFS clone fast path, cooperative cancel).
+- `nspace-probe` CLI with `list` and `copy`.

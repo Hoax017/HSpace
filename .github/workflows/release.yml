@@ -1,7 +1,6 @@
 name: Release
 
-# tag vX.Y.Z 推送 → 构建 NSpace.app → 打 zip → 建 GitHub Release 并挂资产
-# （App 内 UpdateEngine 轮询 releases/latest 完成热更新闭环）
+# tag vX.Y.Z push → build NSpace.app → zip → create a GitHub Release with the assets
 on:
   push:
     tags: ['v*']
@@ -15,25 +14,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # build-app.sh 用 git 提交数作构建号
+          fetch-depth: 0   # build-app.sh uses the git commit count as the build number
 
-      - name: Swift 版本
+      - name: Swift version
         run: swift --version
 
-      - name: 构建并打包 .app（版本号取自 VERSION，构建号取 git 计数）
+      - name: Build and package .app (version from VERSION, build number from the git count)
         run: |
           ./scripts/build-app.sh
           ditto -c -k --keepParent build/NSpace.app "NSpace-${GITHUB_REF_NAME}.zip"
           shasum -a 256 "NSpace-${GITHUB_REF_NAME}.zip" | tee checksums.txt
 
-      - name: 提取本版 CHANGELOG 作为 Release 说明
+      - name: Extract this version's CHANGELOG as the release notes
         run: |
           V="${GITHUB_REF_NAME#v}"
           awk -v ver="$V" '$0 ~ "^## \\["ver"\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > release-body.md
-          [ -s release-body.md ] || echo "（本版无独立 CHANGELOG 节，见仓库 CHANGELOG.md）" > release-body.md
+          [ -s release-body.md ] || echo "(No separate CHANGELOG section for this release; see CHANGELOG.md in the repository.)" > release-body.md
           cat release-body.md
 
-      - name: 创建 Release 并上传资产
+      - name: Create the Release and upload assets
         uses: softprops/action-gh-release@v2
         with:
           body_path: release-body.md

@@ -1,120 +1,120 @@
-# NSpace 技术规格 (spec.md)
+# NSpace Technical Specification (spec.md)
 
-> 原生 macOS 多窗格文件管理器，仿 QSpace Pro 核心体验。macOS 27 / Swift 6.4 / 纯 AppKit / SwiftPM + 脚本打包（无 Xcode）。
+> A native macOS multi-pane file manager modeled on the core experience of QSpace Pro. macOS 27 / Swift 6.4 / pure AppKit / SwiftPM + script packaging (no Xcode).
 
-## 一、北极星 (North Star)
+## 1. North Star
 
-**在 macOS 27 上提供一个日常可完全替代 Finder/QSpace 的多窗格文件管理器，且空闲 CPU ≈ 0%。**
+**On macOS 27, provide a multi-pane file manager that can fully replace Finder/QSpace day to day, with idle CPU ≈ 0%.**
 
-- 用户逃离 QSpace 的原因是卡顿与高 CPU；本产品的第一验收物是性能：万级条目目录秒开顺滑、4 窗格空闲时 `top` 采样 CPU ≈ 0%。
-- 核心体验闭环：多窗格布局(1/2H/2V/3/4) + 窗口级工作区标签 + 面包屑地址栏 + 左侧书签栏 + 暂存架 + 空格 Quick Look + 完整文件操作（队列/进度/冲突/撤销）+ 双击走系统默认打开方式 + 可设为默认文件夹处理程序。
-- 反目标（v1 不做）：批量重命名、压缩引擎、哈希、文件夹同步、网络盘、工作区快捷键、着色规则——全部靠新胶囊零侵入后补。
+- Users leave QSpace because of stutter and high CPU, so this product's first acceptance item is performance: directories with tens of thousands of entries open instantly and smoothly, and four idle panes sample at CPU ≈ 0% in `top`.
+- Core experience loop: multi-pane layouts (1/2H/2V/3/4) + window-level workspace tabs + breadcrumb address bar + left bookmark sidebar + stash shelf + Space for Quick Look + complete file operations (queue/progress/conflicts/undo) + double-click uses the system default app + can be set as the default folder handler.
+- Anti-goals (not in v1): batch rename, compression engine, hashing, folder sync, network drives, workspace shortcuts, color rules. All of these can be added later through new pods with zero intrusion.
 
-## 用户故事与验收样例 (User Stories & Acceptance Examples)
+## User Stories & Acceptance Examples
 
-> outside-in 需求真源（见 references/spec-by-example-and-bdd-masters.md）：用户故事是"要什么"，下方状态机/数据契约/容错矩阵是其技术分解，两向必须闭合。每条故事附可机判的 Given-When-Then 关键样例（正/边界/异常）。
+> The outside-in source of truth for requirements (see references/spec-by-example-and-bdd-masters.md): user stories state "what is wanted", and the state machines, data contracts and fault-tolerance matrix below are their technical breakdown. The two directions must close. Each story comes with machine-checkable Given-When-Then key examples (positive/boundary/failure).
 
-- **US-1 多窗格并排搬运**：作为整理文件的人，我想在两个窗格里并排浏览不同目录，把文件从一侧搬到另一侧，以便不来回切目录。
-  - 正：Given 双列布局、左窗格选中 3 个文件；When 按 F6（移动到另一窗格）；Then 3 文件出现在右窗格目录、左窗格消失、操作回执 filesDone==3。
-  - 异常：Given 目标目录已有同名文件；When 移动；Then 弹冲突面板（替换/合并/取消 + 应用到此文件夹），选取消则源与目标都不变。
+- **US-1 Move files side by side across panes**: As someone organizing files, I want to browse different directories side by side in two panes and move files from one side to the other, so I don't have to keep switching directories.
+  - Positive: Given a two-column layout with 3 files selected in the left pane; When I press F6 (move to the other pane); Then the 3 files appear in the right pane's directory and disappear from the left pane, and the operation receipt has filesDone==3.
+  - Failure: Given the target directory already has a file with the same name; When moving; Then the conflict panel appears (replace/merge/cancel + apply to this folder), and choosing cancel leaves source and target unchanged.
 
-- **US-2 同目录复制不误删**：作为怕丢文件的人，我在同一文件夹内复制粘贴时，即使手滑选"替换"，也绝不能把源文件删掉。
-  - 边界（自源）：Given destination 经 inode 判定即 source 本体；When 裁决替换/合并；Then 一律收敛为改名保留（源完好、新增副本），绝不 removeItem 源。
+- **US-2 Same-directory copy never deletes by mistake**: As someone afraid of losing files, when I copy and paste within one folder, the source file must never be deleted, even if I slip and choose "Replace".
+  - Boundary (self-source): Given the destination is determined by inode to be the source itself; When the decision is replace/merge; Then it always converges to keep-under-a-new-name (source intact, new copy added), and removeItem is never called on the source.
 
-- **US-3 按月找文件**：作为找不久前文件的人，我想让列表/图标视图按修改月份分组，以便快速定位。
-  - 正：Given 目录含 3 个不同年月的文件、排序键=修改日期、分组开；When 打开列表或图标视图；Then 呈现 3 个组头「YYYY年M月」，点组头折叠该组、右键可"仅显示此组"。
+- **US-3 Find files by month**: As someone looking for recent files, I want list and icon views grouped by modification month so I can locate things quickly.
+  - Positive: Given a directory with files from 3 different year-months, sort key = modification date, grouping on; When I open list or icon view; Then 3 group headers "YYYY-M" (year and month) are shown, clicking a header collapses that group, and right-clicking offers "Show only this group".
 
-- **US-4 设置与窗口尺寸跨版本更新保留**：作为长期用户，我调好的窗口大小、侧栏宽度、列显隐、书签、快捷键，在应用更新到新版本后必须原样保留，不能回默认。
-  - 正：Given 窗口调至 1333×733 且改过侧栏宽/列显隐；When 经热更新（替换 .app + 重启）或任意重启；Then 新版本窗口仍为 1333×733、其余设置不变。
-  - 根因不变量：窗口几何由自管 `windowFrame` 键单一权威恢复，`isRestorable=false` 杜绝 macOS 原生恢复在版本变更（savedState 被系统作废）时的竞争；一切设置存于 `~/Library`（UserDefaults / Application Support），更新不覆盖。
+- **US-4 Settings and window size survive version updates**: As a long-term user, my window size, sidebar width, column visibility, bookmarks and shortcuts must stay exactly as they were after the app is updated to a new version, never reverting to defaults.
+  - Positive: Given the window is sized to 1333×733 and the sidebar width and column visibility have been changed; When the .app is replaced with a new version and relaunched, or on any restart; Then the new version's window is still 1333×733 and all other settings are unchanged.
+  - Root-cause invariant: window geometry is restored from a single authority, the self-managed `windowFrame` key, and `isRestorable=false` eliminates the race with native macOS restoration on version changes (when the system invalidates savedState). All settings live in `~/Library` (UserDefaults / Application Support), which an update does not overwrite.
 
-- **US-5 空闲零功耗**：作为整天开着文件管理器的人，我不想它在后台空耗 CPU。
-  - 正：Given 四窗格常驻、无操作；When `top` 采样 60s；Then 进程 CPU ≈ 0%（后台标签/窗格 FSEventStream 真停、缩略图请求滚出即取消）。
+- **US-5 Zero idle power**: As someone who keeps a file manager open all day, I don't want it burning CPU in the background.
+  - Positive: Given four persistent panes and no activity; When `top` samples for 60s; Then process CPU ≈ 0% (FSEventStreams for background tabs/panes are really stopped, thumbnail requests are cancelled once scrolled away).
 
-## 二、职责五元组 (Responsibility Contract)
+## 2. Responsibility Contract
 
-| 对象 | Decision Owner | Execution Owner | Commit Owner | Lifecycle Owner | Proof Owner |
+| Object | Decision Owner | Execution Owner | Commit Owner | Lifecycle Owner | Proof Owner |
 | --- | --- | --- | --- | --- | --- |
-| 文件系统变更（复制/移动/废纸篓/新建/重命名） | UI 收集意图 → `FileOpsCoordinator` 构造 `OperationSpec` | `Transfer`/`TrashOps` 等胶囊节点 | **文件系统本身**（macOS）；操作生命周期状态由 `OperationKernel.RunStore` 唯一提交 | `OperationKernel`（排队/取消/排空） | 节点返回的 `OperationReceipt`（字节数/目标路径/耗时）+ 进度流日志 |
-| 目录展示内容 | `DirectoryViewModel`（何时加载/过滤/排序） | `DirectoryReader` 胶囊 | 无共享可写状态——`DirectorySnapshot` 是文件系统的只读投影 | 各窗格 `PaneViewController`（挂起/恢复） | snapshot 代际 token + FSEvents 回调时间戳 |
-| 书签 | `SidebarViewController` 发 Command | `BookmarkStore` 胶囊 | `BookmarkStore` actor（唯一写 `bookmarks.json`，原子替换） | AppDelegate（启动加载/退出落盘） | JSON 落盘文件 + 版本号 |
-| 暂存架内容 | `StashShelfViewController` 发 Command | `StashStore` 胶囊 | `StashStore` actor（唯一写 `stash.json`） | 同上 | JSON 落盘 + URL bookmark Data |
-| 窗口/窗格/标签会话 | `MainWindowController`（何时快照） | `SessionStore` 胶囊 | `SessionStore` actor（唯一写 `session.json`，防抖 1s） | AppDelegate | JSON 落盘 |
-| 图标/缩略图缓存 | 各视图控制器按可见行请求 | `IconThumb` 胶囊 | 无权威状态（纯派生缓存，可随时丢弃） | `IconThumb` LRU | 缓存命中率不作证据要求 |
+| File system changes (copy/move/trash/new/rename) | UI gathers intent → `FileOpsCoordinator` builds `OperationSpec` | Pod nodes such as `Transfer`/`TrashOps` | **The file system itself** (macOS); operation lifecycle state is committed solely by `OperationKernel.RunStore` | `OperationKernel` (queueing/cancellation/draining) | `OperationReceipt` returned by the node (bytes/target path/duration) + progress stream log |
+| Directory display content | `DirectoryViewModel` (when to load/filter/sort) | `DirectoryReader` pod | No shared writable state: `DirectorySnapshot` is a read-only projection of the file system | Each pane's `PaneViewController` (suspend/resume) | Snapshot generation token + FSEvents callback timestamps |
+| Bookmarks | `SidebarViewController` issues Commands | `BookmarkStore` pod | `BookmarkStore` actor (sole writer of `bookmarks.json`, atomic replace) | AppDelegate (load on launch/flush on quit) | JSON file on disk + version number |
+| Stash shelf contents | `StashShelfViewController` issues Commands | `StashStore` pod | `StashStore` actor (sole writer of `stash.json`) | Same as above | JSON on disk + URL bookmark Data |
+| Window/pane/tab session | `MainWindowController` (when to snapshot) | `SessionStore` pod | `SessionStore` actor (sole writer of `session.json`, 1s debounce) | AppDelegate | JSON on disk |
+| Icon/thumbnail cache | Each view controller requests by visible row | `IconThumb` pod | No authoritative state (pure derived cache, discardable at any time) | `IconThumb` LRU | Cache hit rate is not required as evidence |
 
-单一真源裁决：任何 UI 组件严禁直接调用写型 FileManager API 或直接写 JSON——展示层只发 Typed Command、消费只读投影（BG-1/BG-5，由 pod-lint-swift.sh 机检 NSpaceApp 目录禁用写型 API）。
+Single source of truth ruling: no UI component may call write-type FileManager APIs or write JSON directly. The presentation layer only issues Typed Commands and consumes read-only projections (BG-1/BG-5, machine-checked by pod-lint-swift.sh, which bans write-type APIs in the NSpaceApp directory).
 
-## 三、状态机 (State Machines)
+## 3. State Machines
 
-### 3.1 操作 Run 状态机（OperationKernel 唯一提交）
+### 3.1 Operation Run state machine (committed solely by OperationKernel)
 
 ```
-pending ──开始──▶ scanning ──发现冲突──▶ awaitingConflict ──用户裁决──▶ running
-   │                 │ 无冲突 ─────────────────────────────────────────▶ │
-   │                 │                                                   ├──全部完成──▶ completed
-   │                 │                                                   ├──节点抛错──▶ failed(errorClass)
-   └──取消──────────┴──取消─────────────(任意非终态)──────────────────────┴──取消──────▶ cancelled
+pending ──start──▶ scanning ──conflict found──▶ awaitingConflict ──user decision──▶ running
+   │                  │ no conflict ──────────────────────────────────────────────▶ │
+   │                  │                                                             ├──all done──▶ completed
+   │                  │                                                             ├──node throws──▶ failed(errorClass)
+   └──cancel──────────┴──cancel─────────────(any non-terminal state)────────────────┴──cancel────▶ cancelled
 ```
 
-- 终态：`completed` / `failed` / `cancelled`，不可再转移；取消是协作式（节点在 copyfile 回调查 `Task.isCancelled` 返回 `COPYFILE_QUIT`）。
-- `awaitingConflict` 通过 `CheckedContinuation` 挂起，冲突面板回填决议（替换/跳过/两者保留/合并 + 应用到全部）后恢复。
+- Terminal states: `completed` / `failed` / `cancelled`, with no further transitions. Cancellation is cooperative (nodes check `Task.isCancelled` in the copyfile callback and return `COPYFILE_QUIT`).
+- `awaitingConflict` suspends via `CheckedContinuation`; the conflict panel fills in the decision (replace/skip/keep both/merge + apply to all) and execution resumes.
 
-### 3.2 目录浏览状态机（每窗格 BrowserState）
+### 3.2 Directory browsing state machine (BrowserState per pane)
 
 ```
 idle ──navigate(url)──▶ loading(gen=N) ──snapshot(gen=N)──▶ loaded ──FSEvent──▶ loading(gen=N+1)
-                              │ snapshot(gen<N) 到达 → 丢弃（代际防过期覆盖）
-loaded ──窗格切走/工作区切走──▶ suspended（挂起 watcher/缩略图，记录 mtime）──切回──▶ mtime 变则 loading，否则 loaded
+                              │ snapshot(gen<N) arrives → discarded (generations prevent stale overwrites)
+loaded ──pane/workspace switched away──▶ suspended (watcher/thumbnails suspended, mtime recorded) ──switched back──▶ loading if mtime changed, otherwise loaded
 ```
 
-### 3.3 行内重命名（FG-6 乐观回滚）
+### 3.3 Inline rename (FG-6 optimistic rollback)
 
 ```
-displaying ──Enter/菜单──▶ editing(快照旧名) ──提交──▶ renaming ──FS 成功──▶ displaying(新名)
-                                │ Esc ──▶ displaying(旧名)          └─FS 失败──▶ 原子回滚旧名 + 原位错误横幅
+displaying ──Enter/menu──▶ editing(snapshot old name) ──commit──▶ renaming ──FS success──▶ displaying(new name)
+                                │ Esc ──▶ displaying(old name)            └─FS failure──▶ atomic rollback to old name + in-place error banner
 ```
 
-## 状态转移矩阵 (Transition Matrix)
+## Transition Matrix
 
-操作 Run 状态机（3.1）的表格化真值——(当前态 × 事件 → 次态)；`—` 表示非法转移（忽略）。终态不可再转移。
+Tabular truth for the operation Run state machine (3.1): (current state × event → next state); `—` marks an illegal transition (ignored). Terminal states have no further transitions.
 
-| 当前态 \ 事件 | scan开始 | 发现冲突 | 无冲突 | 用户裁决 | 全部完成 | 节点抛错 | 取消 |
+| Current state \ Event | Scan start | Conflict found | No conflict | User decision | All done | Node throws | Cancel |
 |---|---|---|---|---|---|---|---|
 | pending | scanning | — | — | — | — | — | cancelled |
 | scanning | — | awaitingConflict | running | — | — | failed | cancelled |
 | awaitingConflict | — | — | — | running | — | failed | cancelled |
 | running | — | — | — | — | completed | failed | cancelled |
-| completed / failed / cancelled（终态） | — | — | — | — | — | — | — |
+| completed / failed / cancelled (terminal) | — | — | — | — | — | — | — |
 
-- 目录浏览（3.2）：`idle→loading(gen=N)→loaded`；旧代际 snapshot(gen<N) 到达即丢弃；`loaded→suspended`（标签隐藏）→按 mtime 决定回 `loading` 或 `loaded`。
-- 行内重命名（3.3）：`displaying→editing→renaming→displaying`；FS 失败原子回滚旧名。
+- Directory browsing (3.2): `idle→loading(gen=N)→loaded`; an older snapshot (gen<N) is discarded on arrival; `loaded→suspended` (tab hidden) → back to `loading` or `loaded` depending on mtime.
+- Inline rename (3.3): `displaying→editing→renaming→displaying`; on FS failure, atomic rollback to the old name.
 
-## 四、数据契约 (Data Contracts)
+## 4. Data Contracts
 
-全部为 Sendable 值类型；胶囊 public 面只含契约类型与协议（Contract.swift）。
+All are Sendable value types; a pod's public surface contains only contract types and protocols (Contract.swift).
 
 ```swift
-// 目录投影（DirectoryReader 输出）
+// Directory projection (DirectoryReader output)
 struct FileItem: Sendable, Hashable {
     let url: URL; let name: String
     let isDirectory: Bool; let isPackage: Bool; let isSymlink: Bool; let isHidden: Bool
-    let size: Int64?              // 文件字节数；目录为 nil（FolderSize 按需回填）
+    let size: Int64?              // file size in bytes; nil for directories (FolderSize backfills on demand)
     let modified: Date?; let created: Date?
-    let contentTypeID: String?    // UTType.identifier，kind 显示串按此缓存派生
+    let contentTypeID: String?    // UTType.identifier; the kind display string is derived and cached from this
 }
 struct DirectorySnapshot: Sendable {
     let directory: URL; let generation: UInt64
-    let items: [FileItem]         // 已按 SortOrder 排序、按 showHidden 过滤
-    let error: DirectoryError?    // 不可读目录等
+    let items: [FileItem]         // already sorted by SortOrder and filtered by showHidden
+    let error: DirectoryError?    // unreadable directory, etc.
 }
 
-// 操作契约（UI → 内核）
+// Operation contract (UI → kernel)
 struct OperationSpec: Sendable {
     enum Kind: Sendable { case copy, move, trash, duplicate, newFolder, newFile, rename }
     let kind: Kind; let sources: [URL]; let destination: URL?
-    let newName: String?          // rename/newFolder/newFile 用
+    let newName: String?          // for rename/newFolder/newFile
 }
-struct OperationProjection: Sendable {   // 内核 → 进度窗（只读投影，AsyncStream 推送）
+struct OperationProjection: Sendable {   // kernel → progress window (read-only projection, pushed via AsyncStream)
     let id: UUID; let state: RunState
     let filesDone: Int; let filesTotal: Int
     let bytesDone: Int64; let bytesTotal: Int64
@@ -122,62 +122,62 @@ struct OperationProjection: Sendable {   // 内核 → 进度窗（只读投影�
 }
 enum ConflictDecision: Sendable { case replace, skip, keepBoth, mergeFolders }
 
-// 错误三分类（每胶囊 Error 必须归入其一，BG-4/P6.4）
-enum ErrorClass: Sendable { case logic /*内部逻辑错,禁重试*/, transient /*系统抖动,可重试*/, external /*权限/卷不可用,提示用户*/ }
+// Three error classes (every pod Error must fall into one, BG-4/P6.4)
+enum ErrorClass: Sendable { case logic /*internal logic error, never retry*/, transient /*system hiccup, retryable*/, external /*permissions/volume unavailable, tell the user*/ }
 ```
 
-存储契约：`~/Library/Application Support/NSpace/{bookmarks,stash,session,frecency}.json`，Codable + 临时文件原子替换；stash 项存 URL bookmark `Data`（抗改名）；session 结构 = 窗口→工作区→frame/布局→窗格→(路径/视图模式/排序/选中集)；frecency 结构 = path→(count/lastAccess)。
+Storage contract: `~/Library/Application Support/NSpace/{bookmarks,stash,session,frecency}.json`, Codable + atomic replace via temporary file; stash entries store URL bookmark `Data` (survives renames); session structure = window→workspace→frame/layout→pane→(path/view mode/sort/selection); frecency structure = path→(count/lastAccess).
 
-## 前置条件 (Preconditions)
+## Preconditions
 
-操作提交前必须成立的守卫（不满足即拒绝并原位反馈，绝不产生半成品或误伤）：
+Guards that must hold before an operation is submitted (if not met, reject with in-place feedback, never leaving partial results or causing collateral damage):
 
-| 操作 | 前置条件 | 不满足时 |
+| Operation | Precondition | If not met |
 | --- | --- | --- |
-| 复制/移动（Transfer） | 源存在且可读；目标目录可写；自源冲突（destination==source，inode 判定）时替换/合并安全收敛为改名 | 拒绝并进度行标红；自源绝不删源 |
-| 移到废纸篓 / 重命名（LocalOps） | 目标在可变夹具内、非只读卷；新名非空且同目录无未决撞名 | 原子回滚旧名 + 原位错误横幅 |
-| 分组（FileGrouping） | 偏好开启 且 排序键为日期类（修改/创建/添加） | 不分组，单线列表 |
-| 外部打开落点复用（openFileURLs） | `externalOpenTarget != "newWindow"` 且存在活动主窗口 | 回落开新窗口 |
-| 会话/frecency 落盘 | 恢复完成（sessionReady）后的状态变化才落盘 | 恢复期变化被 guard 挡下，不自我覆盖 |
-| 测试可变操作（UISelfTest） | 目标路径经 assertSandboxed 在自建临时夹具内；session/frecency/windowFrame 走 UITEST 隔离键/目录 | 机械拒绝，绝不碰用户真实文件/偏好 |
+| Copy/move (Transfer) | Source exists and is readable; target directory is writable; on a self-source conflict (destination==source, by inode) replace/merge safely converge to a rename | Reject and mark the progress row red; never delete the source on self-source |
+| Move to Trash / rename (LocalOps) | Target is inside the mutable fixture, not a read-only volume; new name is non-empty and has no pending collision in the same directory | Atomic rollback to the old name + in-place error banner |
+| Grouping (FileGrouping) | Preference enabled and sort key is date-based (modified/created/added) | No grouping, flat list |
+| External open reuse (openFileURLs) | `externalOpenTarget != "newWindow"` and an active main window exists | Fall back to opening a new window |
+| Session/frecency persistence | Only state changes after restore completes (sessionReady) are persisted | Changes during restore are blocked by the guard and never overwrite themselves |
+| Mutating test operations (UISelfTest) | Target path is inside a self-created temporary fixture per assertSandboxed; session/frecency/windowFrame use UITEST-isolated keys/directories | Mechanically rejected; never touches the user's real files or preferences |
 
-## 五、容错矩阵 (Fault-Tolerance Matrix)
+## 5. Fault-Tolerance Matrix
 
-| 故障 | 检测点 | 处置 | 用户可见行为 |
+| Fault | Detection point | Handling | User-visible behavior |
 | --- | --- | --- | --- |
-| 目录不可读（权限/TCC 未授权） | DirectoryReader 抛 external | 投影带 error 字段 | 窗格内原位空态 + "授权指引"按钮，不弹窗轰炸 |
-| 复制中途源/目标卷消失 | copyfile 返回错误 → external | Run→failed，已复制的完整文件保留、半成品删除 | 进度行标红 + 原位重试按钮 |
-| 复制目标重名 | ConflictScan 预检 | Run→awaitingConflict 挂起 | 冲突面板四选项+应用到全部 |
-| 用户取消 | Task.isCancelled → COPYFILE_QUIT | Run→cancelled，清理当前半成品 | 进度行显示"已取消" |
-| FSEvents 流创建失败 | DirectoryWatch 返回 transient | 降级为手动刷新（⌘R 可用），不崩 | 无感知（自动刷新静默失效） |
-| JSON 落盘失败（磁盘满） | Store 原子写抛错 | 保留内存态 + 下次防抖重试；连续失败原位横幅 | 一次性提示，不阻塞操作 |
-| 缩略图生成崩溃/超时 | QLThumbnail 错误 | 回退通用 UTType 图标（BG-7：遥测/装饰失败不伤主链） | 只是图标不精美 |
-| 会话恢复时路径已消失 | 启动时逐标签 stat | 该标签回退个人目录 | 标签仍在，位置回家 |
-| 重命名 FS 失败 | rename 抛错 | FG-6 原子回滚旧名 | 原位横幅，严禁白屏 |
+| Directory unreadable (permissions/TCC not granted) | DirectoryReader throws external | Projection carries the error field | In-place empty state in the pane + an "authorization guide" button, no dialog barrage |
+| Source/target volume disappears mid-copy | copyfile returns error → external | Run→failed; fully copied files are kept, partial files are deleted | Progress row turns red + in-place retry button |
+| Name collision at copy target | ConflictScan pre-check | Run→awaitingConflict suspends | Conflict panel with four options + apply to all |
+| User cancels | Task.isCancelled → COPYFILE_QUIT | Run→cancelled; current partial file is cleaned up | Progress row shows "Cancelled" |
+| FSEvents stream creation fails | DirectoryWatch returns transient | Degrade to manual refresh (⌘R works), no crash | Not noticed (auto-refresh silently stops) |
+| JSON persistence fails (disk full) | Store atomic write throws | Keep in-memory state + retry on next debounce; in-place banner on repeated failure | One-time notice, does not block operations |
+| Thumbnail generation crashes/times out | QLThumbnail error | Fall back to the generic UTType icon (BG-7: telemetry/decoration failures must not hurt the main chain) | Icon is just less fancy |
+| Path gone during session restore | Per-tab stat at launch | That tab falls back to the home directory | Tab stays, location goes home |
+| Rename FS failure | rename throws | FG-6 atomic rollback to the old name | In-place banner, white screens forbidden |
 
-## 六、做工不变量 (Craftsmanship Invariants)
+## 6. Craftsmanship Invariants
 
-- **无真实功能则删界面元素**：不留死按钮/占位菜单；空态/加载骨架/禁用态是功能，不得删。
-- **就地闭环**：一切错误与冲突在发生位置原位呈现（横幅/面板/行内标红），严禁模态白屏或跳页。
-- **后台零功耗**：非活动工作区/窗格挂起 watcher、取消缩略图、零轮询——这是北极星，不是优化项。
-- **Finder 肌肉记忆**：⌘1/2/3 视图、⌘⇧. 隐藏、⌘⌫ 废纸篓、空格 QL、⌘L 路径、⌘[/⌘] 历史、⌘↑ 上层；深浅色全自动跟随。
-- **中文为主双语**：所有 UI 串过 L10n，zh-Hans 为 base。
-- **4pt 网格**：自绘控件（面包屑/标签栏/暂存架）间距对齐 4pt 标尺。
-- **观察者主语律**：面向用户的文案全部大白话（"两者都保留"，不是"KeepBoth 策略"）。
+- **No real function, no UI element**: leave no dead buttons or placeholder menus; empty states, loading skeletons and disabled states are functions and must not be removed.
+- **Close the loop in place**: every error and conflict is shown where it happens (banner/panel/inline red), with modal white screens and page jumps strictly forbidden.
+- **Zero background power**: inactive workspaces/panes suspend watchers, cancel thumbnails, never poll. This is the north star, not an optimization item.
+- **Finder muscle memory**: ⌘1/2/3 views, ⌘⇧. hidden files, ⌘⌫ Trash, Space for QL, ⌘L path, ⌘[/⌘] history, ⌘↑ up a level; light and dark follow the system automatically.
+- **Localized UI**: all UI strings go through L10n, with English as the base.
+- **4pt grid**: custom-drawn controls (breadcrumbs/tab bar/stash shelf) align spacing to a 4pt scale.
+- **Observer-subject rule**: user-facing copy is always plain language ("Keep Both", not "the KeepBoth strategy").
 
-## 七、验收检查清单 (Acceptance Checklist)
+## 7. Acceptance Checklist
 
-- [ ] `meta-doctor ~/development/NSpace` 退出 0（pre-commit 常驻）
-- [ ] `swift test` 全绿（L-plan）；每胶囊有 `nspace-probe` 子命令可单独驱动（L-readonly / L-irreversible 于 /tmp 夹具树）
-- [ ] `./scripts/run.sh` 启动：浏览家目录、/usr/bin 万级条目秒开顺滑滚动
-- [ ] 双击 zip → Bandizip（系统默认打开方式）；双击文件夹窗格内导航
-- [ ] 四宫格布局 + 窗口级工作区标签 + Tab 焦点循环 + 活动窗格高亮
-- [ ] 面包屑点击/chevron 子目录跳转/⌘L 补全/拖文件到分段
-- [ ] 侧边栏书签拖入-排序-重命名-删除，卷推出，iCloud Drive 可浏览
-- [ ] 暂存架拖入→批量复制/移动/AirDrop，重启保留
-- [ ] 复制多 GB 夹具树：实时字节进度、可取消、冲突四选项、⌘Z 撤销废纸篓
-- [ ] 空格 Quick Look、方向键连续预览
-- [ ] 终端 `touch` 新文件 ≤0.5s 出现在窗格
-- [ ] **4 窗格空闲 `top` 采样 CPU ≈0%**（附真实采样输出于 README）
-- [ ] 设为默认后 `open ~/Downloads` 弹 NSpace；文件路径 open → 父目录+选中
-- [ ] 重启恢复上次窗格/标签/路径；中文系统下全中文 UI
+- [ ] `meta-doctor ~/development/NSpace` exits 0 (always on in pre-commit)
+- [ ] `swift test` all green (L-plan); each pod has an `nspace-probe` subcommand that can drive it alone (L-readonly / L-irreversible against a fixture tree in /tmp)
+- [ ] `./scripts/run.sh` launches: browsing the home directory and /usr/bin with tens of thousands of entries opens instantly and scrolls smoothly
+- [ ] Double-click a zip → Bandizip (system default app); double-click a folder navigates within the pane
+- [ ] Four-way grid layout + window-level workspace tabs + Tab focus cycling + active pane highlight
+- [ ] Breadcrumb click/chevron subdirectory jump/⌘L completion/drag file onto a segment
+- [ ] Sidebar bookmarks drag-in, reorder, rename, delete; volume eject; iCloud Drive browsable
+- [ ] Stash shelf drag-in → batch copy/move/AirDrop, persists across restarts
+- [ ] Copy a multi-GB fixture tree: live byte progress, cancellable, four conflict options, ⌘Z undoes Trash
+- [ ] Space Quick Look, arrow keys for continuous preview
+- [ ] Terminal `touch` of a new file appears in the pane within 0.5s
+- [ ] **Four idle panes sample at CPU ≈ 0% in `top`** (real sample output attached in the README)
+- [ ] After setting as default, `open ~/Downloads` opens NSpace; `open` on a file path → parent directory + selection
+- [ ] Restart restores the last panes/tabs/paths

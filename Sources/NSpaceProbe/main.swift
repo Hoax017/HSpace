@@ -9,22 +9,22 @@ import FolderSize
 import IconThumb
 import ArchiveEngine
 
-// CLI-First 探针：绕过 UI 编排单独驱动每个胶囊节点（L-readonly / L-irreversible）。
-// 不进 .app、不进生产二进制。每接入一个胶囊就加一个子命令。
+// CLI-first probe: drives each pod node directly, bypassing UI orchestration (L-readonly / L-irreversible).
+// Not in the .app, not in the production binary. Each pod integrated adds one subcommand.
 
 let args = Array(CommandLine.arguments.dropFirst())
 
 func usage() -> Never {
     print("""
-    nspace-probe — NSpace 胶囊节点活体探针
-    用法:
-      nspace-probe list <目录> [--hidden] [--sort name|dateModified|size|kind] [--desc]   # L-readonly: DirectoryReader
-      nspace-probe copy <源…> <目标目录> [--move] [--on-conflict skip|replace|keepBoth|merge]  # L-irreversible: Transfer(经内核全链路)
-      nspace-probe watch <目录>                    # L-readonly: DirectoryWatch(监听打印信号, 10 秒后退出)
-      nspace-probe size <目录>                     # L-readonly: FolderSize(递归大小 + 耗时)
-      nspace-probe thumb <文件> [--size 128]       # L-readonly: IconThumb(缩略图像素宽高)
-      nspace-probe compress <源…> [--format zip|tar.gz] [--into <目录>]   # L-irreversible: ArchiveEngine(经内核全链路)
-      nspace-probe extract <压缩包…> [--into <目录>] [--no-wrapper]        # L-irreversible: ArchiveEngine
+    nspace-probe — NSpace pod node live probe
+    Usage:
+      nspace-probe list <dir> [--hidden] [--sort name|dateModified|size|kind] [--desc]   # L-readonly: DirectoryReader
+      nspace-probe copy <source…> <dest-dir> [--move] [--on-conflict skip|replace|keepBoth|merge]  # L-irreversible: Transfer (full kernel chain)
+      nspace-probe watch <dir>                    # L-readonly: DirectoryWatch (prints signals, exits after 10 seconds)
+      nspace-probe size <dir>                     # L-readonly: FolderSize (recursive size + elapsed time)
+      nspace-probe thumb <file> [--size 128]       # L-readonly: IconThumb (thumbnail pixel dimensions)
+      nspace-probe compress <source…> [--format zip|tar.gz] [--into <dir>]   # L-irreversible: ArchiveEngine (full kernel chain)
+      nspace-probe extract <archive…> [--into <dir>] [--no-wrapper]        # L-irreversible: ArchiveEngine
     """)
     exit(2)
 }
@@ -53,11 +53,11 @@ case "compress":
 case "extract":
     await runExtract(rest)
 default:
-    FileHandle.standardError.write("未知子命令: \(command)\n".data(using: .utf8)!)
+    FileHandle.standardError.write("Unknown subcommand:\(command)\n".data(using: .utf8)!)
     usage()
 }
 
-// MARK: - list（活体只读：真实文件系统）
+// MARK: - list (live read-only: real file system)
 
 func runList(_ args: [String]) async {
     var dir: URL?
@@ -70,7 +70,7 @@ func runList(_ args: [String]) async {
         case "--desc": sort.ascending = false
         case "--sort":
             i += 1
-            guard i < args.count, let key = SortSpec.Key(rawValue: args[i]) else { fail("--sort 取值: name|dateModified|size|kind") }
+            guard i < args.count, let key = SortSpec.Key(rawValue: args[i]) else { fail("--sort values:name|dateModified|size|kind") }
             sort.key = key
         default:
             dir = URL(fileURLWithPath: (args[i] as NSString).expandingTildeInPath)
@@ -89,19 +89,19 @@ func runList(_ args: [String]) async {
             let size = item.size.map { String($0) } ?? "-"
             print("\(mark) \(size)\t\(item.name)")
         }
-        print("—— \(snap.items.count) 项, generation=\(snap.generation), 耗时 \(ms)ms")
+        print("-- \(snap.items.count) items, generation=\(snap.generation), took \(ms)ms")
     } catch {
-        fail("读取失败: \(error.localizedDescription)")
+        fail("Read failed:\(error.localizedDescription)")
     }
 }
 
-// MARK: - copy（活体不可逆：走 内核→节点 全链路，验证机制连通性）
+// MARK: - copy (live irreversible: full kernel → node chain, verifies the mechanism is connected)
 
 struct FixedArbiter: ConflictArbiter {
     let decision: ConflictDecision?
     func arbitrate(operation id: UUID, conflicts: [FileConflict]) async -> [URL: ConflictDecision]? {
         guard let decision else { return nil }
-        print("冲突 \(conflicts.count) 项，策略: \(decision)")
+        print("\(conflicts.count) conflicts, policy: \(decision)")
         return Dictionary(uniqueKeysWithValues: conflicts.map { ($0.source, decision) })
     }
 }
@@ -123,7 +123,7 @@ func runCopy(_ args: [String]) async {
             case "keepBoth": decision = .keepBoth
             case "merge": decision = .mergeFolders
             case "cancel": decision = nil
-            default: fail("--on-conflict 取值: skip|replace|keepBoth|merge|cancel")
+            default: fail("--on-conflict values:skip|replace|keepBoth|merge|cancel")
             }
         default:
             paths.append(URL(fileURLWithPath: (args[i] as NSString).expandingTildeInPath))
@@ -142,12 +142,12 @@ func runCopy(_ args: [String]) async {
 
     for await p in await kernel.projections() where p.id == id {
         let pct = p.bytesTotal > 0 ? Int(Double(p.bytesDone) / Double(p.bytesTotal) * 100) : 0
-        print("[\(stateName(p.state))] \(p.filesDone)/\(p.filesTotal) 文件, \(p.bytesDone)/\(p.bytesTotal) 字节 (\(pct)%) \(p.currentPath ?? "")")
+        print("[\(stateName(p.state))] \(p.filesDone)/\(p.filesTotal) files, \(p.bytesDone)/\(p.bytesTotal) bytes (\(pct)%) \(p.currentPath ?? "")")
         if p.state.isTerminal {
             switch p.state {
-            case .completed: print("✓ 完成"); exit(0)
-            case .cancelled: print("已取消"); exit(3)
-            case let .failed(message, cls): fail("✗ 失败(\(cls)): \(message)")
+            case .completed: print("✓ Done"); exit(0)
+            case .cancelled: print("Cancelled"); exit(3)
+            case let .failed(message, cls): fail("✗ Failed (\(cls)):\(message)")
             default: break
             }
         }
@@ -156,32 +156,32 @@ func runCopy(_ args: [String]) async {
 
 func stateName(_ s: RunState) -> String {
     switch s {
-    case .pending: "排队"
-    case .scanning: "扫描"
-    case .awaitingConflict: "等待裁决"
-    case .running: "传输"
-    case .completed: "完成"
-    case .cancelled: "取消"
-    case .failed: "失败"
+    case .pending: "Queued"
+    case .scanning: "Scanning"
+    case .awaitingConflict: "Awaiting decision"
+    case .running: "Transferring"
+    case .completed: "Completed"
+    case .cancelled: "Cancelled"
+    case .failed: "Failed"
     }
 }
 
-// MARK: - compress / extract（活体不可逆：走 内核→ArchiveEngine 全链路）
+// MARK: - compress / extract (live irreversible: full kernel → ArchiveEngine chain)
 
 func driveArchive(_ kernel: OperationKernel, _ spec: OperationSpec) async {
     let id = await kernel.submit(spec)
     for await p in await kernel.projections() where p.id == id {
         let pct = p.bytesTotal > 0 ? Int(Double(p.bytesDone) / Double(p.bytesTotal) * 100) : 0
-        print("[\(stateName(p.state))] \(p.filesDone)/\(p.filesTotal) 文件, \(p.bytesDone)/\(p.bytesTotal) 字节 (\(pct)%) \(p.currentPath ?? "")")
+        print("[\(stateName(p.state))] \(p.filesDone)/\(p.filesTotal) files, \(p.bytesDone)/\(p.bytesTotal) bytes (\(pct)%) \(p.currentPath ?? "")")
         guard p.state.isTerminal else { continue }
         switch p.state {
         case .completed:
             if let r = await kernel.receipt(id) {
                 for u in r.createdURLs { print("→ \(u.path)") }
             }
-            print("✓ 完成"); exit(0)
-        case .cancelled: print("已取消"); exit(3)
-        case let .failed(message, cls): fail("✗ 失败(\(cls)): \(message)")
+            print("✓ Done"); exit(0)
+        case .cancelled: print("Cancelled"); exit(3)
+        case let .failed(message, cls): fail("✗ Failed (\(cls)):\(message)")
         default: break
         }
     }
@@ -196,7 +196,7 @@ func runCompress(_ args: [String]) async {
         switch args[i] {
         case "--format":
             i += 1
-            guard i < args.count, ["zip", "tar.gz"].contains(args[i]) else { fail("--format 取值: zip|tar.gz") }
+            guard i < args.count, ["zip", "tar.gz"].contains(args[i]) else { fail("--format values:zip|tar.gz") }
             format = args[i]
         case "--into":
             i += 1
@@ -240,7 +240,7 @@ func runExtract(_ args: [String]) async {
                                              archiveOptions: ArchiveOptions(extractInto: into, createWrapper: wrapper)))
 }
 
-// MARK: - watch（活体只读：FSEvents 监听真实目录，10 秒后退出）
+// MARK: - watch (live read-only: FSEvents watches a real directory, exits after 10 seconds)
 
 func runWatch(_ args: [String]) async {
     guard let first = args.first else { usage() }
@@ -248,30 +248,30 @@ func runWatch(_ args: [String]) async {
 
     let watcher = DirectoryWatch().watch(dir)
     if let err = watcher.startupError {
-        fail("监听启动失败(\(err.errorClass)): \(err.localizedDescription)")
+        fail("Watch failed to start (\(err.errorClass)):\(err.localizedDescription)")
     }
-    print("监听 \(dir.path) …（10 秒后自动退出；在别处 touch 该目录以触发信号）")
+    print("Watching \(dir.path) … (exits after 10 seconds; touch this directory elsewhere to trigger a signal)")
 
     await withTaskGroup(of: Void.self) { group in
         group.addTask {
             var n = 0
             for await _ in watcher.signals {
                 n += 1
-                print("· 变化信号 #\(n)")
+                print("· Change signal #\(n)")
             }
         }
         group.addTask {
             try? await Task.sleep(for: .seconds(10))
         }
-        // 任一子任务先结束（10 秒计时到）即收尾
+        // Wrap up when either child task ends first (the 10-second timer)
         await group.next()
         watcher.stop()
         group.cancelAll()
     }
-    print("停止监听")
+    print("Stopped watching")
 }
 
-// MARK: - size（活体只读：FolderSize 递归求和真实目录）
+// MARK: - size (live read-only: FolderSize recursively sums a real directory)
 
 func runSize(_ args: [String]) async {
     guard let first = args.first else { usage() }
@@ -281,9 +281,9 @@ func runSize(_ args: [String]) async {
         let t0 = Date()
         let bytes = try await FolderSize().size(of: dir)
         let ms = Int(Date().timeIntervalSince(t0) * 1000)
-        print("\(dir.path)\n  \(bytes) 字节 (\(byteString(bytes)))，耗时 \(ms)ms")
+        print("\(dir.path)\n  \(bytes) bytes (\(byteString(bytes))), took \(ms)ms")
     } catch {
-        fail("计算失败: \(error.localizedDescription)")
+        fail("Calculation failed:\(error.localizedDescription)")
     }
 }
 
@@ -293,7 +293,7 @@ func byteString(_ b: Int64) -> String {
     return f.string(fromByteCount: b)
 }
 
-// MARK: - thumb（活体只读：IconThumb 生成真实文件缩略图）
+// MARK: - thumb (live read-only: IconThumb generates a real file's thumbnail)
 
 func runThumb(_ args: [String]) async {
     var file: URL?
@@ -303,7 +303,7 @@ func runThumb(_ args: [String]) async {
         switch args[i] {
         case "--size":
             i += 1
-            guard i < args.count, let v = Double(args[i]) else { fail("--size 需正数") }
+            guard i < args.count, let v = Double(args[i]) else { fail("--size requires a positive number") }
             size = CGFloat(v)
         default:
             file = URL(fileURLWithPath: (args[i] as NSString).expandingTildeInPath)
@@ -316,8 +316,8 @@ func runThumb(_ args: [String]) async {
     let image = await IconThumb().thumbnail(for: file, size: size)
     let ms = Int(Date().timeIntervalSince(t0) * 1000)
     if let image {
-        print("缩略图 \(image.width)×\(image.height) 像素（请求 size=\(Int(size)), scale=2），耗时 \(ms)ms")
+        print("Thumbnail \(image.width)×\(image.height) pixels (requested size=\(Int(size)), scale=2), took \(ms)ms")
     } else {
-        fail("无缩略图（不支持类型/文件不存在/生成失败），耗时 \(ms)ms")
+        fail("No thumbnail (unsupported type / file missing / generation failed), took \(ms)ms")
     }
 }

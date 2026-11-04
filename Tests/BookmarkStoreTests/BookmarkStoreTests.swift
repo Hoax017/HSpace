@@ -2,7 +2,7 @@ import Testing
 import Foundation
 import BookmarkStore
 
-/// 黑盒验收：真实临时目录（无 Fake Mock）
+/// Black-box acceptance: real temp directory (no fakes or mocks)
 @Suite struct BookmarkStoreTests {
     func makeStore() throws -> (BookmarkStore, URL, URL) {
         let dir = FileManager.default.temporaryDirectory
@@ -25,12 +25,12 @@ import BookmarkStore
     @Test func persistenceSurvivesReload() async throws {
         let (store, dir, target) = try makeStore()
         defer { try? FileManager.default.removeItem(at: dir) }
-        try await store.add(target, name: "自定义名")
-        // 新实例从磁盘重载（跨启动持久化验收）
+        try await store.add(target, name: "Résumé Ünï")
+        // A new instance reloads from disk (cross-launch persistence acceptance)
         let store2 = BookmarkStore(directory: dir)
         let items = await store2.all()
         #expect(items.count == 1)
-        #expect(items.first?.name == "自定义名")
+        #expect(items.first?.name == "Résumé Ünï")
     }
 
     @Test func removeRenameMove() async throws {
@@ -47,74 +47,74 @@ import BookmarkStore
         #expect(items.map(\.name) == ["A2"])
     }
 
-    // MARK: 起始位置种子（seedIfEmpty）
+    // MARK: Start-location seeds (seedIfEmpty)
 
-    /// 首次写入：空档案 seed 注入给定目录
+    /// First write: seed injects the given directories into an empty archive
     @Test func seedFirstTimeWrites() async throws {
         let (store, dir, target) = try makeStore()
         defer { try? FileManager.default.removeItem(at: dir) }
-        await store.seedIfEmpty([(target, "种子")])
+        await store.seedIfEmpty([(target, "Seed")])
         let items = await store.all()
         #expect(items.count == 1)
-        #expect(items.first?.name == "种子")
+        #expect(items.first?.name == "Seed")
     }
 
-    /// 二次不重复：同实例再调 + 跨实例重载后 seeded 标志落盘，均不再 seed
+    /// No repeats: calling again on the same instance, or reloading across instances with the seeded flag persisted, never seeds again
     @Test func seedSecondTimeNoDuplicate() async throws {
         let (store, dir, target) = try makeStore()
         defer { try? FileManager.default.removeItem(at: dir) }
-        await store.seedIfEmpty([(target, "种子")])
-        await store.seedIfEmpty([(target, "种子")])
+        await store.seedIfEmpty([(target, "Seed")])
+        await store.seedIfEmpty([(target, "Seed")])
         #expect(await store.all().count == 1)
-        // 用户移除种子后，跨实例重载不应再被 seed（seeded 标志已落盘）
+        // After the user removes a seed, reloading across instances must not seed again (the seeded flag is persisted)
         let only = await store.all()[0]
         try await store.remove(only.id)
         let store2 = BookmarkStore(directory: dir)
-        await store2.seedIfEmpty([(target, "种子")])
+        await store2.seedIfEmpty([(target, "Seed")])
         #expect(await store2.all().isEmpty)
     }
 
-    /// 已有条目不 seed：先有用户书签则跳过种子注入
+    /// No seeding when entries exist: an existing user bookmark skips seed injection
     @Test func seedSkippedWhenItemsExist() async throws {
         let (store, dir, target) = try makeStore()
         defer { try? FileManager.default.removeItem(at: dir) }
-        _ = try await store.add(target, name: "用户书签")
-        await store.seedIfEmpty([(target, "种子")])
+        _ = try await store.add(target, name: "User Bookmark")
+        await store.seedIfEmpty([(target, "Seed")])
         let items = await store.all()
         #expect(items.count == 1)
-        #expect(items.first?.name == "用户书签")
+        #expect(items.first?.name == "User Bookmark")
     }
 
-    /// 向后兼容：旧纯数组档案（无 seeded 字段）items 非空视为已 seed，不被种子污染
+    /// Backward compatibility: an old plain-array archive (no seeded field) with items counts as seeded and is not polluted by seeds
     @Test func legacyArchiveTreatedAsSeeded() async throws {
         let (store, dir, target) = try makeStore()
         defer { try? FileManager.default.removeItem(at: dir) }
-        // 手写旧格式 bookmarks.json（纯 [BookmarkItem] 数组）
+        // Hand-write an old-format bookmarks.json (plain [BookmarkItem] array)
         let data = try target.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-        let legacy = [BookmarkItem(name: "旧书签", bookmarkData: data)]
+        let legacy = [BookmarkItem(name: "Old Bookmark", bookmarkData: data)]
         let json = try JSONEncoder().encode(legacy)
         try json.write(to: dir.appendingPathComponent("bookmarks.json"), options: .atomic)
-        _ = store  // 用新实例读旧档
+        _ = store  // a new instance reads the old archive
         let store2 = BookmarkStore(directory: dir)
-        await store2.seedIfEmpty([(target, "种子")])
+        await store2.seedIfEmpty([(target, "Seed")])
         let items = await store2.all()
         #expect(items.count == 1)
-        #expect(items.first?.name == "旧书签")
+        #expect(items.first?.name == "Old Bookmark")
     }
 
-    /// I-14 恢复种子：已存在目标（按解析路径去重）跳过，只补缺失；再次调用幂等 0 新增
+    /// I-14 seed restore: existing targets (deduped by resolved path) are skipped, only missing ones are added; calling again is an idempotent 0 additions
     @Test func restoreMissingSeedsMergesOnlyAbsent() async throws {
         let (store, dir, target) = try makeStore()
         defer { try? FileManager.default.removeItem(at: dir) }
-        _ = try await store.add(target, name: "已有")
+        _ = try await store.add(target, name: "Existing")
         let other = dir.appendingPathComponent("other-seed", isDirectory: true)
         try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
-        let added = await store.restoreMissingSeeds([(target, "重复种子"), (other, "新种子")])
+        let added = await store.restoreMissingSeeds([(target, "Duplicate Seed"), (other, "New Seed")])
         #expect(added == 1)
         let items = await store.all()
         #expect(items.count == 2)
-        #expect(items.map(\.name).contains("新种子"))
-        let again = await store.restoreMissingSeeds([(target, "重复种子"), (other, "新种子")])
+        #expect(items.map(\.name).contains("New Seed"))
+        let again = await store.restoreMissingSeeds([(target, "Duplicate Seed"), (other, "New Seed")])
         #expect(again == 0)
     }
 }

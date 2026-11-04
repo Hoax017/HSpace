@@ -1,11 +1,11 @@
 import AppKit
 import StashStore
 
-/// 暂存架操作枚举（分组末尾操作行；FG-1：空暂存架不显示这些行）
+/// Stash shelf actions (action rows at the end of the group; FG-1: an empty shelf shows none of these rows)
 enum StashAction {
-    case copyHere   // 复制暂存全体到当前窗格
-    case moveHere   // 移动暂存全体到当前窗格（完成后清空移动项）
-    case airdrop    // AirDrop 暂存全体
+    case copyHere   // Copy the whole stash to the current pane
+    case moveHere   // Move the whole stash to the current pane (clears moved items afterwards)
+    case airdrop    // AirDrop the whole stash
 
     var titleKey: String {
         switch self {
@@ -24,20 +24,20 @@ enum StashAction {
     }
 }
 
-/// 暂存架控制器（spec 五元组：暂存架内容 Decision Owner）：
-/// UI 只发 Command——增删清经 StashStore 胶囊提交，批量复制/移动经 FileOpsCoordinator
-/// 构造 OperationSpec 交内核（BG-1：本层零写型文件 API）。行呈现在侧边栏"暂存架"分组。
+/// Stash shelf controller (spec five-tuple: Decision Owner of stash shelf content):
+/// the UI only sends Commands. Add/remove/clear commit through the StashStore pod; bulk copy/move goes through FileOpsCoordinator,
+/// which builds an OperationSpec for the kernel (BG-1: no write-type file APIs in this layer). Rows appear in the sidebar "Stash Shelf" group.
 @MainActor
 final class StashShelfController {
     let store: StashStore
-    /// 内存投影（侧边栏据此建行；权威状态在 StashStore actor）
+    /// In-memory projection (the sidebar builds rows from it; authoritative state lives in the StashStore actor)
     private(set) var items: [StashItem] = []
 
-    /// 内容变化 → 侧边栏重建
+    /// Content changed → rebuild the sidebar
     var onChange: (() -> Void)?
-    /// 错误原位呈现（侧边栏底部横幅，严禁模态弹窗）
+    /// In-place error presentation (banner at the bottom of the sidebar; no modal alerts)
     var onError: ((String) -> Void)?
-    /// 文件操作桥与窗格网格（"当前窗格"落点来源），由 MainWindowController 注入
+    /// File-operation bridge and pane grid (source of the "current pane" destination), injected by MainWindowController
     weak var coordinator: FileOpsCoordinator?
     weak var grid: PaneGridController?
 
@@ -49,7 +49,7 @@ final class StashShelfController {
         Task { await refresh() }
     }
 
-    // MARK: 增删清（全部经 StashStore actor 串行提交）
+    // MARK: Add/remove/clear (all committed serially through the StashStore actor)
 
     func add(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
@@ -77,7 +77,7 @@ final class StashShelfController {
         }
     }
 
-    // MARK: 批量操作（分组末尾操作行）
+    // MARK: Bulk actions (action rows at the end of the group)
 
     func perform(_ action: StashAction) {
         switch action {
@@ -87,7 +87,7 @@ final class StashShelfController {
         }
     }
 
-    /// 对暂存全体执行复制/移动到当前窗格；移动完成后清空已移动项
+    /// Copies/moves the whole stash to the current pane; clears moved items once the move finishes
     private func transferAll(move: Bool) {
         let pairs: [(id: UUID, url: URL)] = items.compactMap { item in
             store.resolve(item).map { (item.id, $0) }
@@ -100,7 +100,7 @@ final class StashShelfController {
         }
     }
 
-    /// AirDrop 暂存全体（对 resolve 后的真实 URL；失败原位横幅）
+    /// AirDrops the whole stash (on the resolved real URLs; failures show as an in-place banner)
     private func airdropAll() {
         let urls = items.compactMap { store.resolve($0) }
         guard !urls.isEmpty else { NSSound.beep(); return }
@@ -112,7 +112,7 @@ final class StashShelfController {
         service.perform(withItems: urls)
     }
 
-    // MARK: 私有
+    // MARK: Private
 
     private func refresh() async {
         items = await store.all()

@@ -1,8 +1,8 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// 显示简介面板：图标 / 名称 / 种类 / 大小 / 路径（可选中）/ 创建·修改日期。
-/// 就地信息面板，非模态；每次调用弹一个独立 NSPanel。
+/// Get Info panel: icon / name / kind / size / path (selectable) / created and modified dates.
+/// In-place, non-modal info panel; each call opens a separate NSPanel.
 @MainActor
 enum InfoPanel {
     private static var open: [NSPanel] = []
@@ -16,7 +16,7 @@ enum InfoPanel {
         panel.contentView = buildContent(for: url)
         panel.center()
         panel.makeKeyAndOrderFront(nil)
-        open.append(panel)   // 防止被释放；关闭后清理
+        open.append(panel)   // keeps it from being released; cleaned up on close
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
                                                object: panel, queue: .main) { [weak panel] _ in
             MainActor.assumeIsolated {

@@ -1,16 +1,16 @@
 import Foundation
 import NSpaceContracts
 
-/// 「年/月」分组纯逻辑（M26）：列表与图标视图共用的唯一真源——
-/// 分组键格式、组日期取用、桶划分集中于此，杜绝 index 算术与键格式在各视图散落（BG）。
+/// Pure logic for time-based grouping (M26): the single source of truth shared by the list and icon views.
+/// Group key format, date selection and bucketing live here, so index arithmetic and key formats don't spread across views (BG).
 @MainActor
 enum FileGrouping {
-    /// 该排序键是否为日期类（仅日期类才分组）
+    /// Whether this sort key is date-like (only date keys group)
     static func isDateKey(_ k: SortSpec.Key) -> Bool {
         k == .dateModified || k == .created || k == .added
     }
 
-    /// 分组是否生效：偏好开 且 排序键为日期类
+    /// Grouping is active when the preference is on and the sort key is date-like
     static func active(_ sort: SortSpec) -> Bool {
         Preferences.listGrouping && isDateKey(sort.key)
     }
@@ -24,18 +24,18 @@ enum FileGrouping {
         }
     }
 
-    /// 当前时刻注入点（M29）：产品用真实 Date；测试注入固定时钟以确定性验证相对桶落位。
-    /// 与 [[Formatters.relativeDate]] 的 now 同源语义（此处集中一处，避免各视图各取 Date）。
+    /// Injection point for the current time (M29): production uses the real Date; tests inject a fixed clock to verify bucket placement deterministically.
+    /// Same semantics as `now` in [[Formatters.relativeDate]] (centralized here so views don't each read Date).
     static var nowProvider: () -> Date = { Date() }
 
-    /// 「往年」标题格式器（本地化：zh→2025年 / en→2025）——仅非本年分桶用
+    /// Title formatter for prior years (localized); used only for buckets outside the current year
     private static func yearTitle(_ year: Int) -> String {
         String(format: L10n.t("group.year"), year)
     }
 
-    /// 组键（稳定，跨语言不变，用于折叠/过滤记账）+ 组标题（本地化显示）。
-    /// 相对分桶（M29，用户点名）：今天/昨天/本周/本月/今年更早/往年(YYYY年)——由近及远，
-    /// 键前缀 g0..g5 保证「往年」多年份按年细分且组序天然随排序方向（items 已按日期排序）。
+    /// Group key (stable across languages, used for collapse/filter bookkeeping) + group title (localized for display).
+    /// Relative buckets (M29, owner request): today/yesterday/this week/this month/earlier this year/prior years (YYYY), nearest first.
+    /// Key prefixes g0..g5 split prior years by year and let group order follow the sort direction (items are already date-sorted).
     static func keyTitle(for item: FileItem, key: SortSpec.Key) -> (key: String, title: String) {
         guard let date = date(for: item, key: key) else {
             return ("__nodate__", L10n.t("group.noDate"))
@@ -64,13 +64,13 @@ enum FileGrouping {
     struct Group: Equatable {
         let key: String
         let title: String
-        /// 组内项在原 items 数组中的下标（保持排序后的相对顺序）
+        /// Indices of the group's items in the original items array (keeps their sorted relative order)
         let indices: [Int]
     }
 
-    /// 相对桶的"新近度"秩（越新越小）：今天0<昨天1<本周2<本月3<今年更早4<往年(按年，新年份更小)<无日期。
-    /// 组顺序据此排（I-49）——不再靠"首次出现"，因「文件夹置顶」使 items=[文件夹段][文件段] 非全局单调，
-    /// 会把只含文件的桶（如"今天"仅一个文件）挤到文件夹建立的桶序之后。
+    /// Recency rank of a relative bucket (newer is smaller): today 0 < yesterday 1 < this week 2 < this month 3 < earlier this year 4 < prior years (by year, newer is smaller) < no date.
+    /// Groups are ordered by this (I-49), no longer by first appearance: "folders first" makes items=[folders][files], which isn't globally monotonic
+    /// and would push file-only buckets (say "Today" holding a single file) behind the bucket order set up by folders.
     static func recencyRank(ofKey key: String) -> Int {
         switch key {
         case "g0-today": return 0
@@ -85,9 +85,9 @@ enum FileGrouping {
         }
     }
 
-    /// 已按 sort 排序的 items → 有序分组：**组顺序按相对时间新近度**（direction-aware，不受 foldersFirst 打乱），
-    /// 组内保持项的相对顺序（含文件夹置顶）。纯函数，可黑盒单测。
-    /// 日期降序（newest first）→ 组按 rank 升序（今天在最前）；日期升序 → rank 降序（今天在最后）。
+    /// Items already sorted by `sort` → ordered groups: **group order follows relative recency** (direction-aware, unaffected by foldersFirst);
+    /// items keep their relative order inside a group (including folders first). Pure function, black-box testable.
+    /// Date descending (newest first) → groups by ascending rank (today first); date ascending → descending rank (today last).
     static func buckets(_ items: [FileItem], key: SortSpec.Key, ascending: Bool) -> [Group] {
         var indexBuckets: [String: [Int]] = [:]
         var titles: [String: String] = [:]
