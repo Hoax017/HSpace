@@ -6,6 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 CLT=/Library/Developer/CommandLineTools
 exec swift test \
+  -Xswiftc -F -Xswiftc "$CLT/Library/Developer/Frameworks" \
   -Xswiftc -plugin-path -Xswiftc "$CLT/usr/lib/swift/host/plugins/testing" \
   -Xlinker -rpath -Xlinker "$CLT/Library/Developer/Frameworks" \
   -Xlinker -rpath -Xlinker "$CLT/Library/Developer/usr/lib" \
