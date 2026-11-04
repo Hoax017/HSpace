@@ -18,20 +18,13 @@ enum AppVersion {
     }
 }
 
-/// 版本徽章（M22）：甲板工作区标签条最右端（"＋"按钮左侧）的小药丸。
-/// 常态：文字"v{短版本}"、11px tabular-nums、10% 中性浅底、tooltip"NSpace vX.Y.Z (build N)"。
-/// 有可用更新：文字后加" ↑"、底色改 Theme.accent 18%、tooltip 变提示、可点击触发更新流程。
-/// 铁律 BG-1：本视图只显示与转发点击，下载/替换全在 UpdateEngine 胶囊（经 onClick 回调上抛甲板）。
-/// 零新增配色：常态用系统语义色（labelColor 低透明），更新态用 Theme.accent。
+/// Version badge: small read-only pill at the trailing end of the workspace tab bar.
+/// Shows "v{short version}" with the build number in its tooltip.
 @MainActor
 final class VersionBadgeView: NSView {
-    /// 点击回调（仅更新态可点；由甲板转发至 UpdateController）
-    var onClick: (() -> Void)?
-
     private let label = NSTextField(labelWithString: "")
-    private var updateAvailable = false
 
-    /// 甲板位于标题栏区（fullSizeContentView）：不覆写则点击被窗口拖拽机制吞掉（同 TabBarView）
+    /// The deck sits in the title bar area, so window dragging must not swallow this view.
     override var mouseDownCanMoveWindow: Bool { false }
 
     override init(frame frameRect: NSRect) {
@@ -50,52 +43,13 @@ final class VersionBadgeView: NSView {
             heightAnchor.constraint(equalToConstant: 20),
         ])
         setContentHuggingPriority(.required, for: .horizontal)
-        applyState()
-        // 主题强调色变更后重刷（更新态底色/文字用 Theme.accent）
-        NotificationCenter.default.addObserver(self, selector: #selector(themeChanged),
-                                               name: .nspaceThemeChanged, object: nil)
+        let version = AppVersion.shortVersion
+        label.stringValue = "v\(version)"
+        label.textColor = .secondaryLabelColor
+        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.1).cgColor
+        toolTip = L10n.f("badge.tooltip", version, AppVersion.buildNumber)
     }
-
-    deinit { NotificationCenter.default.removeObserver(self) }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
-
-    /// 更新可用态切换（nil=无更新；非 nil=有新版 vX.Y.Z）。
-    func setUpdateAvailable(_ available: Bool, latestVersion: String? = nil) {
-        updateAvailable = available
-        latestVersionCache = latestVersion
-        applyState(latestVersion: latestVersion)
-    }
-
-    private func applyState(latestVersion: String? = nil) {
-        let v = AppVersion.shortVersion
-        if updateAvailable {
-            label.stringValue = "v\(v) ↑"
-            label.textColor = Theme.accent
-            layer?.backgroundColor = Theme.accent.withAlphaComponent(0.18).cgColor
-            let latest = latestVersion ?? ""
-            toolTip = latest.isEmpty
-                ? L10n.t("badge.updateAvailableGeneric")
-                : L10n.f("badge.updateAvailable", latest)
-        } else {
-            label.stringValue = "v\(v)"
-            label.textColor = .secondaryLabelColor
-            // 10% 中性浅底（系统语义色，零新增配色）
-            layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.1).cgColor
-            toolTip = L10n.f("badge.tooltip", v, AppVersion.buildNumber)
-        }
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        guard updateAvailable else { super.mouseDown(with: event); return }
-        onClick?()
-    }
-
-    /// 主题色变更后重刷（更新态底色/文字用 Theme.accent）
-    func refreshTheme() { applyState(latestVersion: latestVersionCache) }
-
-    private var latestVersionCache: String?
-
-    @objc private func themeChanged() { refreshTheme() }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 }

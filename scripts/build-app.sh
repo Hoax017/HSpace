@@ -29,7 +29,7 @@ plutil -replace CFBundleVersion -string "$BUILD_NUM" "$APP/Contents/Info.plist"
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 
 # 本地化与图标
-cp -R Resources/zh-Hans.lproj Resources/en.lproj "$APP/Contents/Resources/"
+cp -R Resources/en.lproj "$APP/Contents/Resources/"
 if [ ! -f Support/NSpace.icns ]; then
   swift scripts/generate-icon.swift Support/icon_1024.png
   ./scripts/make-icns.sh

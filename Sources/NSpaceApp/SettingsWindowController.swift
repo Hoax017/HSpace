@@ -216,15 +216,6 @@ final class SettingsWindowController: NSWindowController {
                                     action: #selector(restoreDefaultSeeds))
         restoreSeeds.bezelStyle = .push
 
-        // M22：热更新——自动检查开关 + 手动"检查更新"按钮（有新版走徽章流程）
-        let autoUpdate = checkRow("settings.autoCheckUpdates", checked: Preferences.autoCheckUpdates,
-                                  action: #selector(autoCheckUpdatesChanged(_:)))
-        let autoDownload = checkRow("settings.autoDownloadUpdates", checked: Preferences.autoDownloadUpdates,
-                                    action: #selector(autoDownloadUpdatesChanged(_:)))
-        let checkUpdate = NSButton(title: L10n.t("settings.checkForUpdates"), target: self,
-                                   action: #selector(checkForUpdates))
-        checkUpdate.bezelStyle = .push
-
         // M24：全局呼出/隐藏热键（Carbon，无需辅助功能权限；替代 Raycast 桥接）
         let hotkeyLabel = NSTextField(labelWithString: L10n.t("settings.globalHotkey"))
         hotkeyLabel.font = .systemFont(ofSize: 12)
@@ -241,7 +232,7 @@ final class SettingsWindowController: NSWindowController {
                                         NSBox.separatorLine(), hidden, folders,
                                         NSBox.separatorLine(), hotkeyRow, hotkeyNote,
                                         NSBox.separatorLine(), restoreSeeds,
-                                        NSBox.separatorLine(), autoUpdate, autoDownload, checkUpdate,
+                                        NSBox.separatorLine(),
                                         NSBox.separatorLine(), note])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -270,18 +261,6 @@ final class SettingsWindowController: NSWindowController {
 
     @objc private func foldersFirstChanged(_ sender: NSButton) {
         Preferences.foldersFirst = sender.state == .on
-    }
-
-    @objc private func autoDownloadUpdatesChanged(_ sender: NSButton) {
-        Preferences.autoDownloadUpdates = sender.state == .on
-    }
-
-    @objc private func autoCheckUpdatesChanged(_ sender: NSButton) {
-        Preferences.autoCheckUpdates = sender.state == .on
-    }
-
-    @objc private func checkForUpdates() {
-        UpdateController.shared.manualCheck(from: window)
     }
 
     @objc private func restoreDefaultSeeds() {
