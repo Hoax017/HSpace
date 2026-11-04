@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 /// Transfer node (copy / move / duplicate). Zero-argument construction injection (Axiom 2: no global mutable state).
 public struct TransferNode: OperationNode {

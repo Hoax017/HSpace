@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // Private concern: physical Process driver: launches system tools, captures stderr, cooperative cancellation (terminate).
 // Process.run()/waitUntilExit() block, so terminationHandler + CheckedContinuation make this non-blocking,

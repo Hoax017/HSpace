@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // DirectoryWatch pod's sole public contract surface (Axiom 3): directory URL → change signal stream + suspend/resume/stop handle.
 // Each directory change yields one Void signal; callers reload the whole directory on receipt (no incremental diff, DirectoryReader produces a new snapshot).

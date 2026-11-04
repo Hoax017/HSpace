@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 # UI smoke: automated UX regression needing no system permissions (frame persistence end to end + view/layout size stability
-# + empty task window + adding to stash + search panel). Output: /tmp/nspace-ui/{report.txt,*.png}
+# + empty task window + adding to stash + search panel). Output: /tmp/hspace-ui/{report.txt,*.png}
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ./scripts/build-app.sh >/dev/null 2>&1 || { echo "Build failed"; exit 1; }
-pkill -x NSpace 2>/dev/null; sleep 0.5
-rm -rf /tmp/nspace-ui
+pkill -x HSpace 2>/dev/null; sleep 0.5
+rm -rf /tmp/hspace-ui
 
-BIN=build/NSpace.app/Contents/MacOS/NSpace
+BIN=build/HSpace.app/Contents/MacOS/HSpace
 # Phase A: set frame 900x520 and exit (triggers autosave)
-NSPACE_UITEST=1 NSPACE_UITEST_SETFRAME="900,520" "$BIN" >/dev/null 2>&1
+HSPACE_UITEST=1 HSPACE_UITEST_SETFRAME="900,520" "$BIN" >/dev/null 2>&1
 # Phase B: relaunch, assert the restore + run all scenarios
-NSPACE_UITEST=1 NSPACE_UITEST_EXPECTFRAME="900,520" "$BIN" >/dev/null 2>&1
+HSPACE_UITEST=1 HSPACE_UITEST_EXPECTFRAME="900,520" "$BIN" >/dev/null 2>&1
 CODE=$?
 echo "==== UI smoke report (exit=$CODE) ===="
-cat /tmp/nspace-ui/report.txt 2>/dev/null || echo "(no report)"
-echo "Screenshots: $(ls /tmp/nspace-ui/*.png 2>/dev/null | wc -l | tr -d ' ') → /tmp/nspace-ui/"
+cat /tmp/hspace-ui/report.txt 2>/dev/null || echo "(no report)"
+echo "Screenshots: $(ls /tmp/hspace-ui/*.png 2>/dev/null | wc -l | tr -d ' ') → /tmp/hspace-ui/"
 
 # M17 assertion presence check (guards against an assertion deleted by mistake or an empty run going "green"): the report must contain these PASS lines
-REPORT=/tmp/nspace-ui/report.txt
+REPORT=/tmp/hspace-ui/report.txt
 require_pass() {
   if ! grep -qF "PASS $1" "$REPORT" 2>/dev/null; then
     echo "✗ M17 assertion missing or failing: $1"; CODE=1
@@ -305,6 +305,6 @@ require_pass "I-64 subfolder fixture put back"
 
 echo "==== M17 assertion check complete (exit=$CODE) ===="
 # Test sandbox hard rule wrap-up (I-46 / M28 / I-47): clear UITEST isolated state, never leave test residue in the user's real domain
-defaults delete com.nspace.NSpace "windowFrame.uitest" 2>/dev/null || true
-rm -rf "$TMPDIR/nspace-uitest-support" /tmp/nspace-uitest-support "$TMPDIR/nspace-uitest-frecency" /tmp/nspace-uitest-frecency 2>/dev/null || true
+defaults delete com.hoax017.hspace "windowFrame.uitest" 2>/dev/null || true
+rm -rf "$TMPDIR/hspace-uitest-support" /tmp/hspace-uitest-support "$TMPDIR/hspace-uitest-frecency" /tmp/hspace-uitest-frecency 2>/dev/null || true
 exit $CODE

@@ -1,13 +1,13 @@
 import Testing
 import Foundation
 import LocalOps
-import NSpaceContracts
+import HSpaceContracts
 
 /// Black-box acceptance: only through the Contract public surface; real physical I/O on temp fixture trees (no fakes or mocks)
 @Suite struct LocalOpsTests {
     static func tempDir() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-lo-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-lo-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

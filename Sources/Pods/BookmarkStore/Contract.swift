@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // BookmarkStore pod's sole public contract surface (Axiom 3): sole Commit Owner of custom bookmarks
 

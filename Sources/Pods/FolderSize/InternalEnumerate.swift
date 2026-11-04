@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // Private concern: recursive allocated-byte summation + thread-safe box holding the detached task handle.
 

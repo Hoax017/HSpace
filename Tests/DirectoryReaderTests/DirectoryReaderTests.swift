@@ -1,14 +1,14 @@
 import Testing
 import Foundation
 @testable import DirectoryReader
-import NSpaceContracts
+import HSpaceContracts
 
 /// Black-box acceptance: only through the Contract public surface, asserting on real temp fixture trees (no fakes or mocks)
 @Suite struct DirectoryReaderTests {
     /// Builds the fixture tree: a.txt (5B) / B.txt (10B) / sub/ / .secret
     func makeFixture() throws -> URL {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-dr-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-dr-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try Data("hello".utf8).write(to: root.appendingPathComponent("a.txt"))
         try Data("helloworld".utf8).write(to: root.appendingPathComponent("B.txt"))

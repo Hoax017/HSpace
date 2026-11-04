@@ -6,7 +6,7 @@ import BookmarkStore
 @Suite struct BookmarkStoreTests {
     func makeStore() throws -> (BookmarkStore, URL, URL) {
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-bm-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-bm-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let target = dir.appendingPathComponent("target-folder")
         try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)

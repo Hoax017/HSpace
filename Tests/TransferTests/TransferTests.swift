@@ -1,13 +1,13 @@
 import Testing
 import Foundation
 import Transfer
-import NSpaceContracts
+import HSpaceContracts
 
 /// Black-box acceptance: only through the Contract public surface; real physical I/O on /tmp fixture trees (no fakes or mocks)
 @Suite struct TransferTests {
     static func tempDir() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-tr-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-tr-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

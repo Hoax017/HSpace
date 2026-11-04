@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // SearchEngine pod's sole public contract surface (Axiom 3): request/hit vocabulary of focused search
 

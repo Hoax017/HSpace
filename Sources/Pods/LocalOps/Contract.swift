@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // LocalOps pod's sole public contract surface (Axiom 3):
 // Directory-level local atomic operations: rename / new folder / new file / move to Trash

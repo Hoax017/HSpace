@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // Private concern: Finder-style sorting (localizedStandardCompare, optional folders first)
 // Three-way comparison keeps strict weak ordering (in descending order equal elements must not both compare "less", or sort crashes)

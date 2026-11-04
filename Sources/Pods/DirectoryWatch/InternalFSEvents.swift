@@ -1,6 +1,6 @@
 import Foundation
 import CoreServices
-import NSpaceContracts
+import HSpaceContracts
 
 // Private concern: FSEventStream lifecycle + C callback trampoline.
 // All mutable state is serialized by lock, hence @unchecked Sendable externally (the lock guarantees freedom from data races).
@@ -10,7 +10,7 @@ final class WatchPump: @unchecked Sendable {
     private let path: String
     private let continuation: AsyncStream<Void>.Continuation
     // A dedicated queue takes FSEvents callbacks, never the main thread (background zero-power rule).
-    private let queue = DispatchQueue(label: "com.nspace.directorywatch", qos: .utility)
+    private let queue = DispatchQueue(label: "com.hoax017.hspace.directorywatch", qos: .utility)
 
     private var stream: FSEventStreamRef?
     private var running = false

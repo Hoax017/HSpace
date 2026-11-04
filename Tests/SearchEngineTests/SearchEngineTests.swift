@@ -9,7 +9,7 @@ import Foundation
     /// Fixture tree: visible hit + dot-hidden hit + hit inside a hidden directory + deep hit + hit inside a heavy directory (should be skipped)
     func makeFixture() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-search-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-search-\(UUID().uuidString)")
         let fm = FileManager.default
         try fm.createDirectory(at: dir.appendingPathComponent(".hiddensub"), withIntermediateDirectories: true)
         try fm.createDirectory(at: dir.appendingPathComponent("sub"), withIntermediateDirectories: true)
@@ -119,7 +119,7 @@ import Foundation
         // Freeze root-cause regression: when hits exceed the cap the engine must cap and stop channels (otherwise main-thread full reads freeze and spike CPU).
         // Builds maxResults+200 matching files for channel B's recursive scan, asserting total stream output <= the cap.
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-search-cap-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-search-cap-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let n = SearchLimits.maxResults + 200
@@ -143,7 +143,7 @@ import Foundation
     /// → "monotonically non-decreasing depth" is necessarily broken. BFS always holds.
     @Test func levelOrderWalkEmitsNonDecreasingDepths() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("nspace-bfs-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent("hspace-bfs-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: root) }
         for d in ["d1", "d2"] {
             try fm.createDirectory(at: root.appendingPathComponent(d), withIntermediateDirectories: true)
@@ -166,7 +166,7 @@ import Foundation
     /// Independent of directory enumeration order.
     @Test func scanDeliversShallowHitsBeforeDeepOnes() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("nspace-wire-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent("hspace-wire-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: root) }
         for d in ["nswire-dirA", "nswire-dirB"] {
             try fm.createDirectory(at: root.appendingPathComponent(d), withIntermediateDirectories: true)
@@ -192,7 +192,7 @@ import Foundation
     /// with count-only emits 2 < 50 and only the final emit happens → the assertion must fail.
     @Test func sparseHitIsNotWithheldUntilScanEnds() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("nspace-flush-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent("hspace-flush-\(UUID().uuidString)")
         let deepDir = root.appendingPathComponent("bulk/deep")
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: deepDir, withIntermediateDirectories: true)
@@ -218,7 +218,7 @@ import Foundation
         // Dedicated fixture: the file name inside the heavy directory **also** contains the query. With the shared fixture's skip-nsneedle.txt,
         // the "still not descended into" check would be trivially true (the query node_modules cannot match it), asserting nothing.
         let fm = FileManager.default
-        let dir = fm.temporaryDirectory.appendingPathComponent("nspace-skip-\(UUID().uuidString)")
+        let dir = fm.temporaryDirectory.appendingPathComponent("hspace-skip-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: dir) }
         try fm.createDirectory(at: dir.appendingPathComponent("node_modules"),
                                withIntermediateDirectories: true)
@@ -264,7 +264,7 @@ import Foundation
         var i = 0
         while i < SearchLimits.maxResults + 100 {
             let batch = (0..<7).map { k -> SearchHit in
-                SearchHit(url: URL(fileURLWithPath: "/tmp/nspace-capx-\(i + k)"),
+                SearchHit(url: URL(fileURLWithPath: "/tmp/hspace-capx-\(i + k)"),
                           name: "capx-\(i + k)", isDirectory: false,
                           size: nil, modified: nil, contentTypeID: nil)
             }
@@ -286,7 +286,7 @@ import Foundation
         let session = SearchSession(request: SearchRequest(query: "thr", scope: .global),
                                     continuation: cont)
         func hit(_ i: Int) -> SearchHit {
-            SearchHit(url: URL(fileURLWithPath: "/tmp/nspace-thr-\(i)"), name: "thr-\(i)",
+            SearchHit(url: URL(fileURLWithPath: "/tmp/hspace-thr-\(i)"), name: "thr-\(i)",
                       isDirectory: false, size: nil, modified: nil, contentTypeID: nil)
         }
         // First batch: must be pushed **immediately** (not put on the 300ms schedule)
@@ -309,7 +309,7 @@ import Foundation
     /// "Case-matching first" is a ranking concern, covered by SearchRanking's pure function tests, not verified on the file system.
     func makeCaseFixture() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-case-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-case-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         for f in ["NSOVERRIDE.md", "nsoverridetwo.md", "unrelated.txt"] {
             try Data("x".utf8).write(to: dir.appendingPathComponent(f))

@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // Transfer pod's sole public contract surface (Axiom 3):
 // Composite Node: copy / move / duplicate (internal micro-steps: pre-scan → conflict resolution → per-file transfer)

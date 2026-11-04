@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // Eraser pod's sole public contract surface (Axiom 3): **irreversible** permanent deletion.
 //

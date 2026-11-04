@@ -1,5 +1,5 @@
 import AppKit
-import NSpaceContracts
+import HSpaceContracts
 
 /// Volume info node (Axiom 2: no global mutable state; NSWorkspace/FileManager are the controlled physical substrate)
 public struct VolumeInfo: Sendable {

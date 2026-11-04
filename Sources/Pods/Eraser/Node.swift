@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 /// Permanent deletion node (`.delete`). Zero-argument construction injection (Axiom 2: no global mutable state).
 ///

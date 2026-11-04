@@ -1,0 +1,175 @@
+import AppKit
+import HSpaceContracts
+import ArchiveEngine
+
+/// Context menu builder: generates the menu from the selection; commands route by selector to the responder-chain actions of each content view (list/icon/column).
+/// A target only has to implement @objc actions of the same name to reuse it (unimplemented items gray out automatically: honest disabling).
+/// Right-click on empty space → directory-level menu (New/Paste/Get Info for the current directory).
+@MainActor
+enum FileContextMenuBuilder {
+
+    static func menu(selection: [FileItem], directory: URL,
+                     target: AnyObject) -> NSMenu {
+        selection.isEmpty
+            ? directoryMenu(directory: directory, target: target)
+            : itemMenu(selection: selection, directory: directory, target: target)
+    }
+
+    // MARK: Directory-level menu (empty space)
+
+    private static func directoryMenu(directory: URL, target: AnyObject) -> NSMenu {
+        let menu = NSMenu()
+        add(menu, "menu.newFolder", #selector(FileListViewController.newFolderHere(_:)), target,
+            key: "N", mods: [.command, .shift], symbol: "folder.badge.plus")
+        add(menu, "menu.newFile", #selector(FileListViewController.newFileHere(_:)), target,
+            key: "n", mods: [.command, .option], symbol: "doc.badge.plus")
+        add(menu, "menu.paste", #selector(FileListViewController.pasteItems(_:)), target,
+            key: "v", mods: .command, symbol: "doc.on.clipboard")
+        menu.addItem(.separator())
+        add(menu, "menu.getInfo", #selector(FileListViewController.getInfo(_:)), target,
+            key: "i", mods: .command, symbol: "info.circle")
+        add(menu, "menu.openInTerminal", #selector(FileListViewController.openInTerminal(_:)), target,
+            symbol: "terminal")
+        return menu
+    }
+
+    // MARK: Item menu (with a selection)
+
+    private static func itemMenu(selection: [FileItem], directory: URL,
+                                 target: AnyObject) -> NSMenu {
+        let menu = NSMenu()
+        let single = selection.count == 1 ? selection.first : nil
+
+        add(menu, "menu.open", #selector(FileListViewController.openSelected(_:)), target,
+            symbol: "arrow.up.forward.app")
+        if let single {
+            menu.addItem(openWithSubmenu(for: single.url, target: target))
+        }
+        menu.addItem(.separator())
+
+        add(menu, "menu.copy", #selector(FileListViewController.copyItems(_:)), target,
+            key: "c", mods: .command, symbol: "doc.on.doc")
+        add(menu, "menu.cut", #selector(FileListViewController.cutItems(_:)), target,
+            key: "x", mods: .command, symbol: "scissors")
+        add(menu, "menu.paste", #selector(FileListViewController.pasteItems(_:)), target,
+            key: "v", mods: .command, symbol: "doc.on.clipboard")
+        add(menu, "menu.copyPath", #selector(FileListViewController.copyPath(_:)), target,
+            key: "c", mods: [.command, .shift], symbol: "link")
+        menu.addItem(.separator())
+
+        // Add to Bookmarks: shown only when the selection contains a real directory (FG-1); the action travels the responder chain to MainWindowController
+        if selection.contains(where: { $0.isDirectory && !$0.isPackage }) {
+            let bm = menu.addItem(withTitle: L10n.t("menu.addBookmark"),
+                                  action: #selector(MainWindowController.addSelectionToBookmarks(_:)),
+                                  keyEquivalent: "")
+            bm.image = NSImage(systemSymbolName: "bookmark", accessibilityDescription: nil)
+            menu.addItem(.separator())
+        }
+
+        if single != nil {
+            add(menu, "menu.rename", #selector(FileListViewController.renameSelected(_:)), target,
+                symbol: "pencil")
+        }
+        add(menu, "menu.duplicate", #selector(FileListViewController.duplicateItems(_:)), target,
+            key: "d", mods: .command, symbol: "plus.square.on.square")
+        // In the Trash, "Move to Trash" is meaningless (already there), so it becomes "Put Back".
+        // Shown only here: a permanent item that is always gray elsewhere would be the same never-working button as I-25.
+        if TrashLocation.isInsideTrash(directory) {
+            add(menu, "menu.putBack", #selector(FileListViewController.putBackItems(_:)), target,
+                symbol: "arrow.uturn.backward")
+        } else {
+            add(menu, "menu.moveToTrash", #selector(FileListViewController.moveToTrash(_:)), target,
+                key: "\u{8}", mods: .command, symbol: "trash")
+        }
+        menu.addItem(.separator())
+
+        // Archives: compress any selection / extract supported archives (FG-1 honest disabling: no "Extract" without a supported item)
+        addArchiveItems(menu, selection: selection, single: single, target: target)
+        menu.addItem(.separator())
+
+        // The item menu also offers New Folder/New File: when content fills the list there is no empty space to right-click
+        // (user report: "there's no blank area left, I have nowhere to click"). Any row can create new items.
+        add(menu, "menu.newFolder", #selector(FileListViewController.newFolderHere(_:)), target,
+            key: "N", mods: [.command, .shift], symbol: "folder.badge.plus")
+        add(menu, "menu.newFile", #selector(FileListViewController.newFileHere(_:)), target,
+            key: "n", mods: [.command, .option], symbol: "doc.badge.plus")
+        add(menu, "menu.getInfo", #selector(FileListViewController.getInfo(_:)), target,
+            key: "i", mods: .command, symbol: "info.circle")
+        add(menu, "menu.openInTerminal", #selector(FileListViewController.openInTerminal(_:)), target,
+            symbol: "terminal")
+        if let single, single.isPackage {
+            add(menu, "menu.showPackageContents",
+                #selector(FileListViewController.showPackageContents(_:)), target,
+                symbol: "shippingbox")
+        }
+        return menu
+    }
+
+    // MARK: Open With submenu (lists apps + icons + default marker + Other…)
+
+    private static func openWithSubmenu(for url: URL, target: AnyObject) -> NSMenuItem {
+        let item = NSMenuItem(title: L10n.t("menu.openWith"), action: nil, keyEquivalent: "")
+        item.image = NSImage(systemSymbolName: "app.dashed", accessibilityDescription: nil)
+        let submenu = NSMenu()
+        let apps = NSWorkspace.shared.urlsForApplications(toOpen: url)
+        let defaultApp = NSWorkspace.shared.urlForApplication(toOpen: url)
+        for app in apps {
+            let name = FileManager.default.displayName(atPath: app.path)
+            let isDefault = app == defaultApp
+            let title = isDefault ? "\(name) \(L10n.t("openWith.default"))" : name
+            let mi = NSMenuItem(title: title,
+                                action: #selector(FileListViewController.openWithApp(_:)),
+                                keyEquivalent: "")
+            mi.target = target
+            mi.representedObject = app
+            let icon = NSWorkspace.shared.icon(forFile: app.path)
+            icon.size = NSSize(width: 16, height: 16)
+            mi.image = icon
+            submenu.addItem(mi)
+        }
+        if !apps.isEmpty { submenu.addItem(.separator()) }
+        let other = NSMenuItem(title: L10n.t("openWith.other"),
+                               action: #selector(FileListViewController.openWithOther(_:)),
+                               keyEquivalent: "")
+        other.target = target
+        submenu.addItem(other)
+        item.submenu = submenu
+        return item
+    }
+
+    // MARK: Archive items (compress title follows the selection count/name; extract appears only when the selection has a supported archive)
+
+    private static func addArchiveItems(_ menu: NSMenu, selection: [FileItem],
+                                        single: FileItem?, target: AnyObject) {
+        let compressTitle = single != nil
+            ? L10n.f("menu.compressOne", single!.name)
+            : L10n.f("menu.compressN", selection.count)
+        let compress = NSMenuItem(title: compressTitle,
+                                  action: #selector(FileListViewController.compressItems(_:)),
+                                  keyEquivalent: "")
+        compress.target = target
+        compress.image = NSImage(systemSymbolName: "doc.zipper", accessibilityDescription: nil)
+        menu.addItem(compress)
+
+        guard selection.contains(where: { ArchiveEngineNode.isSupportedArchive($0.url) }) else { return }
+        add(menu, "menu.extract", #selector(FileListViewController.extractItems(_:)), target,
+            symbol: "arrow.up.bin")
+        add(menu, "menu.extractTo", #selector(FileListViewController.extractItemsTo(_:)), target,
+            symbol: "arrow.up.bin.fill")
+    }
+
+    // MARK: Construction helpers
+
+    @discardableResult
+    private static func add(_ menu: NSMenu, _ key: String, _ action: Selector,
+                            _ target: AnyObject,
+                            key equiv: String = "", mods: NSEvent.ModifierFlags = [],
+                            symbol: String? = nil) -> NSMenuItem {
+        let item = NSMenuItem(title: L10n.t(key), action: action, keyEquivalent: equiv)
+        item.keyEquivalentModifierMask = mods
+        item.target = target
+        if let symbol { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
+        menu.addItem(item)
+        return item
+    }
+}

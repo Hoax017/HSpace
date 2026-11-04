@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>NSpace</string>
+	<string>HSpace</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -23,19 +23,19 @@
 		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
-	<string>NSpace</string>
+	<string>HSpace</string>
 	<key>CFBundleIconFile</key>
-	<string>NSpace</string>
+	<string>HSpace</string>
 	<key>CFBundleIconName</key>
-	<string>NSpace</string>
+	<string>HSpace</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.nspace.NSpace</string>
+	<string>com.hoax017.hspace</string>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>en</string>
 	</array>
 	<key>CFBundleName</key>
-	<string>NSpace</string>
+	<string>HSpace</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -46,10 +46,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.nspace.NSpace.scheme</string>
+			<string>com.hoax017.hspace.scheme</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>nspace</string>
+				<string>hspace</string>
 			</array>
 		</dict>
 	</array>
@@ -60,33 +60,33 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>NSDesktopFolderUsageDescription</key>
-	<string>NSpace needs access to the Desktop to browse and manage its files.</string>
+	<string>HSpace needs access to the Desktop to browse and manage its files.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
-	<string>NSpace needs access to Documents to browse and manage its files.</string>
+	<string>HSpace needs access to Documents to browse and manage its files.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
-	<string>NSpace needs access to Downloads to browse and manage its files.</string>
+	<string>HSpace needs access to Downloads to browse and manage its files.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 snakesammy</string>
 	<key>NSNetworkVolumesUsageDescription</key>
-	<string>NSpace needs access to network volumes to browse and manage their files.</string>
+	<string>HSpace needs access to network volumes to browse and manage their files.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSRemovableVolumesUsageDescription</key>
-	<string>NSpace needs access to removable volumes to browse and manage their files.</string>
+	<string>HSpace needs access to removable volumes to browse and manage their files.</string>
 	<key>NSServices</key>
 	<array>
 		<dict>
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Open in NSpace</string>
+				<string>Open in HSpace</string>
 			</dict>
 			<key>NSMessage</key>
-			<string>openInNSpace</string>
+			<string>openInHSpace</string>
 			<key>NSPortName</key>
-			<string>NSpace</string>
+			<string>HSpace</string>
 			<key>NSRequiredContext</key>
 			<dict/>
 			<key>NSSendFileTypes</key>

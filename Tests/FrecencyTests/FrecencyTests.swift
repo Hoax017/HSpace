@@ -74,7 +74,7 @@ import Foundation
 @Suite struct FrecencyStoreTests {
     func tempDir() -> URL {
         let d = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-frecency-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-frecency-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d
     }

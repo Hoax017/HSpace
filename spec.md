@@ -1,4 +1,4 @@
-# NSpace Technical Specification (spec.md)
+# HSpace Technical Specification (spec.md)
 
 > A native macOS multi-pane file manager modeled on the core experience of QSpace Pro. macOS 27 / Swift 6.4 / pure AppKit / SwiftPM + script packaging (no Xcode).
 
@@ -42,7 +42,7 @@
 | Window/pane/tab session | `MainWindowController` (when to snapshot) | `SessionStore` pod | `SessionStore` actor (sole writer of `session.json`, 1s debounce) | AppDelegate | JSON on disk |
 | Icon/thumbnail cache | Each view controller requests by visible row | `IconThumb` pod | No authoritative state (pure derived cache, discardable at any time) | `IconThumb` LRU | Cache hit rate is not required as evidence |
 
-Single source of truth ruling: no UI component may call write-type FileManager APIs or write JSON directly. The presentation layer only issues Typed Commands and consumes read-only projections (BG-1/BG-5, machine-checked by pod-lint-swift.sh, which bans write-type APIs in the NSpaceApp directory).
+Single source of truth ruling: no UI component may call write-type FileManager APIs or write JSON directly. The presentation layer only issues Typed Commands and consumes read-only projections (BG-1/BG-5, machine-checked by pod-lint-swift.sh, which bans write-type APIs in the HSpaceApp directory).
 
 ## 3. State Machines
 
@@ -126,7 +126,7 @@ enum ConflictDecision: Sendable { case replace, skip, keepBoth, mergeFolders }
 enum ErrorClass: Sendable { case logic /*internal logic error, never retry*/, transient /*system hiccup, retryable*/, external /*permissions/volume unavailable, tell the user*/ }
 ```
 
-Storage contract: `~/Library/Application Support/NSpace/{bookmarks,stash,session,frecency}.json`, Codable + atomic replace via temporary file; stash entries store URL bookmark `Data` (survives renames); session structure = window→workspace→frame/layout→pane→(path/view mode/sort/selection); frecency structure = path→(count/lastAccess).
+Storage contract: `~/Library/Application Support/HSpace/{bookmarks,stash,session,frecency}.json`, Codable + atomic replace via temporary file; stash entries store URL bookmark `Data` (survives renames); session structure = window→workspace→frame/layout→pane→(path/view mode/sort/selection); frecency structure = path→(count/lastAccess).
 
 ## Preconditions
 
@@ -167,8 +167,8 @@ Guards that must hold before an operation is submitted (if not met, reject with 
 
 ## 7. Acceptance Checklist
 
-- [ ] `meta-doctor ~/development/NSpace` exits 0 (always on in pre-commit)
-- [ ] `swift test` all green (L-plan); each pod has an `nspace-probe` subcommand that can drive it alone (L-readonly / L-irreversible against a fixture tree in /tmp)
+- [ ] `meta-doctor ~/development/HSpace` exits 0 (always on in pre-commit)
+- [ ] `swift test` all green (L-plan); each pod has an `hspace-probe` subcommand that can drive it alone (L-readonly / L-irreversible against a fixture tree in /tmp)
 - [ ] `./scripts/run.sh` launches: browsing the home directory and /usr/bin with tens of thousands of entries opens instantly and scrolls smoothly
 - [ ] Double-click a zip → Bandizip (system default app); double-click a folder navigates within the pane
 - [ ] Four-way grid layout + window-level workspace tabs + Tab focus cycling + active pane highlight
@@ -179,5 +179,5 @@ Guards that must hold before an operation is submitted (if not met, reject with 
 - [ ] Space Quick Look, arrow keys for continuous preview
 - [ ] Terminal `touch` of a new file appears in the pane within 0.5s
 - [ ] **Four idle panes sample at CPU ≈ 0% in `top`** (real sample output attached in the README)
-- [ ] After setting as default, `open ~/Downloads` opens NSpace; `open` on a file path → parent directory + selection
+- [ ] After setting as default, `open ~/Downloads` opens HSpace; `open` on a file path → parent directory + selection
 - [ ] Restart restores the last panes/tabs/paths

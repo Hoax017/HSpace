@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // VolumeInfo pod's sole public contract surface (Axiom 3): mounted volume enumeration / change signals / eject
 

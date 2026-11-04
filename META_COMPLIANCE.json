@@ -1,6 +1,6 @@
 {
   "_comment": "BG-0 mandatory artifact. Declares the class B profiles active for this project; A (always-on execution hygiene) and C (cross-cutting general) apply unconditionally. meta-doctor checks only the B modules in active_profiles.",
-  "project": "NSpace",
+  "project": "HSpace",
   "meta_arch_ref": "~/composable-execution-meta-architecture",
   "active_profiles": [
     "spec",
@@ -34,8 +34,8 @@
     },
     {
       "module": "backend",
-      "mechanism": "BG-1..BG-9 architecture review outcomes: the presentation layer (Sources/NSpaceApp) only issues Commands/consumes projections, direct FileManager writes strictly forbidden (pod-lint-swift.sh machine-checks for write-type FileManager APIs in NSpaceApp); the kernel (Sources/NSpaceKernel) has zero business branches; nodes = Sources/Pods/* pods, each pod driven alone by the CLI probe (nspace-probe); swift test is the L-plan gate",
-      "proof": "M0: OperationKernel M0: 2 OperationKernel state machine unit tests passed (scripts/test.sh: Test run with 2 tests passed); BG-1 machine check active (pod-lint-swift scans NSpaceApp for write-type APIs); north star evidence @v0.6.0: release quad layout idle top -l 6 all 0.0% CPU/66MB/6 threads, touch→UI ≤1.2s (sampled on a real machine by the wiring agent))"
+      "mechanism": "BG-1..BG-9 architecture review outcomes: the presentation layer (Sources/HSpaceApp) only issues Commands/consumes projections, direct FileManager writes strictly forbidden (pod-lint-swift.sh machine-checks for write-type FileManager APIs in HSpaceApp); the kernel (Sources/HSpaceKernel) has zero business branches; nodes = Sources/Pods/* pods, each pod driven alone by the CLI probe (hspace-probe); swift test is the L-plan gate",
+      "proof": "M0: OperationKernel M0: 2 OperationKernel state machine unit tests passed (scripts/test.sh: Test run with 2 tests passed); BG-1 machine check active (pod-lint-swift scans HSpaceApp for write-type APIs); north star evidence @v0.6.0: release quad layout idle top -l 6 all 0.0% CPU/66MB/6 threads, touch→UI ≤1.2s (sampled on a real machine by the wiring agent))"
     },
     {
       "module": "frontend",

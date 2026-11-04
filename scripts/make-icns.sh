@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# icon_1024.png → NSpace.icns (sips size ladder + iconutil, both ship with CLT)
+# icon_1024.png → HSpace.icns (sips size ladder + iconutil, both ship with CLT)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SRC="Support/icon_1024.png"
@@ -11,5 +11,5 @@ for s in 16 32 128 256 512; do
   d=$((s * 2))
   sips -z $d $d "$SRC" --out "$SET/icon_${s}x${s}@2x.png" >/dev/null
 done
-iconutil -c icns "$SET" -o "Support/NSpace.icns"
-echo "Generated Support/NSpace.icns"
+iconutil -c icns "$SET" -o "Support/HSpace.icns"
+echo "Generated Support/HSpace.icns"

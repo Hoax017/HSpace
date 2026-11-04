@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 /// Sole Commit Owner of the "Put Back" ledger (actor serial commits + atomic persistence, BG-5/BG-8).
 /// Storage directory is constructor-injected (Axiom 2): the app passes Application Support, tests pass a temp directory.

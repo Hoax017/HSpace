@@ -1,13 +1,13 @@
 import Testing
 import Foundation
 import TrashLedger
-import NSpaceContracts
+import HSpaceContracts
 
 /// Black-box acceptance: real temp directory + real persistence (no fakes or mocks)
 @Suite struct TrashLedgerTests {
     static func tempDir() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-tl-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-tl-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

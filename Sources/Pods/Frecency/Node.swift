@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 /// Sole Commit Owner of authoritative frecency state (actor serial commits, BG-5/BG-8 scoped to a single process).
 /// Records "which paths the user opened or entered across the app, how often, how recently", for focused search to sort by habit (M28).

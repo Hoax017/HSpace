@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
-# NSpace build pipeline without Xcode: swift build → assemble .app → sign
+# HSpace build pipeline without Xcode: swift build → assemble .app → sign
 # Usage: ./scripts/build-app.sh [debug|release]   (default release)
-# Signing identity priority: env SIGN_IDENTITY > the local fixed certificate "NSpace Dev" (I-29 root fix: ad-hoc changes the fingerprint on every build,
+# Signing identity priority: env SIGN_IDENTITY > the local fixed certificate "HSpace Dev" (I-29 root fix: ad-hoc changes the fingerprint on every build,
 # so the icon service/TCC treats each build as an unknown app: blank icons + FDA grant drift) > ad-hoc fallback (CI without a certificate lands here automatically)
-if [ -z "${SIGN_IDENTITY:-}" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q "NSpace Dev"; then
-  SIGN_IDENTITY="NSpace Dev"
+if [ -z "${SIGN_IDENTITY:-}" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q "HSpace Dev"; then
+  SIGN_IDENTITY="HSpace Dev"
 fi
 # Environment: SIGN_IDENTITY can point to a self-signed certificate so TCC grants persist across builds; default "-" (ad-hoc)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONF="${1:-release}"
-APP="build/NSpace.app"
-BIN=".build/$CONF/NSpace"
+APP="build/HSpace.app"
+BIN=".build/$CONF/HSpace"
 
 swift build -c "$CONF"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/NSpace"
+cp "$BIN" "$APP/Contents/MacOS/HSpace"
 
 # The probe stays out of the bundle (production binary isolation)
 cp Support/Info.plist "$APP/Contents/Info.plist"
@@ -30,22 +30,22 @@ plutil -lint "$APP/Contents/Info.plist" >/dev/null
 
 # Localization and icons
 cp -R Resources/en.lproj "$APP/Contents/Resources/"
-if [ ! -f Support/NSpace.icns ]; then
+if [ ! -f Support/HSpace.icns ]; then
   swift scripts/generate-icon.swift Support/icon_1024.png
   ./scripts/make-icns.sh
 fi
-cp Support/NSpace.icns "$APP/Contents/Resources/NSpace.icns"
+cp Support/HSpace.icns "$APP/Contents/Resources/HSpace.icns"
 
-codesign --force --sign "${SIGN_IDENTITY:--}" --identifier com.nspace.NSpace "$APP"
+codesign --force --sign "${SIGN_IDENTITY:--}" --identifier com.hoax017.hspace "$APP"
 echo "✓ Built and signed $APP (v$VERSION build $BUILD_NUM, sign=${SIGN_IDENTITY:-ad-hoc})"
 
-# LS registration hygiene (I-15 root-cause regression guard): remove com.nspace registrations for vanished paths (leftovers from concurrent worktree builds
+# LS registration hygiene (I-15 root-cause regression guard): remove com.hspace registrations for vanished paths (leftovers from concurrent worktree builds
 # make LaunchServices resolve to a dead bundle → setting the default app fails with "could not open the file" and the TCC panel loses the icon), then register the current build.
 # CI runners have no existing registration (zero grep hits would kill the script under pipefail: item 5 on this project's pitfall list, confirmed by a CI recurrence),
 # and registration means nothing for CI artifacts, so this runs only in a local dev environment.
 if [ -z "${CI:-}" ]; then
   LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-  { "$LSREG" -dump 2>/dev/null | grep -E "^path:" | grep -i nspace | awk '{print $2}' | sort -u || true; } | while read -r p; do
+  { "$LSREG" -dump 2>/dev/null | grep -E "^path:" | grep -i hspace | awk '{print $2}' | sort -u || true; } | while read -r p; do
     [ -d "$p" ] || "$LSREG" -u "$p" >/dev/null 2>&1 || true
   done
   "$LSREG" -f "$APP" >/dev/null 2>&1 || true
