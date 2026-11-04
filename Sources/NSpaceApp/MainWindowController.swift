@@ -181,9 +181,6 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         // I-44：openWindow(selecting:) 传入的待选中项——视图模式感知定位（原 select 参数被整段丢弃，
         // 导致 Antigravity 等第三方"打开文件位置"只到父目录不选中文件）。pending 机制扛首次异步读目录竞态。
         if let select { grid.activePane.reveal(select) }
-        // 新窗口同步当前已知的更新态（更新在别窗被发现后再开的窗口也带"↑"）
-        deck.versionBadge.setUpdateAvailable(UpdateController.shared.available != nil,
-                                             latestVersion: UpdateController.shared.available?.version)
         installKeyMonitor()
     }
 
@@ -569,10 +566,6 @@ extension MainWindowController: TopDeckDelegate {
     func deckJumpHistory(forward: Bool, index: Int) {
         if forward { grid.activePane.jumpForwardHistory(to: index) }
         else { grid.activePane.jumpBackHistory(to: index) }
-    }
-
-    func deckVersionBadgeClicked() {
-        UpdateController.shared.startUpdateFlow(from: window)
     }
 }
 

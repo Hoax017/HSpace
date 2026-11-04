@@ -343,22 +343,6 @@
 
 /* M22 version badge + hot update */
 "badge.tooltip" = "NSpace v%@ (build %@)";
-"badge.updateAvailable" = "New version v%@ — click to update";
-"badge.updateAvailableGeneric" = "Update available — click to update";
-"settings.autoCheckUpdates" = "Automatically check for updates on launch";
-"settings.checkForUpdates" = "Check for Updates";
-"update.checking" = "Checking for updates…";
-"update.found" = "Found new version v%@";
-"update.upToDate" = "You're up to date";
-"update.checkFailed" = "Update check failed: %@";
-"update.badFeedURL" = "Invalid update feed URL";
-"update.downloading" = "Downloading update…";
-"update.ready" = "Update ready — please restart";
-"update.readyTitle" = "Update ready (v%@)";
-"update.readyBody" = "The new version has been installed. Restart NSpace to finish updating.";
-"update.restartNow" = "Restart Now";
-"update.later" = "Later";
-"update.installFailed" = "Update failed: %@";
 "settings.reveal.title" = "Take over “Reveal in Finder”";
 "settings.reveal.toggle" = "Route third-party “Show in Finder / Open File Location” into NSpace";
 "settings.reveal.on" = "Active: reveal requests open in NSpace with the item selected ✓";
@@ -374,4 +358,3 @@
 "settings.globalHotkey.unset" = "Not set — click to record";
 "settings.globalHotkey.note" = "Press it in any app: hides NSpace when frontmost, summons it otherwise (no Accessibility permission needed). Remove any old Raycast binding to avoid conflicts.";
 "toast.globalHotkeySet" = "Global hotkey active";
-"settings.autoDownloadUpdates" = "Auto-download updates and stage (restart to finish)";

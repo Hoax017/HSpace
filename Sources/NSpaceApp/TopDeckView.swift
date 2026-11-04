@@ -37,8 +37,6 @@ protocol TopDeckDelegate: AnyObject {
     /// 导航历史（长按后退/前进段弹出；最近的在前）
     func deckHistory(forward: Bool) -> [URL]
     func deckJumpHistory(forward: Bool, index: Int)
-    /// 版本徽章点击（仅有可用更新时触发；转发至 UpdateController 走下载安装流程）
-    func deckVersionBadgeClicked()
 }
 
 /// 自绘顶部甲板（M17 §1/§3/§6.2）：NSVisualEffectView(.titlebar) 内两行——
@@ -95,7 +93,6 @@ final class TopDeckView: NSVisualEffectView {
         workspaceTabBar.onClose = { [weak self] i in self?.deckDelegate?.deckCloseWorkspace(i) }
         workspaceTabBar.onNew = { [weak self] in self?.deckDelegate?.deckNewWorkspace() }
         // 版本徽章嵌入标签条尾部配件槽（"＋"左侧；M22）
-        versionBadge.onClick = { [weak self] in self?.deckDelegate?.deckVersionBadgeClicked() }
         workspaceTabBar.setTrailingAccessory(versionBadge)
         tabRow.translatesAutoresizingMaskIntoConstraints = false
         tabRow.addSubview(workspaceTabBar)
