@@ -1,13 +1,13 @@
 import Testing
 import Foundation
 import Transfer
-import NSpaceContracts
+import HSpaceContracts
 
-/// 黑盒验收：只经 Contract 公开面；真实物理 I/O 于 /tmp 夹具树（无 Fake Mock）
+/// Black-box acceptance: only through the Contract public surface; real physical I/O on /tmp fixture trees (no fakes or mocks)
 @Suite struct TransferTests {
     static func tempDir() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-tr-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-tr-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
@@ -17,7 +17,7 @@ import NSpaceContracts
         NodeContext(operationID: UUID(), report: { _ in }, resolveConflicts: onConflict)
     }
 
-    // MARK: keepBothName 纯逻辑（Oracle：无需文件系统）
+    // MARK: keepBothName pure logic (Oracle: no file system needed)
 
     @Test func keepBothNamingSkipsExisting() {
         let dir = URL(fileURLWithPath: "/tmp/x")
@@ -30,7 +30,7 @@ import NSpaceContracts
         #expect(noExt == "Makefile 2")
     }
 
-    // MARK: 复制：字节一致（真实终态 Witness）
+    // MARK: Copy: byte-identical (real terminal-state Witness)
 
     @Test func copyTreeByteIdentical() async throws {
         let src = try Self.tempDir(), dst = try Self.tempDir()
@@ -47,14 +47,14 @@ import NSpaceContracts
         let receipt = try await TransferNode().execute(spec, context: Self.makeContext())
 
         let copied = try Data(contentsOf: dst.appendingPathComponent("big.bin"))
-        #expect(copied == payload)  // 物理证据：逐字节一致
+        #expect(copied == payload)  // physical evidence: byte-for-byte identical
         let inner = try Data(contentsOf: dst.appendingPathComponent("nested/inner.txt"))
         #expect(inner == Data("inner".utf8))
         #expect(receipt.filesDone == 2)
         #expect(receipt.bytesDone >= Int64(payload.count))
     }
 
-    // MARK: 冲突四选项
+    // MARK: The four conflict options
 
     @Test func conflictKeepBothRenames() async throws {
         let src = try Self.tempDir(), dst = try Self.tempDir()
@@ -116,13 +116,13 @@ import NSpaceContracts
         _ = try await TransferNode().execute(
             OperationSpec(kind: .copy, sources: [src.appendingPathComponent("d")], destination: dst),
             context: ctx)
-        // 并集 + 同名源覆盖（契约承诺）
+        // Union + same-named source overwrites (contract promise)
         #expect(try Data(contentsOf: dst.appendingPathComponent("d/s.txt")) == Data("fromSrc".utf8))
         #expect(try Data(contentsOf: dst.appendingPathComponent("d/t.txt")) == Data("fromDst".utf8))
         #expect(try Data(contentsOf: dst.appendingPathComponent("d/both.txt")) == Data("same-src".utf8))
     }
 
-    // MARK: 冲突「重命名」与自源安全律（M27-A/B）
+    // MARK: Conflict "Rename" and the self-source safety rule (M27-A/B)
 
     @Test func conflictRenameLandsToChosenName() async throws {
         let src = try Self.tempDir(), dst = try Self.tempDir()
@@ -135,7 +135,7 @@ import NSpaceContracts
         _ = try await TransferNode().execute(
             OperationSpec(kind: .copy, sources: [src.appendingPathComponent("f.txt")], destination: dst),
             context: ctx)
-        #expect(try Data(contentsOf: dst.appendingPathComponent("f.txt")) == Data("old".utf8))   // 原目标不动
+        #expect(try Data(contentsOf: dst.appendingPathComponent("f.txt")) == Data("old".utf8))   // original target untouched
         #expect(try Data(contentsOf: dst.appendingPathComponent("custom.txt")) == Data("new".utf8))
     }
 
@@ -144,20 +144,20 @@ import NSpaceContracts
         defer { try? FileManager.default.removeItem(at: src); try? FileManager.default.removeItem(at: dst) }
         try Data("new".utf8).write(to: src.appendingPathComponent("f.txt"))
         try Data("old".utf8).write(to: dst.appendingPathComponent("f.txt"))
-        try Data("taken".utf8).write(to: dst.appendingPathComponent("custom.txt"))   // 用户新名撞既有
+        try Data("taken".utf8).write(to: dst.appendingPathComponent("custom.txt"))   // the user's new name collides with an existing item
         let ctx = Self.makeContext { c in
             Dictionary(uniqueKeysWithValues: c.map { ($0.source, ConflictDecision.rename("custom.txt")) })
         }
         _ = try await TransferNode().execute(
             OperationSpec(kind: .copy, sources: [src.appendingPathComponent("f.txt")], destination: dst),
             context: ctx)
-        // 撞名不覆盖：既有 custom.txt 原封不动，新副本落到 "custom 2.txt"
+        // A clash does not overwrite: the existing custom.txt stays intact, the new copy lands at "custom 2.txt"
         #expect(try Data(contentsOf: dst.appendingPathComponent("custom.txt")) == Data("taken".utf8))
         #expect(try Data(contentsOf: dst.appendingPathComponent("custom 2.txt")) == Data("new".utf8))
     }
 
     @Test func selfCopyReplaceNeverDeletesSource() async throws {
-        // M27-B 核心安全律：同目录复制时 destination==source，即便裁决「替换」也绝不删源
+        // M27-B core safety rule: when copying within one directory destination==source, and even a "Replace" decision must never delete the source
         let dir = try Self.tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let f = dir.appendingPathComponent("f.txt")
@@ -167,13 +167,13 @@ import NSpaceContracts
         }
         _ = try await TransferNode().execute(
             OperationSpec(kind: .copy, sources: [f], destination: dir), context: ctx)
-        // 源仍在且内容完好；替换被安全中和为改名副本
+        // Source still present and intact; replace safely neutralized into a renamed copy
         #expect(try Data(contentsOf: f) == Data("keepme".utf8))
         #expect(try Data(contentsOf: dir.appendingPathComponent("f 2.txt")) == Data("keepme".utf8))
     }
 
     @Test func selfCopyMergeNeverSelfRecurses() async throws {
-        // 同目录复制目录 + 裁决「合并」：destination==source 的目录不得自我递归，安全收敛为改名副本
+        // Copying a directory within its own parent + "Merge" decision: a destination==source directory must not recurse into itself, safely degrades to a renamed copy
         let dir = try Self.tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let sub = dir.appendingPathComponent("d")
@@ -189,8 +189,8 @@ import NSpaceContracts
     }
 
     @Test func selfCopyThroughSymlinkAliasNeverDeletesSource() async throws {
-        // 数据安全律加固（评审 HIGH）：源经符号链接别名到达时，词法 path 判等会漏判自源→替换删源。
-        // inode 级判定须识别别名为同一文件，把替换安全收敛为改名，绝不删源。
+        // Data safety hardening (review HIGH): when the source is reached through a symlink alias, lexical path comparison misses self-source → replace deletes the source.
+        // The inode-level check must identify the alias as the same file, safely degrading replace to rename, never deleting the source.
         let base = try Self.tempDir()
         defer { try? FileManager.default.removeItem(at: base) }
         let real = base.appendingPathComponent("real")
@@ -199,18 +199,18 @@ import NSpaceContracts
         try Data("keepme".utf8).write(to: f)
         let link = base.appendingPathComponent("link")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
-        // 复制 real/f.txt 到 link 目录（= real 的别名）→ destination=link/f.txt 与源物理同一
+        // Copy real/f.txt into the link directory (= alias of real) → destination=link/f.txt is physically the source
         let ctx = Self.makeContext { c in
             Dictionary(uniqueKeysWithValues: c.map { ($0.source, ConflictDecision.replace) })
         }
         _ = try await TransferNode().execute(
             OperationSpec(kind: .copy, sources: [f], destination: link), context: ctx)
-        #expect(try Data(contentsOf: f) == Data("keepme".utf8))                    // 源经别名未被删
+        #expect(try Data(contentsOf: f) == Data("keepme".utf8))                    // source not deleted through the alias
         #expect(FileManager.default.fileExists(atPath: real.appendingPathComponent("f 2.txt").path))
     }
 
     @Test func batchKeepBothDistinctNamesNoCollision() async throws {
-        // 数据安全律加固（评审 MEDIUM）：两条同名源批量 keepBoth 不得算出同一目标名互相覆盖。
+        // Data safety hardening (review MEDIUM): two same-named sources in a batch keepBoth must not compute one target name and overwrite each other.
         let dstDir = try Self.tempDir(), srcA = try Self.tempDir(), srcB = try Self.tempDir()
         defer { for u in [dstDir, srcA, srcB] { try? FileManager.default.removeItem(at: u) } }
         try Data("A".utf8).write(to: srcA.appendingPathComponent("dup.txt"))
@@ -225,33 +225,33 @@ import NSpaceContracts
                           destination: dstDir),
             context: ctx)
         let names = try FileManager.default.contentsOfDirectory(atPath: dstDir.path).sorted()
-        #expect(names == ["dup 2.txt", "dup 3.txt", "dup.txt"])   // 各得独立名，未互相覆盖
+        #expect(names == ["dup 2.txt", "dup 3.txt", "dup.txt"])   // each gets its own name, none overwritten
         let contents = Set(names.compactMap { try? Data(contentsOf: dstDir.appendingPathComponent($0)) })
         #expect(contents.contains(Data("A".utf8)) && contents.contains(Data("B".utf8))
                 && contents.contains(Data("existing".utf8)))
     }
 
     @Test func batchSameNameIntoEmptyDirAutoDisambiguates() async throws {
-        // 数据安全律加固（复核 MEDIUM）：两个不同目录的同名源拷进【空】目标目录（零磁盘冲突，
-        // 不弹面板），也必须各得独立名，绝不互相覆盖/丢失。
+        // Data safety hardening (follow-up MEDIUM): two same-named sources from different directories copied into an **empty** target directory (zero disk conflicts,
+        // no panel) must also each get a distinct name, never overwriting or losing each other.
         let dstDir = try Self.tempDir(), srcA = try Self.tempDir(), srcB = try Self.tempDir()
         defer { for u in [dstDir, srcA, srcB] { try? FileManager.default.removeItem(at: u) } }
         try Data("A".utf8).write(to: srcA.appendingPathComponent("dup.txt"))
         try Data("B".utf8).write(to: srcB.appendingPathComponent("dup.txt"))
-        // 裁决回调不应被触发（空目标目录无磁盘冲突）
-        let ctx = Self.makeContext { _ in Issue.record("空目录不应弹冲突"); return [:] }
+        // The decision callback should not fire (an empty target directory has no disk conflicts)
+        let ctx = Self.makeContext { _ in Issue.record("An empty directory should not raise a conflict"); return [:] }
         _ = try await TransferNode().execute(
             OperationSpec(kind: .copy,
                           sources: [srcA.appendingPathComponent("dup.txt"), srcB.appendingPathComponent("dup.txt")],
                           destination: dstDir),
             context: ctx)
         let names = try FileManager.default.contentsOfDirectory(atPath: dstDir.path).sorted()
-        #expect(names == ["dup 2.txt", "dup.txt"])   // 第一条原名、第二条自动编号
+        #expect(names == ["dup 2.txt", "dup.txt"])   // first keeps its name, second is auto-numbered
         let contents = Set(names.compactMap { try? Data(contentsOf: dstDir.appendingPathComponent($0)) })
         #expect(contents.contains(Data("A".utf8)) && contents.contains(Data("B".utf8)))
     }
 
-    // MARK: 移动（同卷 rename）与制作副本
+    // MARK: Move (same-volume rename) and duplicate
 
     @Test func moveSameVolumeRenames() async throws {
         let src = try Self.tempDir(), dst = try Self.tempDir()
@@ -268,9 +268,9 @@ import NSpaceContracts
         let src = try Self.tempDir()
         defer { try? FileManager.default.removeItem(at: src) }
         try Data("dup".utf8).write(to: src.appendingPathComponent("f.txt"))
-        // 裁决回调若被触发即违约（duplicate 恒 keepBoth 命名，不产生冲突）
+        // If the decision callback fires the contract is broken (duplicate is always keepBoth-named and raises no conflict)
         let ctx = Self.makeContext { _ in
-            Issue.record("duplicate 不应触发冲突裁决")
+            Issue.record("duplicate should not trigger conflict resolution")
             return nil
         }
         _ = try await TransferNode().execute(
@@ -279,7 +279,7 @@ import NSpaceContracts
         #expect(try Data(contentsOf: src.appendingPathComponent("f 2.txt")) == Data("dup".utf8))
     }
 
-    // MARK: 取消与错误分类
+    // MARK: Cancellation and error classification
 
     @Test func cancelledTaskThrowsCancellation() async throws {
         let src = try Self.tempDir(), dst = try Self.tempDir()
@@ -293,11 +293,11 @@ import NSpaceContracts
         task.cancel()
         do {
             _ = try await task.value
-            // 竞态：若在取消生效前已完成也算合法终态——但目标必须完整
+            // Race: finishing before the cancel takes effect is a valid terminal state too, but the target must be complete
             let d = try Data(contentsOf: dst.appendingPathComponent("f.txt"))
             #expect(d == Data("c".utf8))
         } catch is CancellationError {
-            // 取消后不留半成品
+            // No partial output left after cancellation
             #expect(!FileManager.default.fileExists(atPath: dst.appendingPathComponent("f.txt").path))
         }
     }
@@ -307,11 +307,11 @@ import NSpaceContracts
             _ = try await TransferNode().execute(
                 OperationSpec(kind: .copy, sources: [], destination: nil),
                 context: Self.makeContext())
-            Issue.record("应当抛错")
+            Issue.record("Expected an error")
         } catch let e as any ClassifiedError {
             #expect(e.errorClass == .logic)
         } catch {
-            Issue.record("错误未分类(违反 P6.4): \(error)")
+            Issue.record("Unclassified error (violates P6.4):\(error)")
         }
     }
 }

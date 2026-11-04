@@ -1,14 +1,14 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-/// frecency 权威状态唯一 Commit Owner（actor 串行提交，BG-5/BG-8 单进程定界）。
-/// 记录"用户在整个 App 里打开/进入过哪些路径、多频繁、多新近"，供聚焦搜索按使用习惯排序（M28）。
-/// 存储目录构造注入（Axiom 2，无全局单例）：App 传 Application Support，测试传临时目录。
+/// Sole Commit Owner of authoritative frecency state (actor serial commits, BG-5/BG-8 scoped to a single process).
+/// Records "which paths the user opened or entered across the app, how often, how recently", for focused search to sort by habit (M28).
+/// Storage directory is constructor-injected (Axiom 2, no global singleton): the app passes Application Support, tests pass a temp directory.
 public actor FrecencyStore {
     private let fileURL: URL
     private var entries: [String: FrecencyEntry] = [:]
     private var loaded = false
-    /// 容量上限：超限按当前 score 淘汰最低的一批（防无限膨胀；日常远达不到）
+    /// Capacity cap: over the cap, evict the lowest-scoring batch (prevents unbounded growth; far from reached in daily use)
     private let maxEntries: Int
 
     public init(directory: URL, maxEntries: Int = 5000) {
@@ -16,9 +16,9 @@ public actor FrecencyStore {
         self.maxEntries = maxEntries
     }
 
-    // MARK: 记账（打开文件/进入文件夹/搜索定位都经此）
+    // MARK: Recording (opening files, entering folders and search navigation all go through here)
 
-    /// 记一次访问：path 归一（standardized）后计数 +1、刷新 lastAccess。now 注入以便确定性测试。
+    /// Records one access: normalizes the path (standardized), count +1, refreshes lastAccess. now is injected for deterministic tests.
     public func record(_ url: URL, now: Date = Date()) {
         ensureLoaded()
         let key = url.standardizedFileURL.path
@@ -30,15 +30,15 @@ public actor FrecencyStore {
         persist()
     }
 
-    // MARK: 查询（搜索排序用）
+    // MARK: Queries (for search ranking)
 
-    /// 排序快照：一次取全量 entries，UI 侧据此同步给每条命中打分（搜索期内 frecency 稳定）。
+    /// Sort snapshot: fetches all entries at once; the UI scores each hit from it synchronously (frecency is stable during a search).
     public func snapshot() -> [String: FrecencyEntry] {
         ensureLoaded()
         return entries
     }
 
-    /// 单路径当前 frecency 分（便捷；等价 SearchRanking.frecencyScore(snapshot[path])）。
+    /// Current frecency score of one path (convenience; equivalent to SearchRanking.frecencyScore(snapshot[path])).
     public func score(forPath path: String, now: Date = Date()) -> Double {
         ensureLoaded()
         guard let e = entries[path] else { return 0 }
@@ -50,7 +50,7 @@ public actor FrecencyStore {
         return entries.count
     }
 
-    // MARK: 私有：加载 / 淘汰 / 原子落盘
+    // MARK: Private: load / evict / atomic persistence
 
     private func ensureLoaded() {
         guard !loaded else { return }
@@ -62,7 +62,7 @@ public actor FrecencyStore {
 
     private func pruneIfNeeded(now: Date) {
         guard entries.count > maxEntries else { return }
-        // 按 score 升序，淘汰最低的直到回到上限的 90%（一次性清一批，避免每次记账都排序）
+        // Ascending by score, evict the lowest until back at 90% of the cap (clears a batch at once, avoiding a sort on every record)
         let target = maxEntries * 9 / 10
         let ranked = entries.sorted { SearchRanking.frecencyScore($0.value, now: now) < SearchRanking.frecencyScore($1.value, now: now) }
         for (k, _) in ranked.prefix(entries.count - target) { entries.removeValue(forKey: k) }
@@ -72,7 +72,7 @@ public actor FrecencyStore {
         guard let data = try? JSONEncoder().encode(entries) else { return }
         let dir = fileURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        // 原子替换：崩溃安全（落盘失败保内存态，下次记账再试；frecency 非关键数据，静默降级）
+        // Atomic replace: crash-safe (on persistence failure keep in-memory state and retry on the next record; frecency is non-critical, degrades silently)
         try? data.write(to: fileURL, options: .atomic)
     }
 }

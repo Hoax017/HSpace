@@ -1,15 +1,15 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-// 私有关注点：递归占用字节求和 + 承接 detached 任务句柄的线程安全盒子。
+// Private concern: recursive allocated-byte summation + thread-safe box holding the detached task handle.
 
 private let sizeKeys: Set<URLResourceKey> = [
     .isRegularFileKey, .isDirectoryKey,
     .totalFileAllocatedSizeKey, .fileSizeKey,
 ]
 
-/// 递归求和：目录深枚举所有常规文件占用；单个文件直接返回其占用。
-/// 每步查 Task.isCancelled 支持协作式取消（取消抛 CancellationError）。
+/// Recursive sum: deep-enumerates a directory's regular files; a single file returns its own allocation directly.
+/// Checks Task.isCancelled each step for cooperative cancellation (throws CancellationError).
 func directoryAllocatedSize(_ url: URL) throws -> Int64 {
     let fm = FileManager.default
 
@@ -26,19 +26,19 @@ func directoryAllocatedSize(_ url: URL) throws -> Int64 {
     if rv.isRegularFile == true {
         return fileBytes(rv)
     }
-    guard rv.isDirectory == true else { return 0 }   // 符号链接/特殊文件不计
+    guard rv.isDirectory == true else { return 0 }   // symlinks and special files are not counted
 
     guard let enumerator = fm.enumerator(
         at: url,
         includingPropertiesForKeys: Array(sizeKeys),
         options: [],
         errorHandler: nil) else {
-        throw FolderSizeError(.external, "无法枚举目录：\(url.path)")
+        throw FolderSizeError(.external, "Could not enumerate folder: \(url.path)")
     }
 
     var total: Int64 = 0
     for case let child as URL in enumerator {
-        try Task.checkCancellation()   // 协作式取消检查点
+        try Task.checkCancellation()   // cooperative cancellation checkpoint
         guard let crv = try? child.resourceValues(forKeys: sizeKeys),
               crv.isRegularFile == true else { continue }
         total += fileBytes(crv)
@@ -46,12 +46,12 @@ func directoryAllocatedSize(_ url: URL) throws -> Int64 {
     return total
 }
 
-// 优先 totalFileAllocatedSize（含元数据/块对齐的真实占用），回退 fileSize（逻辑字节）。
+// Prefers totalFileAllocatedSize (real allocation including metadata and block alignment), falls back to fileSize (logical bytes).
 private func fileBytes(_ rv: URLResourceValues) -> Int64 {
     Int64(rv.totalFileAllocatedSize ?? rv.fileSize ?? 0)
 }
 
-/// 承接 detached 任务句柄，供取消转发；锁保证 set/cancel 无竞争。
+/// Holds the detached task handle for forwarding cancellation; the lock keeps set/cancel race-free.
 final class TaskHandleBox: @unchecked Sendable {
     private let lock = NSLock()
     private var task: Task<Void, Never>?

@@ -1,14 +1,14 @@
 import Testing
 import Foundation
 import ArchiveEngine
-import NSpaceContracts
+import HSpaceContracts
 
-/// 黑盒验收：只经 Contract 公开面；真实物理 I/O 于临时夹具树（系统工具 zip/tar/unzip/gunzip 实测）。
-/// 缺工具的路径不伪造（诚实跳过），本机四件套齐备故往返测试全跑。
+/// Black-box acceptance: only through the Contract public surface; real physical I/O on temp fixture trees (real system tools zip/tar/unzip/gunzip).
+/// Paths needing a missing tool are not faked (honest skip); this machine has all four tools, so the round-trip tests all run.
 @Suite struct ArchiveEngineTests {
     static func tempDir() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-ar-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-ar-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
@@ -23,14 +23,14 @@ import NSpaceContracts
         try data.write(to: url)
     }
 
-    // MARK: 纯逻辑（Oracle：无需文件系统）
+    // MARK: Pure logic (Oracle: no file system needed)
 
     @Test func topLevelCountingCollapsesCommonRoot() {
-        // 同一顶层目录下多个条目 → 顶层数 1（包裹应忽略）
+        // Several entries under one top-level directory → top-level count 1 (wrapper skipped)
         #expect(topLevelEntryCount(["tree/", "tree/a.txt", "tree/nested/inner.txt"]) == 1)
-        // 不同顶层 → 顶层数 2（需包裹）
+        // Different top-level entries → top-level count 2 (wrapper needed)
         #expect(topLevelEntryCount(["a.txt", "b.txt"]) == 2)
-        // "./" 前缀归一 + 尾斜杠
+        // "./" prefix normalization + trailing slash
         #expect(topLevelEntryCount(["./x/1", "./x/2", "x/3"]) == 1)
         #expect(topLevelEntryCount([]) == 0)
     }
@@ -40,7 +40,7 @@ import NSpaceContracts
         let existing: Set<String> = ["foo.zip", "foo 2.zip"]
         #expect(uniqueArchiveName(base: "foo", ext: "zip", in: dir,
                                   exists: { existing.contains($0.lastPathComponent) }) == "foo 3.zip")
-        // tar.gz 全后缀完整，编号只加 base
+        // tar.gz keeps its full suffix, the number goes only on base
         let ex2: Set<String> = ["bar.tar.gz"]
         #expect(uniqueArchiveName(base: "bar", ext: "tar.gz", in: dir,
                                   exists: { ex2.contains($0.lastPathComponent) }) == "bar 2.tar.gz")
@@ -65,7 +65,7 @@ import NSpaceContracts
         #expect(!ArchiveEngineNode.isSupportedArchive(URL(fileURLWithPath: "/a/b.txt")))
     }
 
-    // MARK: zip 往返：字节一致（单目录源 → 顶层单条目 → 忽略包裹）
+    // MARK: zip round trip: byte-identical (single directory source → one top-level entry → wrapper skipped)
 
     @Test func zipRoundTripSingleDirByteIdentical() async throws {
         let work = try Self.tempDir(); let out = try Self.tempDir()
@@ -74,7 +74,7 @@ import NSpaceContracts
         try Self.write(payload, to: work.appendingPathComponent("tree/big.bin"))
         try Self.write(Data("inner".utf8), to: work.appendingPathComponent("tree/nested/inner.txt"))
 
-        // 压缩单个目录 tree（destination=work → 归档落在 work/tree.zip）
+        // Compress the single directory tree (destination=work → archive lands at work/tree.zip)
         let cr = try await ArchiveEngineNode().execute(
             OperationSpec(kind: .compress, sources: [work.appendingPathComponent("tree")],
                           archiveOptions: ArchiveOptions(format: "zip")),
@@ -83,23 +83,23 @@ import NSpaceContracts
         #expect(archive.lastPathComponent == "tree.zip")
         #expect(FileManager.default.fileExists(atPath: archive.path))
 
-        // 解压到 out（顶层单条目 tree → 无包裹）
+        // Extract into out (one top-level entry tree → no wrapper)
         let er = try await ArchiveEngineNode().execute(
             OperationSpec(kind: .extract, sources: [archive],
                           archiveOptions: ArchiveOptions(extractInto: out, createWrapper: true)),
             context: Self.ctx())
         #expect(er.createdURLs.contains { $0.lastPathComponent == "tree" })
-        // 无多余 tree/tree 嵌套
+        // No extra tree/tree nesting
         #expect(!FileManager.default.fileExists(atPath: out.appendingPathComponent("tree/tree").path))
         let big = try Data(contentsOf: out.appendingPathComponent("tree/big.bin"))
-        #expect(big == payload)   // 物理证据：逐字节一致
+        #expect(big == payload)   // physical evidence: byte-for-byte identical
         let inner = try Data(contentsOf: out.appendingPathComponent("tree/nested/inner.txt"))
         #expect(inner == Data("inner".utf8))
-        // 暂存目录已清（无 .nspace-* 残留）
+        // Staging directory cleaned up (no .hspace-* leftovers)
         try Self.assertNoStaging(in: out)
     }
 
-    // MARK: tar.gz 往返
+    // MARK: tar.gz round trip
 
     @Test func tarGzRoundTripByteIdentical() async throws {
         let work = try Self.tempDir(); let out = try Self.tempDir()
@@ -123,7 +123,7 @@ import NSpaceContracts
         #expect(round == payload)
     }
 
-    // MARK: 包裹语义两分支——多条目建包裹 / 只有一个则忽略
+    // MARK: The two wrapper branches: multiple entries create a wrapper / a single entry skips it
 
     @Test func extractWrapsWhenMultipleTopLevelEntries() async throws {
         let work = try Self.tempDir(); let out = try Self.tempDir()
@@ -131,7 +131,7 @@ import NSpaceContracts
         try Self.write(Data("A".utf8), to: work.appendingPathComponent("a.txt"))
         try Self.write(Data("B".utf8), to: work.appendingPathComponent("b.txt"))
 
-        // 多源压缩：baseName = 共同父目录名 = work 目录名
+        // Multi-source compress: baseName = common parent directory name = work directory name
         let cr = try await ArchiveEngineNode().execute(
             OperationSpec(kind: .compress,
                           sources: [work.appendingPathComponent("a.txt"), work.appendingPathComponent("b.txt")],
@@ -139,13 +139,13 @@ import NSpaceContracts
             context: Self.ctx())
         let archive = try #require(cr.createdURLs.first)
 
-        // createWrapper=true 且顶层 2 条目 → 建同名包裹文件夹
+        // createWrapper=true with 2 top-level entries → creates a same-named wrapper folder
         let er = try await ArchiveEngineNode().execute(
             OperationSpec(kind: .extract, sources: [archive],
                           archiveOptions: ArchiveOptions(extractInto: out, createWrapper: true)),
             context: Self.ctx())
         let wrapper = try #require(er.createdURLs.first)
-        let stem = archive.deletingPathExtension().lastPathComponent  // 归档主干名
+        let stem = archive.deletingPathExtension().lastPathComponent  // archive stem name
         #expect(wrapper.lastPathComponent == stem)
         #expect(try Data(contentsOf: wrapper.appendingPathComponent("a.txt")) == Data("A".utf8))
         #expect(try Data(contentsOf: wrapper.appendingPathComponent("b.txt")) == Data("B".utf8))
@@ -163,7 +163,7 @@ import NSpaceContracts
             context: Self.ctx())
         let archive = try #require(cr.createdURLs.first)
 
-        // createWrapper=false → 直接铺进 out（不建包裹文件夹）
+        // createWrapper=false → spread directly into out (no wrapper folder)
         _ = try await ArchiveEngineNode().execute(
             OperationSpec(kind: .extract, sources: [archive],
                           archiveOptions: ArchiveOptions(extractInto: out, createWrapper: false)),
@@ -172,12 +172,12 @@ import NSpaceContracts
         #expect(try Data(contentsOf: out.appendingPathComponent("b.txt")) == Data("B".utf8))
     }
 
-    // MARK: 取消不留半成品
+    // MARK: Cancellation leaves nothing half-finished
 
     @Test func cancelledCompressLeavesNoFinalArchive() async throws {
         let work = try Self.tempDir()
         defer { try? FileManager.default.removeItem(at: work) }
-        // 稍大输入让压缩有耗时，提高取消命中率
+        // Slightly larger input so compression takes time, raising the chance the cancel lands
         let big = Data((0..<4_000_000).map { UInt8(($0 &* 131) % 251) })
         try Self.write(big, to: work.appendingPathComponent("tree/big.bin"))
 
@@ -190,26 +190,26 @@ import NSpaceContracts
         task.cancel()
         do {
             let r = try await task.value
-            // 竞态：取消生效前已完成也合法——但归档必须完整可解
+            // Race: finishing before the cancel takes effect is also valid, but the archive must be complete and extractable
             let archive = try #require(r.createdURLs.first)
             #expect(FileManager.default.fileExists(atPath: archive.path))
         } catch is CancellationError {
-            // 取消：最终归档从未出现，且无暂存残留
+            // Cancelled: the final archive never appeared, and no staging leftovers
             #expect(!FileManager.default.fileExists(atPath: work.appendingPathComponent("tree.zip").path))
             try Self.assertNoStaging(in: work)
         }
     }
 
-    // MARK: 错误分类
+    // MARK: Error classification
 
     @Test func emptySourcesIsLogicError() async {
         do {
             _ = try await ArchiveEngineNode().execute(
                 OperationSpec(kind: .compress, sources: []), context: Self.ctx())
-            Issue.record("应当抛错")
+            Issue.record("Expected an error")
         } catch let e as any ClassifiedError {
             #expect(e.errorClass == .logic)
-        } catch { Issue.record("错误未分类(违反 P6.4): \(error)") }
+        } catch { Issue.record("Unclassified error (violates P6.4):\(error)") }
     }
 
     @Test func unknownExtractFormatIsLogicError() async throws {
@@ -220,16 +220,16 @@ import NSpaceContracts
             _ = try await ArchiveEngineNode().execute(
                 OperationSpec(kind: .extract, sources: [work.appendingPathComponent("note.txt")]),
                 context: Self.ctx())
-            Issue.record("应当抛错")
+            Issue.record("Expected an error")
         } catch let e as any ClassifiedError {
             #expect(e.errorClass == .logic)
-        } catch { Issue.record("错误未分类: \(error)") }
+        } catch { Issue.record("Unclassified error:\(error)") }
     }
 
-    // MARK: 助手
+    // MARK: Helpers
 
     static func assertNoStaging(in dir: URL) throws {
         let children = try FileManager.default.contentsOfDirectory(atPath: dir.path)
-        #expect(!children.contains { $0.hasPrefix(".nspace-") })
+        #expect(!children.contains { $0.hasPrefix(".hspace-") })
     }
 }

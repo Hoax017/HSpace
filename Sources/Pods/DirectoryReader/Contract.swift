@@ -1,7 +1,7 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-// DirectoryReader 胶囊唯一对外契约面（Axiom 3）：目录 URL → 不可变 DirectorySnapshot
+// DirectoryReader pod's sole public contract surface (Axiom 3): directory URL → immutable DirectorySnapshot
 
 public struct ReadRequest: Sendable {
     public let directory: URL
@@ -27,8 +27,8 @@ public struct DirectoryReadError: ClassifiedError {
     }
 }
 
-/// 目录读取节点：每次 load 分配单调递增 generation；
-/// 调用方比较 generation 丢弃过期结果（spec 3.2 代际防覆盖）
+/// Directory reading node: each load gets a monotonically increasing generation;
+/// callers compare generations to discard stale results (spec 3.2 generation guard)
 public protocol DirectoryReading: Sendable {
     func load(_ request: ReadRequest) async throws -> DirectorySnapshot
 }

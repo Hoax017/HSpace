@@ -1,13 +1,13 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-// 私有关注点：Finder 式排序（localizedStandardCompare、文件夹优先可选）
-// 用三值比较保证严格弱序（降序时相等元素不得互判"小于"，否则 sort 崩溃）
+// Private concern: Finder-style sorting (localizedStandardCompare, optional folders first)
+// Three-way comparison keeps strict weak ordering (in descending order equal elements must not both compare "less", or sort crashes)
 
 func sortItems(_ items: inout [FileItem], by order: SortSpec) {
     items.sort { a, b in
-        // Finder 式：文件夹置顶仅在「按名称」排时生效；按时间/大小/种类排时一律纯按该列混排
-        // （文件夹与文件交错）——用户点名"选按时间就该纯按时间"（I-50）。
+        // Finder style: folders-first applies only when sorting by name; sorting by date/size/kind mixes purely by that column
+        // (folders and files interleaved): the user explicitly said "sorting by time should be purely by time" (I-50).
         if order.foldersFirst && order.key == .name {
             let aDir = a.isDirectory && !a.isPackage
             let bDir = b.isDirectory && !b.isPackage
@@ -29,7 +29,7 @@ func sortItems(_ items: inout [FileItem], by order: SortSpec) {
             cmp = compare(a.contentTypeID ?? "", b.contentTypeID ?? "")
         }
         if cmp == .orderedSame {
-            // 同键值时按名字恒升序打破平局（与主方向无关，保持稳定观感）
+            // On equal keys break ties by name, always ascending (independent of main direction, for a stable look)
             return a.name.localizedStandardCompare(b.name) == .orderedAscending
         }
         return order.ascending ? cmp == .orderedAscending : cmp == .orderedDescending

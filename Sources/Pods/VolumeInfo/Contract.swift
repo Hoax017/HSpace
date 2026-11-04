@@ -1,7 +1,7 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-// VolumeInfo 胶囊唯一对外契约面（Axiom 3）：挂载卷枚举 / 变更信号 / 推出
+// VolumeInfo pod's sole public contract surface (Axiom 3): mounted volume enumeration / change signals / eject
 
 public struct VolumeItem: Sendable, Hashable {
     public let name: String
@@ -10,7 +10,7 @@ public struct VolumeItem: Sendable, Hashable {
     public let availableCapacity: Int64
     public let isEjectable: Bool
     public let isRemovable: Bool
-    /// 内置根卷（"/"）不显示推出钮
+    /// The internal root volume ("/") shows no eject button
     public let isRoot: Bool
 
     public init(name: String, url: URL, totalCapacity: Int64, availableCapacity: Int64,

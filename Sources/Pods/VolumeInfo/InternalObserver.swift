@@ -1,7 +1,7 @@
 import Foundation
 
-/// 私有关注点：非 Sendable 的 NotificationCenter 观察者令牌盒
-/// removeObserver 线程安全（Foundation 保证），故 @unchecked Sendable 成立
+/// Private concern: box for non-Sendable NotificationCenter observer tokens
+/// removeObserver is thread-safe (guaranteed by Foundation), so @unchecked Sendable holds
 final class ObserverBox: @unchecked Sendable {
     private let center: NotificationCenter
     private let lock = NSLock()

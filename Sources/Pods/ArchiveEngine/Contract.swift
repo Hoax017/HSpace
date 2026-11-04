@@ -1,14 +1,14 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-// ArchiveEngine 胶囊唯一对外契约面（Axiom 3）：
-// 归档能力 —— 压缩（compress）/ 解压（extract），经系统工具（zip/tar/unzip/gunzip…）Process 驱动，
-// 无第三方依赖（诚实路线）。节点边界按不可逆副作用切：一次 compress = 产出一个归档包；
-// 一次 extract = 从归档包落地内容树，均为一次原子提交单位。
+// ArchiveEngine pod's sole public contract surface (Axiom 3):
+// Archiving: compress / extract, driven via Process through system tools (zip/tar/unzip/gunzip…),
+// with no third-party dependencies (the honest approach). Node boundaries follow irreversible side effects: one compress = one archive produced;
+// one extract = one content tree landed from an archive; each is one atomic commit unit.
 //
-// 加密说明（诚实告知）：zip 口令走 /usr/bin/zip -P <password>（ZipCrypto 传统加密，
-// 属【弱加密】，且口令以明文进入进程参数表存在暴露面）。tar.gz 无内建加密，口令被忽略。
-// 设置页对此有说明；如需强加密应改用 AES zip（需第三方，v1 不做）。
+// Encryption note (honest disclosure): the zip password goes through /usr/bin/zip -P <password> (legacy ZipCrypto,
+// which is **weak encryption**, and the password appears in plain text in the process argument list, an exposure surface). tar.gz has no built-in encryption, so the password is ignored.
+// The settings page explains this; strong encryption would need AES zip (third-party, not in v1).
 
 public struct ArchiveError: ClassifiedError {
     public let errorClass: ErrorClass
@@ -22,10 +22,10 @@ public struct ArchiveError: ClassifiedError {
     }
 }
 
-// MARK: - 纯逻辑助手（可黑盒单测，无需真实文件系统）
+// MARK: - Pure logic helpers (black-box unit-testable, no real file system needed)
 
-/// 归档包命名（省扩展名基名 + 全后缀）：base.ext → "base 2.ext" → "base 3.ext"…（跳过已存在名）。
-/// ext 为完整后缀不含前导点（如 "zip" / "tar.gz"）；编号只追加在 base 上，后缀恒完整。
+/// Archive naming (extensionless base name + full suffix): base.ext → "base 2.ext" → "base 3.ext"… (skips existing names).
+/// ext is the full suffix without a leading dot (such as "zip" / "tar.gz"); the number is appended only to base, the suffix stays whole.
 public func uniqueArchiveName(base: String, ext: String, in directory: URL,
                              exists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }) -> String {
     func compose(_ n: Int) -> String {
@@ -37,8 +37,8 @@ public func uniqueArchiveName(base: String, ext: String, in directory: URL,
     return compose(n)
 }
 
-/// 解压"包裹语义"的核心判据（纯逻辑）：给定归档内所有条目路径，数出顶层不同条目数。
-/// 顶层 >1 → 需先建同名包裹文件夹再解；==1（或 0）→ 忽略包裹直接解（QSpace 语义）。
+/// Core criterion of the extraction "wrapper semantics" (pure logic): given all entry paths in an archive, counts distinct top-level entries.
+/// Top level > 1 → create a same-named wrapper folder first; == 1 (or 0) → skip the wrapper and extract directly (QSpace semantics).
 public func topLevelEntryCount(_ entries: [String]) -> Int {
     var tops = Set<String>()
     for raw in entries {
@@ -52,13 +52,13 @@ public func topLevelEntryCount(_ entries: [String]) -> Int {
     return tops.count
 }
 
-/// 归档格式（按扩展名分发解压工具）
+/// Archive format (selects the extraction tool by extension)
 public enum ArchiveFormat: Sendable, Equatable {
     case zip
-    case tarGz, tarBz2, tarXz, tar   // tar 家族（含压缩变体）
-    case gzip, bzip2, xz             // 单流压缩（非 tar）
+    case tarGz, tarBz2, tarXz, tar   // tar family (including compressed variants)
+    case gzip, bzip2, xz             // single-stream compression (not tar)
 
-    /// 按 URL 扩展名识别（多段后缀优先匹配；不认识返回 nil）
+    /// Detects by URL extension (multi-part suffixes match first; returns nil when unknown)
     public static func detect(_ url: URL) -> ArchiveFormat? {
         let n = url.lastPathComponent.lowercased()
         if n.hasSuffix(".tar.gz") || n.hasSuffix(".tgz") { return .tarGz }
@@ -66,13 +66,13 @@ public enum ArchiveFormat: Sendable, Equatable {
         if n.hasSuffix(".tar.xz") || n.hasSuffix(".txz") { return .tarXz }
         if n.hasSuffix(".tar") { return .tar }
         if n.hasSuffix(".zip") { return .zip }
-        if n.hasSuffix(".gz") || n.hasSuffix(".z") { return .gzip }   // .Z 老式 compress 也走 gunzip
+        if n.hasSuffix(".gz") || n.hasSuffix(".z") { return .gzip }   // legacy .Z compress also goes through gunzip
         if n.hasSuffix(".bz2") { return .bzip2 }
         if n.hasSuffix(".xz") { return .xz }
         return nil
     }
 
-    /// 单流压缩（.gz/.bz2/.xz/.Z）解压后的输出文件名 = 去掉压缩后缀（供包裹判定/落点命名）
+    /// Output file name after extracting a single stream (.gz/.bz2/.xz/.Z) = name minus the compression suffix (for wrapper decisions and landing names)
     static func singleStreamOutputName(for url: URL) -> String {
         let name = url.lastPathComponent
         for suffix in [".gz", ".z", ".bz2", ".xz"] where name.lowercased().hasSuffix(suffix) {
@@ -82,10 +82,10 @@ public enum ArchiveFormat: Sendable, Equatable {
     }
 }
 
-// MARK: - 支持检测（诚实路线：按系统实际存在的工具实测，缺工具的扩展名不列入）
+// MARK: - Support detection (the honest approach: test the tools actually on the system; extensions without a tool are not listed)
 
 public extension ArchiveEngineNode {
-    /// 本机可解压的扩展名集合（按 /usr/bin 下实际工具存在性动态构成；UI 据此诚实启用/禁用"解压"）
+    /// Extensions this machine can extract (built dynamically from tools actually present in /usr/bin; the UI uses this to honestly enable or disable "Extract")
     static func supportedExtensions() -> [String] {
         var exts: [String] = []
         if toolExists(Tools.unzip) { exts += ["zip"] }
@@ -96,7 +96,7 @@ public extension ArchiveEngineNode {
         return exts
     }
 
-    /// 该 URL 是否为本机支持解压的归档（右键菜单据此决定是否出现"解压"项）
+    /// Whether this URL is an archive this machine can extract (the context menu uses this to decide whether to show "Extract")
     static func isSupportedArchive(_ url: URL) -> Bool {
         guard let fmt = ArchiveFormat.detect(url) else { return false }
         switch fmt {
@@ -113,7 +113,7 @@ public extension ArchiveEngineNode {
     }
 }
 
-/// 系统工具绝对路径（诚实路线：固定 /usr/bin，缺失即报 external）
+/// Absolute system tool paths (the honest approach: fixed /usr/bin, missing tools report external)
 enum Tools {
     static let zip = "/usr/bin/zip"
     static let unzip = "/usr/bin/unzip"

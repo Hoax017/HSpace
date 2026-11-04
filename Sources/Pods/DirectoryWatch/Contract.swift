@@ -1,8 +1,8 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-// DirectoryWatch 胶囊唯一对外契约面（Axiom 3）：目录 URL → 变化信号流 + 挂起/恢复/停止句柄。
-// 每次目录变化产一个 Void 信号，调用方收到即整目录重载（不做增量 diff，交由 DirectoryReader 出新快照）。
+// DirectoryWatch pod's sole public contract surface (Axiom 3): directory URL → change signal stream + suspend/resume/stop handle.
+// Each directory change yields one Void signal; callers reload the whole directory on receipt (no incremental diff, DirectoryReader produces a new snapshot).
 
 public struct DirectoryWatchError: ClassifiedError {
     public let errorClass: ErrorClass
@@ -14,8 +14,8 @@ public struct DirectoryWatchError: ClassifiedError {
     }
 }
 
-/// 监听工厂：产出一个已启动的 DirectoryWatcher 句柄。
+/// Watch factory: produces a started DirectoryWatcher handle.
 public protocol DirectoryWatching: Sendable {
-    /// 返回的句柄立即开始监听；持有它以维持监听，释放即自动停止（deinit 收流）。
+    /// The returned handle starts watching immediately; hold it to keep watching, releasing it stops automatically (deinit closes the stream).
     func watch(_ path: URL) -> DirectoryWatcher
 }

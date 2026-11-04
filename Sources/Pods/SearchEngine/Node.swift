@@ -1,13 +1,13 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-/// 聚焦搜索引擎（Axiom 2：无全局可变状态；每次 search 产出独立会话，互不干扰）。
+/// Focused search engine (Axiom 2: no global mutable state; each search produces an independent session, no interference).
 public struct SearchEngine: Sendable {
     public init() {}
 
-    /// 双通道搜索：通道A Spotlight（名称/内容）+ 通道B 隐藏文件名称递归扫描（includeHidden）。
-    /// 结果按 url 去重合并，增量批推（≥50 条或 300ms 节流）；
-    /// 流终止（消费方取消/中断迭代）即停两通道（NSMetadataQuery.stop + 扫描 Task 取消）。
+    /// Dual-channel search: channel A Spotlight (name/content) + channel B recursive hidden file name scan (includeHidden).
+    /// Results are merged and deduped by url and pushed in increments (>= 50 items or 300ms throttle);
+    /// stream termination (consumer cancels / stops iterating) stops both channels (NSMetadataQuery.stop + scan Task cancel).
     @MainActor
     public func search(_ request: SearchRequest) -> AsyncStream<[SearchHit]> {
         AsyncStream { continuation in

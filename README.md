@@ -1,79 +1,76 @@
 <p align="center">
-  <img src="docs/assets/icon.png" width="128" alt="NSpace icon">
+  <img src="docs/assets/icon.png" width="128" alt="HSpace icon">
 </p>
 
-<h1 align="center">NSpace</h1>
+<h1 align="center">HSpace</h1>
 
 <p align="center">
-  为 macOS 打造的原生多窗格文件管理器 —— <b>QSpace 的功能，Finder 的原生性，谁都没有的性能</b>
+  A native multi-pane file manager for macOS: <b>QSpace's features, Finder's native feel, performance nobody else has</b>
 </p>
 
 <p align="center">
-  <a href="https://github.com/SammySnake-d/NSpace/releases/latest"><img src="https://img.shields.io/github/v/release/SammySnake-d/NSpace?label=release" alt="release"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="platform">
-  <img src="https://img.shields.io/badge/UI-纯%20AppKit%20零%20xib-informational" alt="appkit">
+  <img src="https://img.shields.io/badge/platform-macOS%2026%2B-blue" alt="platform">
+  <img src="https://img.shields.io/badge/UI-pure%20AppKit%2C%20no%20xib-informational" alt="appkit">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="license"></a>
 </p>
 
-![双栏工作区](docs/assets/screenshot.png)
+> This repository is a fork of [SammySnake-d/NSpace](https://github.com/SammySnake-d/NSpace), used under the MIT license. The original copyright notice is kept in [LICENSE](LICENSE).
 
-## 为什么做 NSpace
+![Two-pane workspace](docs/assets/screenshot.png)
 
-Finder 信息密度太低；QSpace Pro 在新系统上卡顿、闲置 CPU 居高不下。NSpace 用纯 AppKit 从零实现 QSpace 级的多窗格工作流，并把性能当成硬指标：**北极星验收 = 四窗格常驻侦听下闲置 CPU 0.0%**（FSEvents 直接子级过滤 + 后台窗格全挂起，每次发版实测）。
+## Why HSpace
 
-## 功能
+Finder's information density is too low; QSpace Pro stutters on recent systems and its idle CPU stays high. HSpace implements QSpace-class multi-pane workflows from scratch in pure AppKit and treats performance as a hard metric: **north-star acceptance = 0.0% idle CPU with four panes watching** (FSEvents direct-child filtering plus full suspension of background panes, measured on every release).
 
-- **多窗格布局**：单栏 / 双列 / 双行 / 三列 / 四宫格（⌃⌘1..5），窗格间 F5 复制 / F6 移动
-- **工作区标签**：标签对象是整个分屏布局（⌘T / ⌘W / ⌘1..9 直达，MRU 关闭回退），会话完整恢复
-- **自绘顶部甲板**：工作区标签条 + 图标工具条，与全高侧栏一线贯通（Finder 式穿透观感）
-- **暂存架**：文件拖入牌堆暂存，跨目录批量复制 / 移动 / AirDrop（hover 浮出操作条）
-- **聚焦搜索**：⌘F 当前目录 / ⇧⌘F 全局；名称 + 内容 + 种类过滤；**独有隐藏文件搜索通道**（Spotlight 之外自建扫描，超越 QSpace）
-- **文件操作内核**：copyfile 克隆加速、字节级进度、冲突裁决（替换/跳过/两者保留/合并）、撤销、操作回执
-- **归档**：压缩 zip / tar.gz（可加密）、解压 20+ 格式、包裹文件夹语义
-- **接管「打开文件位置」**：第三方 App 的 Reveal 请求落 NSpace 并选中目标（与 QSpace 同机制，可开关）
-- **全局呼出/隐藏热键**：任意 App 一键置顶 / 隐藏（无需辅助功能权限）
-- **热更新**：内置更新器对接 GitHub Releases，自动下载就绪、重启即完成
-- 快捷键全部可配（注册表 + 录制器）、列可选可排序、Space 预览、双击走系统默认程序、深浅色随系统
+## Features
 
-## 安装
+- **Multi-pane layouts**: single / two columns / two rows / three columns / four-way grid (⌃⌘1..5), F5 to copy and F6 to move between panes
+- **Workspace tabs**: a tab holds the entire split layout (⌘T / ⌘W / ⌘1..9 to jump, MRU fallback on close), with full session restore
+- **Custom-drawn top deck**: workspace tab bar plus icon toolbar, running flush with the full-height sidebar (a Finder-style see-through look)
+- **Stash shelf**: drag files onto a stack to hold them, then batch copy / move / AirDrop across directories (action bar appears on hover)
+- **Focused search**: ⌘F for the current directory / ⇧⌘F global; name + content + kind filters; **a dedicated hidden-file search channel** (a custom scan outside Spotlight, going beyond QSpace)
+- **File operation kernel**: copyfile clone acceleration, byte-level progress, conflict resolution (replace / skip / keep both / merge), undo, operation receipts
+- **Archives**: compress to zip / tar.gz (encryption available), extract 20+ formats, wrap-in-folder semantics
+- **Take over "reveal in file manager"**: Reveal requests from third-party apps land in HSpace with the target selected (same mechanism as QSpace, can be turned off)
+- **Global show/hide hotkey**: bring HSpace to the front or hide it from any app with one key (no Accessibility permission needed)
+- Every shortcut is configurable (registry + recorder), columns are selectable and sortable, Space for preview, double-click uses the system default app, light and dark follow the system
 
-从 [Releases](https://github.com/SammySnake-d/NSpace/releases/latest) 下载 `NSpace-vX.Y.Z.zip`，解压拖入「应用程序」。
+## Install
 
-> 发行包为 ad-hoc 签名（无 Apple 开发者证书）：首次打开请**右键 → 打开**，或执行
-> `xattr -dr com.apple.quarantine /Applications/NSpace.app`。应用内热更新自动处理隔离标记，后续升级无需重复。
+There are no prebuilt releases yet: build it from source.
 
-## 从源码构建
+## Build from source
 
-只需 Xcode Command Line Tools（无需完整 Xcode）：
+Only the Xcode Command Line Tools are required (no full Xcode):
 
 ```bash
-git clone https://github.com/SammySnake-d/NSpace.git && cd NSpace
-./scripts/build-app.sh     # 构建并签名 build/NSpace.app
-./scripts/test.sh          # 15 个测试套件
-./scripts/ui-smoke.sh      # 81 项 UI 真效果断言（免录屏权限自渲染截图）
+git clone https://github.com/Hoax017/HSpace.git && cd HSpace
+./scripts/build-app.sh     # build and sign build/HSpace.app
+./scripts/test.sh          # unit tests
+./scripts/ui-smoke.sh      # real-effect UI assertions (closes any running HSpace first)
 ```
 
-## 架构
+## Architecture
 
-按[可组合执行元架构](https://github.com/SammySnake-d/NSpace/blob/main/META_COMPLIANCE.json)组织：能力全部封装为**物理胶囊（pods）**——`Contract.swift` 是唯一公共面，经构造注入组合，展示层禁用写型文件 API（BG-1，pre-commit 机械执法）：
+Organized according to the composable execution meta-architecture ([META_COMPLIANCE.json](META_COMPLIANCE.json)): every capability is packaged as a **physical pod**. `Contract.swift` is the only public surface, pods are composed through constructor injection, and the presentation layer may not use write-type file APIs (BG-1, mechanically enforced in pre-commit):
 
 ```
 Sources/
-├─ NSpaceContracts/   共享词汇表（FileItem/OperationSpec/RunState…）
-├─ NSpaceKernel/      操作内核：Run 状态机 + 冲突裁决 + 进度流（唯一状态提交者）
+├─ HSpaceContracts/   shared vocabulary (FileItem/OperationSpec/RunState…)
+├─ HSpaceKernel/      operation kernel: Run state machine + conflict resolution + progress stream (sole state committer)
 ├─ Pods/              DirectoryReader · Transfer · LocalOps · ArchiveEngine · DirectoryWatch
 │                     BookmarkStore · StashStore · SessionStore · SearchEngine · FolderSize
-│                     IconThumb · VolumeInfo · PathComplete · UpdateEngine
-└─ NSpaceApp/         AppKit 展示层（纯代码 UI，语义色 Token，4pt 网格 grid-lint 执法）
+│                     IconThumb · VolumeInfo · PathComplete
+└─ HSpaceApp/         AppKit presentation layer (code-only UI, semantic color tokens, 4pt grid enforced by grid-lint)
 ```
 
-设计系统见 [DESIGN.md](DESIGN.md)；工程门禁（meta-doctor / pod-lint / grid-lint / 测试）全部挂 pre-commit，绿灯才允许提交。
+See [DESIGN.md](DESIGN.md) for the design system. The engineering gates (meta-doctor / pod-lint / grid-lint / tests) all run in pre-commit; a commit is allowed only when they are green.
 
-## 已知系统边界（诚实说明）
+## Known system limits (stated honestly)
 
-- macOS 26+ 在系统层锁定「文件夹默认程序」为 Finder——任何 App（含 QSpace）都无法接管普通"打开文件夹"请求（五组实验实证）。NSpace 提供的等价通道：Reveal 接管、Finder 右键服务「用 NSpace 打开」、`nspace://open?path=`、全局热键。
-- 已在别处运行的 App 需重启一次才会读到 Reveal 接管（系统全局偏好按进程缓存）。
+- macOS 26+ locks the system's default folder handler to Finder. No app, QSpace included, can take over ordinary "open folder" requests (confirmed by five sets of experiments). HSpace's equivalent channels: Reveal takeover, the Finder context-menu service "Open in HSpace", `hspace://open?path=`, and the global hotkey.
+- Apps already running elsewhere must be restarted once to pick up the Reveal takeover (the system-wide preference is cached per process).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Copyright (c) 2026 SammySnake-d.

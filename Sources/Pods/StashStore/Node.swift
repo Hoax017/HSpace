@@ -1,8 +1,8 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-/// 暂存架权威状态唯一 Commit Owner（actor 串行提交，BG-5/BG-8 单进程定界）。
-/// 存储目录构造注入（Axiom 2）：App 传 Application Support，测试传临时目录。
+/// Sole Commit Owner of authoritative stash shelf state (actor serial commits, BG-5/BG-8 scoped to a single process).
+/// Storage directory is constructor-injected (Axiom 2): the app passes Application Support, tests pass a temp directory.
 public actor StashStore {
     private let fileURL: URL
     private var items: [StashItem] = []
@@ -12,23 +12,23 @@ public actor StashStore {
         self.fileURL = directory.appendingPathComponent("stash.json")
     }
 
-    // MARK: 查询
+    // MARK: Queries
 
     public func all() async -> [StashItem] {
         await ensureLoaded()
         return items
     }
 
-    /// 解析暂存目标（目标已删除返回 nil，UI 据此置灰）
+    /// Resolves a stash target (nil if the target was deleted; the UI grays it out)
     public nonisolated func resolve(_ item: StashItem) -> URL? {
         var stale = false
         return try? URL(resolvingBookmarkData: item.bookmarkData, options: [],
                         relativeTo: nil, bookmarkDataIsStale: &stale)
     }
 
-    // MARK: 变更（全部经此 actor 串行提交 + 原子落盘）
+    // MARK: Mutations (all serialized through this actor + atomic persistence)
 
-    /// 批量加入（同路径去重：已暂存的路径静默跳过）；返回实际新增项
+    /// Batch add (dedups by path: already stashed paths are silently skipped); returns the items actually added
     @discardableResult
     public func add(_ urls: [URL]) async throws -> [StashItem] {
         await ensureLoaded()
@@ -41,7 +41,7 @@ public actor StashStore {
             do {
                 data = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
             } catch {
-                throw StashError(.external, "无法暂存「\(url.lastPathComponent)」: \(error.localizedDescription)")
+                throw StashError(.external, "Could not stash \"\(url.lastPathComponent)\": \(error.localizedDescription)")
             }
             seen.insert(path)
             added.append(StashItem(bookmarkData: data))
@@ -65,7 +65,7 @@ public actor StashStore {
         try persist()
     }
 
-    // MARK: 私有：加载与原子落盘
+    // MARK: Private: loading and atomic persistence
 
     private func ensureLoaded() async {
         guard !loaded else { return }
@@ -79,10 +79,10 @@ public actor StashStore {
             let dir = fileURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(items)
-            // 原子替换：崩溃安全（spec 容错矩阵：落盘失败保内存态，抛错由调用方原位提示）
+            // Atomic replace: crash-safe (spec fault matrix: on persistence failure keep in-memory state; the thrown error is shown in place by the caller)
             try data.write(to: fileURL, options: .atomic)
         } catch {
-            throw StashError(.external, "暂存架保存失败: \(error.localizedDescription)")
+            throw StashError(.external, "Could not save stash shelf:\(error.localizedDescription)")
         }
     }
 }

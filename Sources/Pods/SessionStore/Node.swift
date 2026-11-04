@@ -1,8 +1,8 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-/// 会话权威状态唯一 Commit Owner（actor）：防抖 1s 原子落盘 session.json（spec 五、数据契约）。
-/// 存储目录构造注入（Axiom 2）。
+/// Sole Commit Owner of authoritative session state (actor): 1s debounced atomic persistence of session.json (spec section 5, data contract).
+/// Storage directory is constructor-injected (Axiom 2).
 public actor SessionStore {
     private let fileURL: URL
     private var pendingSaveTask: Task<Void, Never>?
@@ -12,13 +12,13 @@ public actor SessionStore {
         self.fileURL = directory.appendingPathComponent("session.json")
     }
 
-    /// 启动恢复：无文件/损坏返回 nil（回退默认布局，容错矩阵：不崩不弹窗）
+    /// Startup restore: returns nil when missing or corrupt (falls back to the default layout; fault matrix: no crash, no alert)
     public func load() -> SessionSnapshot? {
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
         return try? JSONDecoder().decode(SessionSnapshot.self, from: data)
     }
 
-    /// 状态变化随手调用：1s 防抖合并（频繁切标签不写盘风暴）
+    /// Call on every state change: 1s debounce coalesces (rapid tab switching does not cause a write storm)
     public func save(_ snapshot: SessionSnapshot) {
         latest = snapshot
         pendingSaveTask?.cancel()
@@ -29,7 +29,7 @@ public actor SessionStore {
         }
     }
 
-    /// 退出前强制落盘（跳过防抖）
+    /// Forces persistence before quit (skips the debounce)
     public func flush() {
         guard let snapshot = latest else { return }
         pendingSaveTask?.cancel()
@@ -39,7 +39,7 @@ public actor SessionStore {
             let data = try JSONEncoder().encode(snapshot)
             try data.write(to: fileURL, options: .atomic)
         } catch {
-            // 落盘失败保内存态，下次 save 防抖重试（容错矩阵）
+            // On persistence failure keep in-memory state; the next debounced save retries (fault matrix)
         }
     }
 }

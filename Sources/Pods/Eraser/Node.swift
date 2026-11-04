@@ -1,30 +1,30 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-/// 永久删除节点（`.delete`）。构造零参注入（Axiom 2：无全局可变状态）。
+/// Permanent deletion node (`.delete`). Zero-argument construction injection (Axiom 2: no global mutable state).
 ///
-/// 语义：逐项容错（照 v0.19.18 修好的 trash 口径——已经真删掉的那部分必须被如实回报，
-/// 不许随首个错误一起丢），一件都没删成才 throw。
-/// 删除**不可撤销**，所以回执里没有 trashedItems，只有 filesDone 与 failures。
+/// Semantics: per-item fault tolerance (matching the trash behaviour fixed in v0.19.18: what was really deleted must be
+/// reported truthfully, not lost with the first error); throws only when nothing was deleted.
+/// Deletion is **not undoable**, so the receipt has no trashedItems, only filesDone and failures.
 public struct EraserNode: OperationNode {
     public init() {}
 
     public func execute(_ spec: OperationSpec, context: NodeContext) async throws -> OperationReceipt {
         let started = Date()
         guard spec.kind == .delete else {
-            throw EraserError(.logic, "EraserNode 不处理 \(spec.kind.rawValue)")
+            throw EraserError(.logic, "EraserNode does not handle\(spec.kind.rawValue)")
         }
         guard !spec.sources.isEmpty else {
-            throw EraserError(.logic, "delete 需要至少一个源")
+            throw EraserError(.logic, "delete requires at least one source")
         }
-        // 围栏必须显式给出：没有围栏的永久删除请求一律拒绝，不猜、不放行
+        // The fence must be given explicitly: permanent deletion requests without one are always refused, no guessing, no pass-through
         guard let fence = spec.destination else {
-            throw EraserError(.logic, "delete 必须带 destination 作为围栏根（爆炸半径守卫）")
+            throw EraserError(.logic, "delete requires a destination as its fence root (blast-radius guard)")
         }
         let outside = spec.sources.filter { !EraserLimits.isFenced($0, by: fence) }
         guard outside.isEmpty else {
             throw EraserError(.logic,
-                "拒绝删除围栏之外的项（\(outside.count) 项，首个：\(outside[0].lastPathComponent)）")
+                "Refused to delete items outside the fence (\(outside.count) items, first: \(outside[0].lastPathComponent))")
         }
 
         let fm = FileManager.default
@@ -39,10 +39,10 @@ public struct EraserNode: OperationNode {
                 context.report(.progress(filesDone: done, bytesDone: 0, currentPath: src.path))
             } catch {
                 failures.append(OperationFailure(url: src, errorClass: .external,
-                                                 message: "永久删除失败: \(error.localizedDescription)"))
+                                                 message: "Could not permanently delete:\(error.localizedDescription)"))
             }
         }
-        // 一件都没删成 = 真正的失败
+        // Nothing deleted at all = a real failure
         if done == 0, let first = failures.first {
             throw EraserError(first.errorClass, first.message)
         }

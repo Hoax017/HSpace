@@ -1,10 +1,10 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 import Darwin
 
-// 私有关注点：物理传输引擎 —— copyfile(3) 字节级进度 + 协作式取消 + 同卷 rename 快路径
+// Private concern: physical transfer engine: copyfile(3) byte-level progress + cooperative cancellation + same-volume rename fast path
 
-/// 协作式取消旗标：withTaskCancellationHandler 置位，copyfile 回调轮询（跨线程安全）
+/// Cooperative cancel flag: set by withTaskCancellationHandler, polled by the copyfile callback (thread-safe)
 final class CancelFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var value = false
@@ -12,12 +12,12 @@ final class CancelFlag: @unchecked Sendable {
     var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
 }
 
-/// 进度聚合器：copyfile 回调在 I/O 线程触发，加锁聚合并节流上报（≥512KB 或文件边界才发）
+/// Progress aggregator: copyfile callbacks fire on the I/O thread; aggregates under a lock and throttles reports (only at >= 512KB or file boundaries)
 final class ProgressAggregator: @unchecked Sendable {
     private let lock = NSLock()
     private var filesDone = 0
-    private var bytesCompleted: Int64 = 0     // 已完成文件的字节
-    private var currentFileBytes: Int64 = 0   // 当前文件已拷字节
+    private var bytesCompleted: Int64 = 0     // bytes of finished files
+    private var currentFileBytes: Int64 = 0   // bytes copied so far of the current file
     private var lastReported: Int64 = 0
     private let report: @Sendable (NodeEvent) -> Void
 
@@ -45,7 +45,7 @@ final class ProgressAggregator: @unchecked Sendable {
         report(.progress(filesDone: files, bytesDone: total, currentPath: path))
     }
 
-    /// 同卷 move 快路径：整棵树瞬时完成
+    /// Same-volume move fast path: the whole tree completes instantly
     func addCompleted(files: Int, bytes: Int64, path: String) {
         lock.lock()
         filesDone += files
@@ -60,8 +60,8 @@ final class ProgressAggregator: @unchecked Sendable {
     func snapshotBytes() -> Int64 { lock.lock(); defer { lock.unlock() }; return bytesCompleted }
 }
 
-/// 专用 I/O 队列：copyfile 阻塞调用不占用 Swift 并发协作线程池
-private let ioQueue = DispatchQueue(label: "com.nspace.transfer.io", qos: .userInitiated)
+/// Dedicated I/O queue: blocking copyfile calls stay off the Swift concurrency cooperative pool
+private let ioQueue = DispatchQueue(label: "com.hoax017.hspace.transfer.io", qos: .userInitiated)
 
 extension TransferNode {
     func transferEntry(_ entry: TransferPlan.Entry, mode: TransferPlan.Mode,
@@ -70,32 +70,32 @@ extension TransferNode {
         if flag.isSet { throw CancellationError() }
         let fm = FileManager.default
 
-        // replace 裁决：删目标在此刻（微步 3 本条传输前）——而非裁决阶段一次性预删，
-        // 这样批量中途取消/失败时，尚未传输条目的目标仍完好（防"先删全部再拷第一字节"丢数据）。
+        // Replace decision: delete the target here (micro-step 3, just before this entry transfers), not all at once during resolution,
+        // so that if a batch is cancelled or fails midway, targets of untransferred entries stay intact (prevents "delete everything, then copy the first byte" data loss).
         if entry.replaceExisting, fm.fileExists(atPath: entry.destination.path) {
             do { try fm.removeItem(at: entry.destination) } catch {
-                throw TransferError(.external, "无法替换目标: \(error.localizedDescription)",
+                throw TransferError(.external, "Could not replace destination:\(error.localizedDescription)",
                                     path: entry.destination.path)
             }
         }
 
         if mode == .move, sameVolume(entry.source, entry.destination.deletingLastPathComponent()) {
-            // 同卷移动 = 原子 rename，瞬时
+            // Same-volume move = atomic rename, instant
             do { try fm.moveItem(at: entry.source, to: entry.destination) } catch {
-                throw TransferError(.external, "移动失败: \(error.localizedDescription)", path: entry.source.path)
+                throw TransferError(.external, "Move failed:\(error.localizedDescription)", path: entry.source.path)
             }
             progress.addCompleted(files: entryTotals.files, bytes: entryTotals.bytes,
                                   path: entry.destination.path)
             return
         }
 
-        // 复制（或跨卷移动的复制阶段）
+        // Copy (or the copy phase of a cross-volume move)
         try await copyRecursive(from: entry.source, to: entry.destination,
                                 merge: entry.merge, flag: flag, progress: progress)
 
         if mode == .move {
             do { try fm.removeItem(at: entry.source) } catch {
-                throw TransferError(.external, "跨卷移动清理源失败: \(error.localizedDescription)",
+                throw TransferError(.external, "Could not remove source after cross-volume move:\(error.localizedDescription)",
                                     path: entry.source.path)
             }
         }
@@ -107,13 +107,13 @@ extension TransferNode {
         let fm = FileManager.default
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: src.path, isDirectory: &isDir) else {
-            throw TransferError(.external, "源不存在: \(src.lastPathComponent)", path: src.path)
+            throw TransferError(.external, "Source not found:\(src.lastPathComponent)", path: src.path)
         }
 
         if isDir.boolValue, !isPackageTreatedAsFile(src) {
             if !fm.fileExists(atPath: dst.path) {
                 do { try fm.createDirectory(at: dst, withIntermediateDirectories: true) } catch {
-                    throw TransferError(.external, "创建目录失败: \(error.localizedDescription)", path: dst.path)
+                    throw TransferError(.external, "Could not create folder:\(error.localizedDescription)", path: dst.path)
                 }
             }
             let children = (try? fm.contentsOfDirectory(at: src, includingPropertiesForKeys: [.isDirectoryKey],
@@ -126,7 +126,7 @@ extension TransferNode {
                     _ = fm.fileExists(atPath: childDst.path, isDirectory: &childDstDir)
                     _ = fm.fileExists(atPath: child.path, isDirectory: &childSrcDir)
                     if !(childDstDir.boolValue && childSrcDir.boolValue) {
-                        // 合并语义：同名子文件源覆盖目标（契约文档化承诺）
+                        // Merge semantics: a same-named source file overwrites the target (documented contract promise)
                         try? fm.removeItem(at: childDst)
                     }
                 }
@@ -138,7 +138,7 @@ extension TransferNode {
         }
     }
 
-    /// 单文件 copyfile：字节级进度回调 + COPYFILE_QUIT 取消 + 半成品清理
+    /// Single-file copyfile: byte-level progress callback + COPYFILE_QUIT cancellation + partial-file cleanup
     private func copyOneFile(from src: URL, to dst: URL,
                              flag: CancelFlag, progress: ProgressAggregator) async throws {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, any Error>) in
@@ -160,11 +160,11 @@ extension TransferNode {
         return va.isEqual(vb)
     }
 
-    /// .app 等包：整体视作文件级复制单位仍走目录递归即可；此处仅决定进度粒度，返回 false 走递归
+    /// Packages such as .app: treating them as one file-level copy unit still works through directory recursion; this only decides progress granularity, and false means recurse
     private func isPackageTreatedAsFile(_ url: URL) -> Bool { false }
 }
 
-/// copyfile 回调上下文盒（经 STATUS_CTX 透传进 C 回调）
+/// copyfile callback context box (passed into the C callback via STATUS_CTX)
 private final class CopyContext {
     let flag: CancelFlag
     let progress: ProgressAggregator
@@ -177,7 +177,7 @@ private final class CopyContext {
 private func copyOneFileSync(from src: URL, to dst: URL,
                              flag: CancelFlag, progress: ProgressAggregator) throws {
     if flag.isSet { throw CancellationError() }
-    // 失败清理只删"本次新建的半成品"：目标若在拷贝前已存在（外部竞态/克隆 EEXIST），绝不误删他人文件
+    // Failure cleanup removes only the partial file created by this run: if the target existed before the copy (external race / clone EEXIST), never delete someone else's file
     let dstPreexisted = FileManager.default.fileExists(atPath: dst.path)
     let state = copyfile_state_alloc()
     defer { copyfile_state_free(state) }
@@ -202,23 +202,23 @@ private func copyOneFileSync(from src: URL, to dst: URL,
     copyfile_state_set(state, UInt32(COPYFILE_STATE_STATUS_CB),
                        unsafeBitCast(callback, to: UnsafeRawPointer.self))
 
-    // COPYFILE_CLONE：同卷 APFS 瞬时克隆；跨卷自动退化为真实拷贝
+    // COPYFILE_CLONE: instant APFS clone on the same volume; falls back to a real copy across volumes
     let flags = copyfile_flags_t(COPYFILE_ALL | COPYFILE_CLONE | COPYFILE_NOFOLLOW)
     let rc = copyfile(src.path, dst.path, state, flags)
 
     if rc < 0 {
-        let savedErrno = errno   // 先快照：removeItem 会污染 errno
-        // 半成品清理：只删本次新建的残缺目标；目标拷贝前已存在则不动（防误删他人文件）
+        let savedErrno = errno   // snapshot first: removeItem clobbers errno
+        // Partial-file cleanup: delete only the incomplete target created by this run; leave it if it existed before the copy (avoids deleting someone else's file)
         if !dstPreexisted { try? FileManager.default.removeItem(at: dst) }
         if flag.isSet || savedErrno == ECANCELED { throw CancellationError() }
         let msg = String(cString: strerror(savedErrno))
-        throw TransferError(.external, "复制失败: \(msg)", path: src.path)
+        throw TransferError(.external, "Copy failed:\(msg)", path: src.path)
     }
 
     var size: off_t = 0
     copyfile_state_get(state, UInt32(COPYFILE_STATE_COPIED), &size)
     if size == 0 {
-        // APFS 克隆路径不搬字节（COPIED=0）：按目标实际大小入账，进度语义=逻辑传输量
+        // APFS clone moves no bytes (COPIED=0): account for the target's actual size; progress means logical bytes transferred
         let attrs = try? FileManager.default.attributesOfItem(atPath: dst.path)
         size = off_t((attrs?[.size] as? Int64) ?? 0)
     }

@@ -1,11 +1,11 @@
 import AppKit
-import NSpaceContracts
+import HSpaceContracts
 
-/// 卷信息节点（Axiom 2：无全局可变状态；NSWorkspace/FileManager 是被控物理基质）
+/// Volume info node (Axiom 2: no global mutable state; NSWorkspace/FileManager are the controlled physical substrate)
 public struct VolumeInfo: Sendable {
     public init() {}
 
-    /// 枚举当前挂载卷（浏览可见卷；跳过系统隐藏卷）
+    /// Enumerates currently mounted volumes (browsable ones; skips hidden system volumes)
     public func volumes() -> [VolumeItem] {
         let keys: [URLResourceKey] = [
             .volumeNameKey, .volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey,
@@ -28,7 +28,7 @@ public struct VolumeInfo: Sendable {
         }
     }
 
-    /// 挂载/卸载变更信号流（NSWorkspace 通知在主线程投递；流终止自动移除观察者）
+    /// Mount/unmount change signal stream (NSWorkspace notifications arrive on the main thread; stream termination removes observers automatically)
     @MainActor
     public func changes() -> AsyncStream<Void> {
         AsyncStream { continuation in
@@ -38,7 +38,7 @@ public struct VolumeInfo: Sendable {
                 NSWorkspace.didUnmountNotification,
                 NSWorkspace.didRenameVolumeNotification,
             ]
-            // 观察者令牌非 Sendable，用盒子跨进 @Sendable 的 onTermination
+            // Observer tokens are non-Sendable; a box carries them into the @Sendable onTermination
             let box = ObserverBox(center: center, tokens: names.map { name in
                 center.addObserver(forName: name, object: nil, queue: .main) { _ in
                     continuation.yield(())
@@ -48,7 +48,7 @@ public struct VolumeInfo: Sendable {
         }
     }
 
-    /// 推出卷（失败归 external：设备占用/权限等外部条件）
+    /// Ejects a volume (failures are external: device busy, permissions and other outside conditions)
     public func eject(_ url: URL) throws {
         do {
             try NSWorkspace.shared.unmountAndEjectDevice(at: url)

@@ -1,17 +1,17 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-/// 书签权威状态唯一 Commit Owner（actor 串行提交，BG-5/BG-8 单进程定界）。
-/// 存储目录构造注入（Axiom 2）：App 传 Application Support，测试传临时目录。
+/// Sole Commit Owner of authoritative bookmark state (actor serial commits, BG-5/BG-8 scoped to a single process).
+/// Storage directory is constructor-injected (Axiom 2): the app passes Application Support, tests pass a temp directory.
 public actor BookmarkStore {
     private let fileURL: URL
     private var items: [BookmarkItem] = []
     private var loaded = false
-    /// 起始位置种子是否已注入过（落盘于 Archive；一次性，避免用户清空后又被重新 seed）
+    /// Whether start-location seeds have been injected (persisted in Archive; one-time, so a user's clearing is not re-seeded)
     private var seeded = false
 
-    /// 落盘结构（seeded 标志 + 条目）。旧档案是纯 [BookmarkItem] 数组，
-    /// 解码失败即回退旧格式（items 非空视为已 seed，向后兼容）。
+    /// On-disk structure (seeded flag + entries). Old archives are a plain [BookmarkItem] array;
+    /// on decode failure fall back to the old format (non-empty items count as seeded, backward compatible).
     private struct Archive: Codable {
         var seeded: Bool
         var items: [BookmarkItem]
@@ -21,21 +21,21 @@ public actor BookmarkStore {
         self.fileURL = directory.appendingPathComponent("bookmarks.json")
     }
 
-    // MARK: 查询
+    // MARK: Queries
 
     public func all() async -> [BookmarkItem] {
         await ensureLoaded()
         return items
     }
 
-    /// 解析书签目标（目标已删除返回 nil，UI 据此置灰）
+    /// Resolves a bookmark target (nil if the target was deleted; the UI grays it out)
     public nonisolated func resolve(_ item: BookmarkItem) -> URL? {
         var stale = false
         return try? URL(resolvingBookmarkData: item.bookmarkData, options: [],
                         relativeTo: nil, bookmarkDataIsStale: &stale)
     }
 
-    // MARK: 变更（全部经此 actor 串行提交 + 原子落盘）
+    // MARK: Mutations (all serialized through this actor + atomic persistence)
 
     @discardableResult
     public func add(_ url: URL, name: String? = nil) async throws -> BookmarkItem {
@@ -44,7 +44,7 @@ public actor BookmarkStore {
         do {
             data = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         } catch {
-            throw BookmarkError(.external, "无法创建书签: \(error.localizedDescription)")
+            throw BookmarkError(.external, "Could not create bookmark:\(error.localizedDescription)")
         }
         let item = BookmarkItem(name: name ?? url.lastPathComponent, bookmarkData: data)
         items.append(item)
@@ -65,7 +65,7 @@ public actor BookmarkStore {
         try persist()
     }
 
-    /// 拖拽排序
+    /// Drag reordering
     public func move(from source: Int, to destination: Int) async throws {
         await ensureLoaded()
         guard items.indices.contains(source),
@@ -75,12 +75,12 @@ public actor BookmarkStore {
         try persist()
     }
 
-    /// 起始位置种子：仅当从未 seed 过且当前为空时写入这些目录（新装/无 bookmarks.json）。
-    /// 种子书签与用户书签同栈——可拖排/重命名/移除。seeded 标志落盘，二次调用幂等跳过。
-    /// name 由 App 层给定（胶囊不含 L10n）；bookmarkData 创建失败的目标跳过（不影响其余）。
+    /// Start-location seeds: writes these directories only if never seeded and currently empty (fresh install / no bookmarks.json).
+    /// Seed bookmarks share the stack with user bookmarks: draggable, renamable, removable. The seeded flag is persisted; a second call is an idempotent skip.
+    /// Names are supplied by the app layer (the pod has no L10n); targets whose bookmarkData creation fails are skipped (others unaffected).
     public func seedIfEmpty(_ urls: [(URL, String)]) async {
         await ensureLoaded()
-        // 已 seed 或已有条目：只置标志（幂等落盘），不注入种子
+        // Already seeded or has entries: only set the flag (idempotent persist), inject no seeds
         guard !seeded, items.isEmpty else {
             if !seeded {
                 seeded = true
@@ -98,9 +98,9 @@ public actor BookmarkStore {
         try? persist()
     }
 
-    /// 恢复缺失的默认种子（I-14 用户语义：种子可删、可随时恢复）。
-    /// 按解析后 standardized 路径去重——已存在的目标跳过，只补缺失项；返回实际新增数。
-    /// 设置窗「恢复默认书签」与 App 层旧档案一次性补种都走这里。
+    /// Restores missing default seeds (I-14 user semantics: seeds are removable and restorable at any time).
+    /// Dedups by resolved standardized path: existing targets are skipped, only missing ones are added; returns the number actually added.
+    /// Both the settings window's "Restore Default Bookmarks" and the app layer's one-time backfill for old archives go through here.
     @discardableResult
     public func restoreMissingSeeds(_ urls: [(URL, String)]) async -> Int {
         await ensureLoaded()
@@ -120,13 +120,13 @@ public actor BookmarkStore {
         return added
     }
 
-    // MARK: 私有：加载与原子落盘
+    // MARK: Private: loading and atomic persistence
 
     private func ensureLoaded() async {
         guard !loaded else { return }
         loaded = true
         guard let data = try? Data(contentsOf: fileURL) else { return }
-        // 新结构（Archive）优先；旧纯数组档案回退：items 非空视为已 seed（向后兼容）
+        // New structure (Archive) first; fall back to the old plain array: non-empty items count as seeded (backward compatible)
         if let archive = try? JSONDecoder().decode(Archive.self, from: data) {
             items = archive.items
             seeded = archive.seeded
@@ -141,10 +141,10 @@ public actor BookmarkStore {
             let dir = fileURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(Archive(seeded: seeded, items: items))
-            // 原子替换：崩溃安全（spec 容错矩阵：落盘失败保内存态，抛错由调用方原位提示）
+            // Atomic replace: crash-safe (spec fault matrix: on persistence failure keep in-memory state; the thrown error is shown in place by the caller)
             try data.write(to: fileURL, options: .atomic)
         } catch {
-            throw BookmarkError(.external, "书签保存失败: \(error.localizedDescription)")
+            throw BookmarkError(.external, "Could not save bookmarks:\(error.localizedDescription)")
         }
     }
 }

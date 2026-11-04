@@ -1,7 +1,7 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-/// 构造工厂 + 入口（Axiom 2：无全局状态，依赖经构造注入）
+/// Construction factory + entry point (Axiom 2: no global state, dependencies are constructor-injected)
 public actor DirectoryReader: DirectoryReading {
     private var generation: UInt64 = 0
 

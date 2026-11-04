@@ -1,9 +1,9 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-// 私有关注点：Process 物理驱动 —— 启动系统工具、捕获 stderr、协作式取消（terminate）。
-// Process.run()/waitUntilExit() 阻塞，故用 terminationHandler + CheckedContinuation 非阻塞化，
-// 不占用 Swift 并发协作线程池（同 Transfer 的 ioQueue 精神）。
+// Private concern: physical Process driver: launches system tools, captures stderr, cooperative cancellation (terminate).
+// Process.run()/waitUntilExit() block, so terminationHandler + CheckedContinuation make this non-blocking,
+// staying off the Swift concurrency cooperative pool (same spirit as Transfer's ioQueue).
 
 struct ProcessResult {
     let status: Int32
@@ -12,13 +12,13 @@ struct ProcessResult {
 
 extension ArchiveEngineNode {
 
-    /// 运行一个系统工具直至退出；支持取消（外层 Task 取消 → SIGTERM 子进程）。
-    /// - stdoutTo: 若提供，子进程 stdout 写入该文件句柄（gunzip -c 重定向解压产物用）。
-    /// 返回退出码与 stderr 文本；启动失败（工具缺失/无权限）抛 external。
+    /// Runs one system tool until it exits; supports cancellation (outer Task cancelled → SIGTERM to the child).
+    /// - stdoutTo: if given, the child's stdout goes to this file handle (used to redirect gunzip -c output).
+    /// Returns the exit code and stderr text; launch failure (missing tool / no permission) throws external.
     func runTool(_ toolPath: String, _ arguments: [String], cwd: URL? = nil,
                  stdoutTo: FileHandle? = nil) async throws -> ProcessResult {
         guard FileManager.default.isExecutableFile(atPath: toolPath) else {
-            throw ArchiveError(.external, "系统工具缺失: \(toolPath)", path: toolPath)
+            throw ArchiveError(.external, "System tool missing:\(toolPath)", path: toolPath)
         }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: toolPath)
@@ -42,20 +42,20 @@ extension ArchiveEngineNode {
                 } catch {
                     process.terminationHandler = nil
                     cont.resume(throwing: ArchiveError(.external,
-                        "无法启动工具 \(toolPath): \(error.localizedDescription)", path: toolPath))
+                        "Could not launch tool\(toolPath): \(error.localizedDescription)", path: toolPath))
                 }
             }
         } onCancel: {
-            // 协作式取消：SIGTERM 子进程；terminationHandler 仍会触发让 continuation 落地，
-            // 调用方随后查 Task.isCancelled → 清理半成品并抛 CancellationError。
+            // Cooperative cancellation: SIGTERM the child; terminationHandler still fires so the continuation resumes,
+            // and the caller then checks Task.isCancelled → cleans up partial output and throws CancellationError.
             if process.isRunning { process.terminate() }
         }
     }
 
-    /// 运行并把工具 stdout 收集为文本（列出归档条目用：unzip -Z1 / tar -tf）
+    /// Runs a tool and collects its stdout as text (for listing archive entries: unzip -Z1 / tar -tf)
     func runToolCapturingStdout(_ toolPath: String, _ arguments: [String]) async throws -> (result: ProcessResult, stdout: String) {
         guard FileManager.default.isExecutableFile(atPath: toolPath) else {
-            throw ArchiveError(.external, "系统工具缺失: \(toolPath)", path: toolPath)
+            throw ArchiveError(.external, "System tool missing:\(toolPath)", path: toolPath)
         }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: toolPath)
@@ -80,7 +80,7 @@ extension ArchiveEngineNode {
                 } catch {
                     process.terminationHandler = nil
                     cont.resume(throwing: ArchiveError(.external,
-                        "无法启动工具 \(toolPath): \(error.localizedDescription)", path: toolPath))
+                        "Could not launch tool\(toolPath): \(error.localizedDescription)", path: toolPath))
                 }
             }
         } onCancel: {
@@ -88,7 +88,7 @@ extension ArchiveEngineNode {
         }
     }
 
-    /// stderr 摘要（取非空首行，截断，供 external 错误携带）
+    /// stderr summary (first non-empty line, truncated, carried by external errors)
     static func stderrSummary(_ text: String) -> String {
         let line = text.split(whereSeparator: \.isNewline).first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
         let s = String(line ?? "").trimmingCharacters(in: .whitespaces)

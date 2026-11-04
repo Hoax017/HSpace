@@ -1,9 +1,9 @@
-/* NSpace English */
-"menu.about" = "About NSpace";
-"menu.hide" = "Hide NSpace";
+/* HSpace English */
+"menu.about" = "About HSpace";
+"menu.hide" = "Hide HSpace";
 "menu.hideOthers" = "Hide Others";
 "menu.showAll" = "Show All";
-"menu.quit" = "Quit NSpace";
+"menu.quit" = "Quit HSpace";
 "menu.file" = "File";
 "menu.newWindow" = "New Window";
 "menu.closeWindow" = "Close Window";
@@ -51,7 +51,7 @@
 "toast.trashEmptiedPartial" = "Erased %1$d, %2$d failed: %3$@";
 "toast.trashAlreadyEmpty" = "The Trash is already empty";
 "toast.putBackN" = "Put back %d items";
-"toast.putBackUnknown" = "No original location on record for these (not moved to Trash by NSpace) — cannot put back";
+"toast.putBackUnknown" = "No original location on record for these (not moved to Trash by HSpace) — cannot put back";
 "column.name" = "Name";
 "column.dateModified" = "Date Modified";
 "column.size" = "Size";
@@ -145,13 +145,13 @@
 "menu.toggleSidebar" = "Show/Hide Sidebar";
 "sidebar.readOnly" = "Read-only";
 "menu.settings" = "Settings…";
-"settings.title" = "NSpace Settings";
+"settings.title" = "HSpace Settings";
 "settings.finderSection" = "Replace Finder";
 "settings.setDefault" = "Set as Default Folder Handler";
-"settings.isDefault" = "NSpace is the default folder handler ✓";
+"settings.isDefault" = "HSpace is the default folder handler ✓";
 "settings.notDefault" = "Folders currently open in Finder";
 "settings.setFailed" = "Failed: %@";
-"settings.limitationNote" = "Proven by experiment (2026-08-26): macOS 27 locks the folder default handler to Finder at the OS level — even Finder itself cannot be re-set via API, direct pref writes get scrubbed, and QSpace cannot take over on this system either. Available channels: ① Finder right-click → Services → Open in NSpace (assignable global shortcut); ② Terminal: open -a NSpace <path>; ③ integrations via nspace://open?path=.";
+"settings.limitationNote" = "Proven by experiment (2026-08-26): macOS 27 locks the folder default handler to Finder at the OS level — even Finder itself cannot be re-set via API, direct pref writes get scrubbed, and QSpace cannot take over on this system either. Available channels: ① Finder right-click → Services → Open in HSpace (assignable global shortcut); ② Terminal: open -a HSpace <path>; ③ integrations via hspace://open?path=.";
 "settings.openFDA" = "Open Full Disk Access Settings";
 "settings.fdaNote" = "Protected folders (Downloads, Desktop) prompt once; grant Full Disk Access in System Settings for everything else.";
 
@@ -192,7 +192,7 @@
 "search.kind.movie" = "Movies";
 "search.kind.audio" = "Audio";
 "search.kind.archive" = "Archives";
-"search.reveal" = "Reveal in NSpace";
+"search.reveal" = "Reveal in HSpace";
 "search.addToStash" = "Add to Stash";
 
 /* M9 View Modes */
@@ -262,7 +262,7 @@
 "settings.extractWrapperNote" = "Ignored when the archive has a single top-level item.";
 "settings.extractKeepArchive" = "Keep the archive after extracting";
 "settings.archiveCryptoNote" = "ZIP encryption uses legacy ZipCrypto (weak); light protection only.";
-"settings.archiveScopeNote" = "These options only affect NSpace’s built-in Compress/Extract commands. Double-clicking an archive still opens with the system default app (e.g. Bandizip).";
+"settings.archiveScopeNote" = "These options only affect HSpace’s built-in Compress/Extract commands. Double-clicking an archive still opens with the system default app (e.g. Bandizip).";
 /* Behavior + Open Mode + Permissions (QSpace-aligned subset) */
 "settings.tab.behavior" = "Behavior";
 "settings.behavior.enter" = "Return Key";
@@ -303,9 +303,9 @@
 "settings.perm.denied" = "Full Disk Access not granted ⚠";
 "settings.perm.open" = "Open System Settings";
 "settings.perm.recheck" = "Re-check";
-"settings.perm.note" = "By macOS security design no app can flip this switch for you. NSpace already appears in the System Settings list — just find it and toggle it on (no “+” needed). Return here and tap “Re-check” afterwards. Re-toggle once if it resets after an update.";
+"settings.perm.note" = "By macOS security design no app can flip this switch for you. HSpace already appears in the System Settings list — just find it and toggle it on (no “+” needed). Return here and tap “Re-check” afterwards. Re-toggle once if it resets after an update.";
 "fda.prompt.title" = "Grant Full Disk Access?";
-"fda.prompt.body" = "NSpace does not yet have Full Disk Access, so some protected folders can't be browsed. Open System Settings to grant it now?";
+"fda.prompt.body" = "HSpace does not yet have Full Disk Access, so some protected folders can't be browsed. Open System Settings to grant it now?";
 "fda.prompt.grant" = "Open Settings";
 "fda.prompt.later" = "Later";
 "fda.prompt.never" = "Don't Ask Again";
@@ -342,29 +342,13 @@
 "settings.behavior.wsTabLimit" = "Workspace tab limit";
 
 /* M22 version badge + hot update */
-"badge.tooltip" = "NSpace v%@ (build %@)";
-"badge.updateAvailable" = "New version v%@ — click to update";
-"badge.updateAvailableGeneric" = "Update available — click to update";
-"settings.autoCheckUpdates" = "Automatically check for updates on launch";
-"settings.checkForUpdates" = "Check for Updates";
-"update.checking" = "Checking for updates…";
-"update.found" = "Found new version v%@";
-"update.upToDate" = "You're up to date";
-"update.checkFailed" = "Update check failed: %@";
-"update.badFeedURL" = "Invalid update feed URL";
-"update.downloading" = "Downloading update…";
-"update.ready" = "Update ready — please restart";
-"update.readyTitle" = "Update ready (v%@)";
-"update.readyBody" = "The new version has been installed. Restart NSpace to finish updating.";
-"update.restartNow" = "Restart Now";
-"update.later" = "Later";
-"update.installFailed" = "Update failed: %@";
+"badge.tooltip" = "HSpace v%@ (build %@)";
 "settings.reveal.title" = "Take over “Reveal in Finder”";
-"settings.reveal.toggle" = "Route third-party “Show in Finder / Open File Location” into NSpace";
-"settings.reveal.on" = "Active: reveal requests open in NSpace with the item selected ✓";
+"settings.reveal.toggle" = "Route third-party “Show in Finder / Open File Location” into HSpace";
+"settings.reveal.on" = "Active: reveal requests open in HSpace with the item selected ✓";
 "settings.reveal.off" = "Inactive: reveal requests are handled by Finder";
-"settings.reveal.other" = "Currently taken over by another app: %@ (check to switch to NSpace)";
-"settings.reveal.stale" = "⚠ Stale leftover: points to missing %@ — reveal requests silently do nothing. Check to repair with NSpace, or uncheck to restore Finder.";
+"settings.reveal.other" = "Currently taken over by another app: %@ (check to switch to HSpace)";
+"settings.reveal.stale" = "⚠ Stale leftover: points to missing %@ — reveal requests silently do nothing. Check to repair with HSpace, or uncheck to restore Finder.";
 "settings.reveal.note" = "Mechanism: global NSFileViewer key (same as QSpace; proven 2026-08-26). Affects reveal/locate requests only; the folder default handler remains OS-locked to Finder. Reversible anytime, effective immediately.";
 "toast.revealOn" = "Reveal takeover enabled";
 "toast.revealOff" = "Restored to Finder";
@@ -372,6 +356,5 @@
 "settings.folderDefault.locked" = "Locked to Finder by macOS — a system-level restriction no app (QSpace included) can change. Reveal requests are covered by the switch above.";
 "settings.globalHotkey" = "Global show/hide";
 "settings.globalHotkey.unset" = "Not set — click to record";
-"settings.globalHotkey.note" = "Press it in any app: hides NSpace when frontmost, summons it otherwise (no Accessibility permission needed). Remove any old Raycast binding to avoid conflicts.";
+"settings.globalHotkey.note" = "Press it in any app: hides HSpace when frontmost, summons it otherwise (no Accessibility permission needed). Remove any old Raycast binding to avoid conflicts.";
 "toast.globalHotkeySet" = "Global hotkey active";
-"settings.autoDownloadUpdates" = "Auto-download updates and stage (restart to finish)";

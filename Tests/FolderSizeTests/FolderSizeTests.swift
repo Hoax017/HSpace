@@ -1,14 +1,14 @@
 import Testing
 import Foundation
 import FolderSize
-import NSpaceContracts
+import HSpaceContracts
 
-/// 黑盒验收：只经 Contract 公开面，对真实临时夹具树断言（无 Fake Mock）。
-/// 断言口径：totalFileAllocatedSize 是块对齐的真实占用 ≥ 逻辑字节，故用下界断言而非恒等。
+/// Black-box acceptance: only through the Contract public surface, asserting on real temp fixture trees (no fakes or mocks).
+/// Assertion basis: totalFileAllocatedSize is the block-aligned real allocation >= logical bytes, so lower bounds are used rather than equality.
 @Suite struct FolderSizeTests {
     static func tempDir() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-fs-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-fs-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
@@ -23,8 +23,8 @@ import NSpaceContracts
         try Data(count: 25_000).write(to: root.appendingPathComponent("a/b/deep.bin"))
 
         let total = try await FolderSize().size(of: root)
-        #expect(total >= 175_000)                    // 占用 ≥ 逻辑字节
-        #expect(total < 175_000 + 3 * 1_048_576)     // 且不离谱（3 文件的块对齐余量内）
+        #expect(total >= 175_000)                    // allocation >= logical bytes
+        #expect(total < 175_000 + 3 * 1_048_576)     // and not absurd (within block-alignment slack for 3 files)
     }
 
     @Test func singleRegularFileReturnsItsSize() async throws {
@@ -50,11 +50,11 @@ import NSpaceContracts
         let node = FolderSize()
         let first = try await node.size(of: root)
 
-        // 树变大但未失效 → 缓存命中返回旧值（派生缓存契约）
+        // Tree grew but no invalidation → cache hit returns the old value (derived cache contract)
         try Data(count: 200_000).write(to: root.appendingPathComponent("f2.bin"))
         #expect(try await node.size(of: root) == first)
 
-        // 失效后重算 → 看到新文件
+        // Recomputed after invalidation → sees the new file
         await node.invalidate(root)
         let refreshed = try await node.size(of: root)
         #expect(refreshed >= first + 200_000)
@@ -71,18 +71,18 @@ import NSpaceContracts
         let bogus = URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)")
         do {
             _ = try await FolderSize().size(of: bogus)
-            Issue.record("应当抛错")
+            Issue.record("Expected an error")
         } catch let e as any ClassifiedError {
             #expect(e.errorClass == .external || e.errorClass == .transient)
         } catch {
-            Issue.record("错误未分类(违反 P6.4): \(error)")
+            Issue.record("Unclassified error (violates P6.4):\(error)")
         }
     }
 
     @Test func cancellationStopsEnumeration() async throws {
         let root = try Self.tempDir()
         defer { try? FileManager.default.removeItem(at: root) }
-        // 铺一棵有点规模的树，让取消有机会赶在完成之前
+        // Lay out a tree of some size so the cancel has a chance to land before completion
         for i in 0..<40 {
             let d = root.appendingPathComponent("d\(i)")
             try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
@@ -94,13 +94,13 @@ import NSpaceContracts
         let task = Task { try await node.size(of: root) }
         task.cancel()
         do {
-            // 竞态：取消生效前已算完也是合法终态，此时结果必须完整
+            // Race: finishing before the cancel takes effect is a valid terminal state too; the result must then be complete
             let total = try await task.value
             #expect(total >= 40 * 25 * 64)
         } catch is CancellationError {
-            // 协作式取消生效：合法
+            // Cooperative cancellation took effect: valid
         } catch {
-            Issue.record("取消应抛 CancellationError，实际: \(error)")
+            Issue.record("Cancellation should throw CancellationError, got:\(error)")
         }
     }
 }

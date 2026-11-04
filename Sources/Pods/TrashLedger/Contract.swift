@@ -1,20 +1,20 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-// TrashLedger 胶囊唯一对外契约面（Axiom 3）：「放回原处」的唯一真源。
+// TrashLedger pod's sole public contract surface (Axiom 3): the single source of truth for "Put Back".
 //
-// 为什么必须自己记账：macOS 的 put-back 元数据在 Finder 私有库里，**读不到**。
-// 真机实测（2026-09-07）：废纸篓项上唯一的扩展属性是 `com.apple.provenance`（空，与来源无关）；
-// `mdls` 无任何来源线索；连 Finder 自己的 AppleScript `original item` 都返回 -1728 拿不到。
-// 所以「放回原处」只能覆盖 **NSpace 自己删掉的项**——别的应用删的项没有记录，
-// 菜单项必须诚实地不可用，而不是假装能放回。
+// Why we must keep our own ledger: macOS put-back metadata lives in Finder's private store and **cannot be read**.
+// Measured on a real machine (2026-09-07): the only extended attribute on Trash items is `com.apple.provenance` (empty, unrelated to origin);
+// `mdls` has no origin clue; even Finder's own AppleScript `original item` returns -1728.
+// So "Put Back" can only cover **items HSpace itself deleted**: items deleted by other apps have no record,
+// and the menu item must honestly be disabled rather than pretend it can restore them.
 
 public struct TrashLedgerEntry: Sendable, Hashable, Codable {
-    /// 废纸篓里的落点路径（键）
+    /// Location inside Trash (key)
     public let trashedPath: String
-    /// 删除前的原路径
+    /// Original path before deletion
     public let originalPath: String
-    /// 记账时间（用于清理陈旧条目）
+    /// Time recorded (used to clean up stale entries)
     public let recordedAt: Date
 
     public init(trashedPath: String, originalPath: String, recordedAt: Date) {

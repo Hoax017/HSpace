@@ -1,13 +1,13 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
-/// 构造工厂 + 入口（Axiom 2：无全局状态，缓存为实例私有）。
+/// Construction factory + entry point (Axiom 2: no global state; the cache is instance-private).
 public actor FolderSize: FolderSizing {
-    // 派生缓存（非权威状态，可随时丢弃）：路径 → 已算字节数。
+    // Derived cache (non-authoritative, discardable at any time): path → computed bytes.
     private var cache: [URL: Int64] = [:]
 
-    // 深枚举并发限界：同时最多 maxConcurrent 个，其余以续体排队（FIFO）。
-    // 深枚举本体在 detached task 上跑，不阻塞 actor 执行器，故并发有意义。
+    // Deep enumeration concurrency bound: at most maxConcurrent at once, the rest queue as continuations (FIFO).
+    // The deep enumeration itself runs on a detached task without blocking the actor executor, so concurrency is meaningful.
     private let maxConcurrent = 2
     private var activeScans = 0
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -20,7 +20,7 @@ public actor FolderSize: FolderSizing {
         await acquireSlot()
         defer { releaseSlot() }
 
-        try Task.checkCancellation()   // 排队等待期间若已取消，尽早退出
+        try Task.checkCancellation()   // exit early if cancelled while queued
         let total = try await runEnumeration(url)
         cache[url] = total
         return total
@@ -30,7 +30,7 @@ public actor FolderSize: FolderSizing {
         cache[url] = nil
     }
 
-    // MARK: - 并发闸（计数 + 续体队列；交接时计数不动，保持严格 maxConcurrent 上限）
+    // MARK: - Concurrency gate (counter + continuation queue; the count stays put on hand-off, keeping a strict maxConcurrent cap)
 
     private func acquireSlot() async {
         if activeScans < maxConcurrent {
@@ -40,18 +40,18 @@ public actor FolderSize: FolderSizing {
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
             waiters.append(c)
         }
-        // 被 releaseSlot 唤醒即持有名额（名额由上一持有者交接，activeScans 未变）
+        // Woken by releaseSlot = slot held (handed over by the previous holder; activeScans unchanged)
     }
 
     private func releaseSlot() {
         if waiters.isEmpty {
             activeScans -= 1
         } else {
-            waiters.removeFirst().resume()   // 交接名额给队首
+            waiters.removeFirst().resume()   // hand the slot to the head of the queue
         }
     }
 
-    // MARK: - 深枚举（detached 至后台，取消经句柄转发）
+    // MARK: - Deep enumeration (detached to background, cancellation forwarded via the handle)
 
     private func runEnumeration(_ url: URL) async throws -> Int64 {
         let handle = TaskHandleBox()
@@ -64,7 +64,7 @@ public actor FolderSize: FolderSizing {
                 handle.set(work)
             }
         } onCancel: {
-            handle.cancel()   // 转发取消 → detached task 内 Task.isCancelled 置真 → 枚举循环抛错
+            handle.cancel()   // forward cancellation → Task.isCancelled becomes true in the detached task → the enumeration loop throws
         }
     }
 }
