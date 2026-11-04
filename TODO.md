@@ -1,5 +1,7 @@
 # HSpace TODO
 
+> Forward plan and feature parity tracking: see [ROADMAP.md](ROADMAP.md).
+
 New requests go here first. Nothing is in progress right now. History and the detail behind each item are in `CHANGELOG.md`.
 
 ## Open
