@@ -1,5 +1,5 @@
 {
-  "_comment": "BG-0 强制产物。声明本项目激活的 B 类 profile;A(常驻执行卫生)与 C(横切通用)无条件生效。meta-doctor 只检查 active_profiles 里的 B 模块。",
+  "_comment": "BG-0 mandatory artifact. Declares the class B profiles active for this project; A (always-on execution hygiene) and C (cross-cutting general) apply unconditionally. meta-doctor checks only the B modules in active_profiles.",
   "project": "NSpace",
   "meta_arch_ref": "~/composable-execution-meta-architecture",
   "active_profiles": [
@@ -19,33 +19,33 @@
   "enforcement_map": [
     {
       "module": "universal",
-      "mechanism": "本文件存在 + meta-doctor 退出 0(收尾判据,挂 .git/hooks/pre-commit)",
-      "proof": "meta-doctor 退出 0 @ M0 2026-08-25:「激活模块 5 (自动通过 3/失败 0) | 结论: 激活模块全部通过 → 退出 0」"
+      "mechanism": "This file exists + meta-doctor exits 0 (completion criterion, hooked to .git/hooks/pre-commit)",
+      "proof": "meta-doctor exits 0 @ M0 2026-08-25: 'active modules 5 (auto-passed 3/failed 0) | conclusion: all active modules passed → exit 0'"
     },
     {
       "module": "always-on",
-      "mechanism": "pre-commit 跑 meta-doctor(.env.example/.gitignore/明文凭据) + scripts/pod-lint-swift.sh(Swift 栈胶囊四公理执法,替换 META 的 Go 参考件 pod-lint.sh)",
-      "proof": "pod-lint-swift: 全部胶囊与展示层通过 ✓ @ M0 2026-08-25;pre-commit 已挂 meta-doctor+pod-lint+scripts/test.sh"
+      "mechanism": "pre-commit runs meta-doctor (.env.example/.gitignore/plaintext credentials) + scripts/pod-lint-swift.sh (pod four axioms enforcement for the Swift stack, replacing META's Go reference pod-lint.sh)",
+      "proof": "pod-lint-swift: all pods and presentation layer passed ✓ @ M0 2026-08-25; pre-commit has hooked meta-doctor+pod-lint+scripts/test.sh"
     },
     {
       "module": "spec",
-      "mechanism": "spec.md 七节结构由 META doc-structure-lint.py 机检(经 meta-doctor 分发)",
-      "proof": "spec.md 七节经 doc-structure-lint 通过(含于 meta-doctor PASS) @ M0"
+      "mechanism": "spec.md The seven-section structure of spec.md is machine-checked by META doc-structure-lint.py (dispatched through meta-doctor))",
+      "proof": "spec.md The seven sections of spec.md passed doc-structure-lint (included in the meta-doctor PASS) @ M0"
     },
     {
       "module": "backend",
-      "mechanism": "BG-1..BG-9 架构评审落点:展示层(Sources/NSpaceApp)只发 Command/消费投影,严禁直接 FileManager 写操作(pod-lint-swift.sh 机检 NSpaceApp 内禁用写型 FileManager API);内核(Sources/NSpaceKernel)零业务分支;节点=Sources/Pods/* 胶囊,每胶囊 CLI 探针(nspace-probe)单独驱动;swift test 为 L-plan 门",
-      "proof": "M0: OperationKernel 状态机 2 项单测通过(scripts/test.sh: Test run with 2 tests passed);BG-1 机检已生效(pod-lint-swift 扫 NSpaceApp 写型 API);北极星实证@v0.6.0: release 四宫格静置 top -l 6 全 0.0% CPU/66MB/6线程,touch→UI ≤1.2s(wiring 代理真机采样)"
+      "mechanism": "BG-1..BG-9 architecture review outcomes: the presentation layer (Sources/NSpaceApp) only issues Commands/consumes projections, direct FileManager writes strictly forbidden (pod-lint-swift.sh machine-checks for write-type FileManager APIs in NSpaceApp); the kernel (Sources/NSpaceKernel) has zero business branches; nodes = Sources/Pods/* pods, each pod driven alone by the CLI probe (nspace-probe); swift test is the L-plan gate",
+      "proof": "M0: OperationKernel M0: 2 OperationKernel state machine unit tests passed (scripts/test.sh: Test run with 2 tests passed); BG-1 machine check active (pod-lint-swift scans NSpaceApp for write-type APIs); north star evidence @v0.6.0: release quad layout idle top -l 6 all 0.0% CPU/66MB/6 threads, touch→UI ≤1.2s (sampled on a real machine by the wiring agent))"
     },
     {
       "module": "frontend",
-      "mechanism": "FG 设计评审清单(无死控件/就地闭环/乐观回滚)在各 UI 里程碑验收时逐条过,记录于 README 交付日志",
-      "proof": "M0: 可走骨架启动截图验证(中文菜单栏/家目录窗口/无死控件);v0.6.x: 隐性语义整改(暂存架图标条)/密度收紧/选中保持修复均经用户真机反馈闭环"
+      "mechanism": "FG design review checklist (no dead controls/in-place closure/optimistic rollback) walked item by item at each UI milestone acceptance, recorded in the README delivery log",
+      "proof": "M0: walkable skeleton launch verified by screenshot (localized menu bar/home directory window/no dead controls); v0.6.x: implicit semantics rework (stash shelf icon strip)/density tightening/selection-keeping fix all closed through user feedback on a real machine"
     }
   ],
   "_swift_adaptations": [
-    "Pod Axiom 1/4 偏差如实登记:SwiftPM 强制测试放 Tests/<Pod>Tests/ 独立目录,无法与胶囊同目录;pod-lint-swift.sh 以'每胶囊必有同名非空测试目录'等价执法",
-    "Pod Axiom 3 由编译器强制:每胶囊=独立 SwiftPM library target,public 符号即契约面(Contract.swift),其余 internal",
-    "FileManager/NSWorkspace 是被控物理基质(plant)而非全局配置,胶囊内直接使用不算违反 Axiom 2;禁的是 UserDefaults.standard/全局可变单例"
+    "Pod Axiom 1/4 deviation registered truthfully: SwiftPM forces tests into a separate Tests/<Pod>Tests/ directory and cannot place them with the pod; pod-lint-swift.sh enforces the equivalent 'every pod has a same-named non-empty test directory'",
+    "Pod Axiom 3 is compiler-enforced: each pod = a separate SwiftPM library target, public symbols are the contract surface (Contract.swift), the rest internal",
+    "FileManager/NSWorkspace are the controlled physical plant, not global configuration, so direct use inside a pod does not violate Axiom 2; what is banned is UserDefaults.standard/global mutable singletons"
   ]
 }

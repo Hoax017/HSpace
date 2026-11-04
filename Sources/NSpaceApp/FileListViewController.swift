@@ -6,72 +6,72 @@ import ArchiveEngine
 import FolderSize
 import IconThumb
 
-/// 列表视图（性能核心）：view-based NSTableView、固定行高、行复用、可排序列。
-/// 只读消费 DirectoryViewModel（BG-1：本层无任何写型文件 API）；
-/// 文件变更意图一律经 FileOpsCoordinator 构造 OperationSpec 交内核执行。
-/// 装饰异步链（FolderSize/IconThumb）只对可见行发请求，滚出即取消——北极星零浪费。
+/// List view (the performance core): view-based NSTableView, fixed row height, row reuse, sortable columns.
+/// Read-only consumer of DirectoryViewModel (BG-1: no write-type file APIs in this layer);
+/// all file change intents go through FileOpsCoordinator, which builds an OperationSpec for the kernel.
+/// Async decoration chains (FolderSize/IconThumb) fire only for visible rows and cancel on scroll-out: the north star of zero waste.
 @MainActor
 final class FileListViewController: NSViewController, FileRevealTarget {
     let model: DirectoryViewModel
-    /// 文件操作桥（由窗格注入）
+    /// File-operation bridge (injected by the pane)
     weak var coordinator: FileOpsCoordinator?
-    /// 导航意图上抛（由 Pane 历史协调）
+    /// Navigation intent, passed up (history coordinated by the pane)
     var onNavigate: ((URL) -> Void)?
-    /// 返回上一步意图上抛（Backspace=back 时；交 Pane 走 browser 历史）
+    /// Go-back intent, passed up (when Backspace=back; the pane uses browser history)
     var onNavigateBack: (() -> Void)?
-    /// 用户交互上抛（窗格焦点协调）
+    /// User interaction, passed up (pane focus coordination)
     var onInteract: (() -> Void)?
-    /// 选中变化上抛（状态栏"已选 M 项"）
+    /// Selection change, passed up (status bar "M selected")
     var onSelectionChange: (() -> Void)?
-    /// 快照应用后上抛（状态栏"N 项"）
+    /// Passed up after a snapshot is applied (status bar "N items")
     var onContentChange: (() -> Void)?
 
-    let tableView = FocusReportingTableView()   // internal：UISelfTest I-26 列头排序断言需驱动 sortDescriptors
+    let tableView = FocusReportingTableView()   // internal: UISelfTest I-26 column header sort assertions need to drive sortDescriptors
     private let scrollView = BlankAreaScrollView()
-    /// 列表底部恒留的空白高度（4pt 阶梯）：专门接"空白处右键"
+    /// Blank height always kept at the bottom of the list (4pt scale), reserved for right-clicks on empty space
     static let blankTailHeight: CGFloat = 40
     private let emptyLabel = NSTextField(labelWithString: "")
 
-    /// 操作完成后待显露（选中/进入重命名）的目标
+    /// Target to reveal (select / enter rename) after an operation completes
     private var pendingReveal: (url: URL, rename: Bool)?
 
-    /// 选中态 URL 缓存（I-32）：随选中变更实时记账。applySnapshot 时 model.items 已换新，
-    /// 用现行 selectedRowIndexes 反查会把旧行号错映到位移后的新项（删除后选中"漂移"到顶行的真凶）——
-    /// 故以此缓存为真源，reloadData 后按 URL 精确匹配恢复；被删项无匹配即显式清空。
+    /// Selected URL cache (I-32): updated live on each selection change. By applySnapshot time model.items is already new,
+    /// and looking up the current selectedRowIndexes would map old row numbers onto shifted items (the real cause of selection "drifting" to the top row after a delete).
+    /// So this cache is the source of truth: after reloadData, restore by exact URL match; deleted items have no match and are explicitly cleared.
     private var selectionURLCache: Set<URL> = []
 
-    /// spring-loaded 状态：拖拽悬停的文件夹行 + 触发计时器
+    /// spring-loaded state: the folder row under a drag hover + the trigger timer
     private var springLoad: (row: Int, timer: Timer)?
 
-    // MARK: 分组（M26）——行号↔item 映射的唯一真源
+    // MARK: Grouping (M26): the single source of truth for row ↔ item mapping
 
-    /// 展示行序列（分组开启时 = [组头, 项...] 交织；关闭时 = 每项一行）。
-    /// 严禁在别处散落 index 算术：所有「行号→item」「item→行号」换算一律走本数组的 helper。
+    /// Display row sequence (grouping on = [header, items...] interleaved; off = one row per item).
+    /// Never scatter index arithmetic elsewhere: all row→item and item→row conversions go through this array's helpers.
     private enum ListRow {
         case group(key: String, title: String, count: Int)
-        case item(Int)   // 下标指向 model.items
+        case item(Int)   // Index into model.items
     }
     private var listRows: [ListRow] = []
-    /// 已折叠组键集合（重组时据此决定是否铺开组内项）
-    // 折叠已取消（用户要求：分组头印在背景条上，不是可伸缩控件）。
-    // 不留恒空集合——那会留下"看着能折其实不能"的半截实现。
-    /// 组过滤：非 nil 时仅展示该组（「仅显示此组」）；nil = 全部组
+    /// Set of collapsed group keys (used on regroup to decide whether to expand a group's items)
+    // Collapsing was dropped (owner request: group headers are printed on a background strip, not expandable controls).
+    // No always-empty set is kept: that would leave a half-implementation that "looks collapsible but isn't".
+    /// Group filter: when non-nil only that group shows ("Show Only This Group"); nil = all groups
     private var groupFilterKey: String?
-    /// 过滤态提示药丸（FG-1：过滤态不留悬疑，可一键还原）
+    /// Filter-state pill (FG-1: no mystery while filtered, one click restores)
     private let filterPill = FilterPillButton()
 
-    // 装饰状态（派生显示层，可随时丢弃）：已回填的目录大小 / 已升级的缩略图 / 在飞请求
+    // Decoration state (derived display layer, disposable at any time): backfilled directory sizes / upgraded thumbnails / in-flight requests
     private var sizeOverlay: [URL: Int64] = [:]
     private var thumbOverlay: [URL: NSImage] = [:]
     private var sizeTasks: [URL: Task<Void, Never>] = [:]
     private var thumbTasks: [URL: Task<Void, Never>] = [:]
-    /// 缩略图资格按 UTType 缓存（滚动路径零重复 conforms 计算）
+    /// Thumbnail eligibility cached per UTType (no repeated conforms work on the scroll path)
     private static var thumbEligible: [String: Bool] = [:]
 
-    /// 键盘焦点落点（PaneGrid 激活时 makeFirstResponder 此视图）
+    /// Keyboard focus target (PaneGrid calls makeFirstResponder on this view when activating)
     var focusTarget: NSView { tableView }
 
-    /// 当前目录（新建/粘贴/终端打开的落点）
+    /// Current directory (destination for new items, paste and open in terminal)
     var currentDirectory: URL { model.directory }
 
     init(model: DirectoryViewModel) {
@@ -82,14 +82,14 @@ final class FileListViewController: NSViewController, FileRevealTarget {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     override func loadView() {
         tableView.onInteract = { [weak self] in self?.onInteract?() }
         tableView.menuProvider = { [weak self] row in self?.buildMenu(clickedRow: row) }
         tableView.onReturn = { [weak self] in self?.beginRenameSelected() }
-        // 单击已选中项 → 重命名（用户报告：只有 Enter 能触发）。谓词与延迟在表视图里，
-        // 这里只接落点；废纸篓里不给改名（改了也只是改废纸篓里那份，没意义）
+        // Click on a selected item → rename (user report: only Enter could trigger it). The predicate and delay live in the table view;
+        // this only wires the result. No renaming inside the Trash (it would only rename the Trash copy, which is pointless)
         tableView.onSingleClickRename = { [weak self] row in
             guard let self, !TrashLocation.isInsideTrash(self.currentDirectory) else { return }
             self.beginRename(row: row)
@@ -99,50 +99,50 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         tableView.onSpace = { [weak self] in self?.toggleQuickLook(nil) }
         tableView.onDragExited = { [weak self] in self?.cancelSpringLoad() }
         tableView.isGroupRowProvider = { [weak self] row in self?.isGroupRow(row) ?? false }
-        tableView.style = .plain  // 紧凑密度：去 inset 大留白（QSpace 式）
+        tableView.style = .plain  // Compact density: remove the large inset margins (QSpace style)
         tableView.intercellSpacing = NSSize(width: 8, height: 0)
         tableView.rowHeight = Self.rowHeight(for: Formatters.listFontSize)
         tableView.usesAutomaticRowHeights = false
         tableView.allowsMultipleSelection = true
         tableView.usesAlternatingRowBackgroundColors = true
-        tableView.floatsGroupRows = true   // M26：组头悬浮
-        // 名称列弹性吃剩余宽、其余窄固定（QSpace/Finder 语义）——窄窗格四列俱全
+        tableView.floatsGroupRows = true   // M26: floating group headers
+        // Name column flexes to take the remaining width, the others stay narrow and fixed (QSpace/Finder semantics), so narrow panes keep all four columns
         tableView.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
         tableView.dataSource = self
         tableView.delegate = self
         tableView.target = self
         tableView.doubleAction = #selector(didDoubleClick(_:))
-        // 拖拽：拖出可达 Finder/其他 App/另一窗格/侧边栏/暂存架；拖入收 fileURL
+        // Drag: out to Finder/other apps/another pane/sidebar/stash shelf; in accepts fileURL
         tableView.registerForDraggedTypes([.fileURL])
         tableView.setDraggingSourceOperationMask([.copy, .move, .generic], forLocal: true)
         tableView.setDraggingSourceOperationMask([.copy, .move, .generic], forLocal: false)
 
         addColumn(id: "name", title: L10n.t("column.name"), width: 280, min: 110, sortable: true)
         rebuildOptionalColumns()
-        // 列头右键：QSpace 式可选列勾选
+        // Column header right-click: QSpace-style optional column toggles
         let headerMenu = NSMenu()
         headerMenu.delegate = self
         tableView.headerView?.menu = headerMenu
 
         scrollView.documentView = tableView
-        // 底部恒留一块可右键的空白（用户报告：内容铺满时「没有留出空白的位置，我没有地方点」）。
-        // 走 contentInsets 而不是加假行：表的数据源不被污染，且这块区域落在 clip view 上，
-        // 由 BlankAreaScrollView.menu(for:) 出目录级菜单。
+        // Always keep a right-clickable blank area at the bottom (user report: when content fills the view, "there's no blank area left, I have nowhere to click").
+        // Uses contentInsets rather than fake rows: the table's data source stays clean, and this area falls on the clip view,
+        // where BlankAreaScrollView.menu(for:) shows the directory-level menu.
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: Self.blankTailHeight, right: 0)
         scrollView.onBlankMenu = { [weak self] in self?.buildMenu(clickedRow: -1) }
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
-        // 滚动/尺寸变化 → 重算可见行装饰请求（只对可见行发请求，滚出取消）
+        // Scroll/size change → recompute decoration requests for visible rows (requests only for visible rows, cancelled on scroll-out)
         scrollView.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(
             self, selector: #selector(scrollBoundsChanged(_:)),
             name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
-        // 列显隐 / 列表字号变更广播：重建可选列（含 reloadData）并按字号同步行高——即时生效
+        // Column visibility / list font size broadcast: rebuild optional columns (including reloadData) and sync row height to the font; takes effect at once
         NotificationCenter.default.addObserver(
             self, selector: #selector(columnsOrFontChanged(_:)),
             name: .nspaceColumnsChanged, object: nil)
-        // 分组开关变更广播：重组行序即时生效
+        // Grouping toggle broadcast: regroup rows, takes effect at once
         NotificationCenter.default.addObserver(
             self, selector: #selector(groupingChanged(_:)),
             name: .nspaceGroupingChanged, object: nil)
@@ -155,7 +155,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         let root = NSView()
         root.addSubview(scrollView)
         root.addSubview(emptyLabel)
-        // 过滤态药丸（FG-1）：悬浮在列表右上（列头附近），常态隐藏，过滤时显现，点击还原
+        // Filter-state pill (FG-1): floats at the top right of the list (near the column header); hidden normally, shown when filtered, click to restore
         filterPill.isHidden = true
         filterPill.target = self
         filterPill.action = #selector(filterPillClicked(_:))
@@ -175,11 +175,11 @@ final class FileListViewController: NSViewController, FileRevealTarget {
             filterPill.heightAnchor.constraint(equalToConstant: 20),
         ])
         view = root
-        syncSortIndicatorFromModel()   // I-58：首次装载即挂上指示器（新窗格不再显示成"名称"）
+        syncSortIndicatorFromModel()   // I-58: attach the indicator on first load (new panes no longer show "Name")
         model.reload()
     }
 
-    /// 可选列注册表（名称恒在；I-26：全列可点击列头排序，id 与 SortSpec.Key 原始值一一对应）
+    /// Optional column registry (Name is always present; I-26: every column header sorts on click, ids map one-to-one to SortSpec.Key raw values)
     static let optionalColumns: [(id: String, titleKey: String, width: CGFloat, min: CGFloat, right: Bool, sortable: Bool)] = [
         ("dateModified", "column.dateModified", 128, 88, false, true),
         ("created", "column.created", 128, 88, false, true),
@@ -200,7 +200,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         tableView.addTableColumn(col)
     }
 
-    /// 按偏好重建可选列（列头勾选变化时调用）
+    /// Rebuilds optional columns from preferences (called when column header toggles change)
     private func rebuildOptionalColumns() {
         for col in tableView.tableColumns where col.identifier.rawValue != "name" {
             tableView.removeTableColumn(col)
@@ -210,16 +210,16 @@ final class FileListViewController: NSViewController, FileRevealTarget {
             addColumn(id: c.id, title: L10n.t(c.titleKey), width: c.width, min: c.min,
                       rightAlign: c.right, sortable: c.sortable)
         }
-        syncSortIndicatorFromModel()   // I-58：列被移除再加回，指示器会丢，须重挂
+        syncSortIndicatorFromModel()   // I-58: removing and re-adding columns loses the indicator, so reattach it
         tableView.reloadData()
     }
 
-    /// 行高随字号（大字号给更高行高避免裁切）：>=13 用 24，否则 22
+    /// Row height follows font size (larger fonts get taller rows to avoid clipping): 24 at >=13, otherwise 22
     private static func rowHeight(for fontSize: CGFloat) -> CGFloat {
         fontSize >= 13 ? 24 : 22
     }
 
-    /// 列显隐/字号变更广播处理：重建列（含 reloadData 令单元格重取字号）+ 同步行高
+    /// Handles the column visibility/font size broadcast: rebuilds columns (reloadData makes cells re-read the font) + syncs row height
     @objc private func columnsOrFontChanged(_ note: Notification) {
         tableView.rowHeight = Self.rowHeight(for: Formatters.listFontSize)
         rebuildOptionalColumns()
@@ -230,35 +230,35 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         var visible = Preferences.visibleColumns
         if let i = visible.firstIndex(of: id) { visible.remove(at: i) } else { visible.append(id) }
         Preferences.visibleColumns = visible
-        // 广播：所有窗格列表同步重建（简化：本窗格即时，其他窗格下次快照时也一致——
-        // 列集合在 viewFor 里按当前列渲染，直接全部通知）
+        // Broadcast: all pane lists rebuild in sync (simplification: this pane is immediate, others would match by their next snapshot;
+        // viewFor renders by the current columns, so just notify everyone)
         NotificationCenter.default.post(name: .nspaceColumnsChanged, object: nil)
     }
 
     private var lastSnapshotDirectory: URL?
 
     private func applySnapshot() {
-        // 目录切换：取消所有在飞装饰请求，清空回填结果（跨目录 URL 不复用）
+        // Directory switch: cancel all in-flight decoration requests and clear backfilled results (URLs aren't reused across directories)
         if lastSnapshotDirectory != model.directory {
             lastSnapshotDirectory = model.directory
             cancelDecorationWork()
             sizeOverlay.removeAll()
         }
-        // 同目录刷新也清缩略图覆盖层：文件可能已改内容（IconThumb 缓存键含 mtime，重取要么命中要么重生成）
+        // Same-directory refreshes clear the thumbnail overlay too: file contents may have changed (the IconThumb cache key includes mtime, so a refetch either hits or regenerates)
         thumbOverlay.removeAll()
         emptyLabel.isHidden = true
-        syncSortIndicatorFromModel()   // I-58：列头箭头跟上 model.sort（恢复/切目录后不再停在"名称"）
-        // FSEvents 自动刷新绝不吞掉用户选中：reloadData 前记 URL、后按 URL 恢复（含多选）。
-        // I-32：选中真源用 selectionURLCache（选中变更时记账，反映"删除前"实际选中），
-        // 不用此刻的 selectedURLs——model.items 已换新，旧行号会错映到位移后的新项造成"漂移"。
+        syncSortIndicatorFromModel()   // I-58: column header arrow follows model.sort (no longer stuck on "Name" after restore/directory change)
+        // FSEvents auto-refresh must never swallow the user's selection: record URLs before reloadData, restore by URL after (including multi-selection).
+        // I-32: the selection source of truth is selectionURLCache (updated on selection change, reflecting the actual pre-delete selection),
+        // not the current selectedURLs: model.items is already new, and old row numbers would map onto shifted items and "drift".
         let selectedBefore = selectionURLCache
-        rebuildListRows()          // M26：重组行序（分组时 [组头,项...]；否则每项一行）
+        rebuildListRows()          // M26: rebuild the row sequence (grouped: [header, items...]; otherwise one row per item)
         tableView.reloadData()
         var rows = IndexSet()
         for url in selectedBefore {
             if let r = row(forURL: url) { rows.insert(r) }
         }
-        // 精确匹配集即恢复；空集（如选中项全被删）也显式 select 清空——绝不留 reloadData 的按行号残留
+        // Restore the exact-match set; even an empty set (say all selected items were deleted) is selected explicitly to clear, never leaving reloadData's row-number leftovers
         tableView.selectRowIndexes(rows, byExtendingSelection: false)
         if model.items.isEmpty, !model.isLoading {
             showEmptyState(L10n.t("empty.folder"))
@@ -273,27 +273,27 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         emptyLabel.isHidden = false
     }
 
-    /// 仅重绘（剪切灰显变化时由协调器调用）
-    /// 仅重绘（剪切灰显变化）。
-    /// **不能用 reloadData()**：它会把选中清空，而"重绘"语义里行没变、选中就不该变
-    /// （用户报告：⌘C 之后选中框消失）。按行/列重载会保留选中。
+    /// Redraw only (called by the coordinator when cut dimming changes)
+    /// Redraw only (cut dimming changed).
+    /// **Must not use reloadData()**: it clears the selection, and in a "redraw" the rows haven't changed, so neither should the selection
+    /// (user report: the selection highlight vanished after ⌘C). Reloading by rows/columns keeps the selection.
     func redraw() {
         guard tableView.numberOfRows > 0, tableView.numberOfColumns > 0 else { return }
         tableView.reloadData(forRowIndexes: IndexSet(integersIn: 0..<tableView.numberOfRows),
                              columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns))
     }
 
-    // MARK: 分组换算（M26）——组键/桶划分委托 FileGrouping（列表/图标共用真源）；本层只管展示行序与视图态
+    // MARK: Grouping conversions (M26): group keys/bucketing are delegated to FileGrouping (source of truth shared by list and icon views); this layer handles only display row order and view state
 
-    /// 分组是否生效：偏好开 且 当前排序键为日期类
+    /// Grouping is active when the preference is on and the current sort key is date-like
     private var groupingActive: Bool {
         FileGrouping.active(model.sort)
     }
 
     static func isDateKey(_ k: SortSpec.Key) -> Bool { FileGrouping.isDateKey(k) }
 
-    /// 依当前 model.items（reader 已按 sort 排序）重建展示行序列。
-    /// 组顺序 = 组在已排序项中的首次出现顺序（排序方向天然决定组顺序）；组内保持项的相对顺序。
+    /// Rebuilds the display row sequence from the current model.items (already sorted by the reader).
+    /// Group order = first appearance among the sorted items (the sort direction naturally sets group order); items keep their relative order inside a group.
     private func rebuildListRows() {
         listRows.removeAll(keepingCapacity: true)
         guard groupingActive else {
@@ -304,7 +304,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         let groups = FileGrouping.buckets(model.items, key: model.sort.key, ascending: model.sort.ascending)
         var titles: [String: String] = [:]
         for g in groups { titles[g.key] = g.title }
-        // 过滤态失效自愈：被过滤组已不存在（换目录/排序键）→ 清过滤
+        // Filter self-heal: the filtered group no longer exists (directory/sort key changed) → clear the filter
         if let only = groupFilterKey, !groups.contains(where: { $0.key == only }) { groupFilterKey = nil }
         for g in groups where groupFilterKey == nil || groupFilterKey == g.key {
             listRows.append(.group(key: g.key, title: g.title, count: g.indices.count))
@@ -322,20 +322,20 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         }
     }
 
-    /// 行号 → model.items 下标（组头行/越界 → nil）
+    /// Row → model.items index (group header/out of bounds → nil)
     func itemIndex(forRow row: Int) -> Int? {
         guard listRows.indices.contains(row) else { return nil }
         if case .item(let i) = listRows[row] { return i }
         return nil
     }
 
-    /// 行号 → FileItem（组头行/越界 → nil）
+    /// Row → FileItem (group header/out of bounds → nil)
     func item(atRow row: Int) -> FileItem? {
         guard let i = itemIndex(forRow: row), model.items.indices.contains(i) else { return nil }
         return model.items[i]
     }
 
-    /// model.items 下标 → 行号（项在折叠组内 → nil）
+    /// model.items index → row (item in a collapsed group → nil)
     func row(forItemIndex idx: Int) -> Int? {
         for (r, lr) in listRows.enumerated() {
             if case .item(let i) = lr, i == idx { return r }
@@ -343,27 +343,27 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         return nil
     }
 
-    /// URL → 行号（未载入/在折叠组内 → nil）
+    /// URL → row (not loaded/in a collapsed group → nil)
     func row(forURL url: URL) -> Int? {
-        // 标准化路径比较 + 大小写兜底，判据统一在 model.itemIndex(forURL:)（I-39/I-55）
+        // Standardized path compare + case-insensitive fallback, unified in model.itemIndex(forURL:) (I-39/I-55)
         guard let idx = model.itemIndex(forURL: url) else { return nil }
         return row(forItemIndex: idx)
     }
 
-    /// 该行是否组头行
+    /// Whether this row is a group header
     func isGroupRow(_ row: Int) -> Bool {
         guard listRows.indices.contains(row) else { return false }
         if case .group = listRows[row] { return true }
         return false
     }
 
-    /// 应用组过滤（「仅显示此组」）
+    /// Applies a group filter ("Show Only This Group")
     func applyGroupFilter(key: String) {
         groupFilterKey = key
         rebuildRowsPreservingSelection()
     }
 
-    /// 清除组过滤（「显示全部组」/ 药丸点击）
+    /// Clears the group filter ("Show All Groups" / pill click)
     func clearGroupFilter() {
         groupFilterKey = nil
         rebuildRowsPreservingSelection()
@@ -371,7 +371,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
 
     @objc private func filterPillClicked(_ sender: Any?) { clearGroupFilter() }
 
-    /// 不触发 model reload 的重组：重建行序、reloadData、按 selectionURLCache 精确恢复选中
+    /// Regroups without a model reload: rebuilds rows, calls reloadData, restores the selection exactly from selectionURLCache
     private func rebuildRowsPreservingSelection() {
         let selectedBefore = selectionURLCache
         rebuildListRows()
@@ -384,19 +384,19 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         refreshVisibleDecorations()
     }
 
-    /// 分组开关变更广播：重组即时生效（所有列表窗格）
+    /// Grouping toggle broadcast: regrouping takes effect at once (all list panes)
     @objc private func groupingChanged(_ note: Notification) {
         rebuildRowsPreservingSelection()
     }
 
 
-    // MARK: 按需装饰（FolderSize 目录大小 + IconThumb 缩略图，只对可见行、滚出取消）
+    // MARK: On-demand decoration (FolderSize directory sizes + IconThumb thumbnails, visible rows only, cancelled on scroll-out)
 
     @objc private func scrollBoundsChanged(_ note: Notification) {
         refreshVisibleDecorations()
     }
 
-    /// 取消全部在飞装饰请求（标签/窗格挂起、目录切换时调用；已回填结果保留）
+    /// Cancels all in-flight decoration requests (called on tab/pane suspend and directory switch; backfilled results are kept)
     func cancelDecorationWork() {
         sizeTasks.values.forEach { $0.cancel() }
         sizeTasks.removeAll()
@@ -404,7 +404,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         thumbTasks.removeAll()
     }
 
-    /// 对当前可见行发起缺失的装饰请求；不再可见的在飞请求全部取消
+    /// Issues missing decoration requests for visible rows; cancels all in-flight requests no longer visible
     func refreshVisibleDecorations() {
         guard view.window != nil, !model.items.isEmpty else { return }
         let range = tableView.rows(in: tableView.visibleRect)
@@ -412,7 +412,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         var wantedThumbs = Set<URL>()
         if range.length > 0 {
             for row in range.location..<(range.location + range.length) {
-                guard let item = item(atRow: row) else { continue }   // 组头行跳过
+                guard let item = item(atRow: row) else { continue }   // Skip group headers
                 if item.isDirectory, item.size == nil, sizeOverlay[item.url] == nil {
                     wantedSizes.insert(item.url)
                     requestFolderSize(item.url)
@@ -431,7 +431,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         }
     }
 
-    /// 有内容缩略图价值的类型：图片/影音/PDF；目录与应用包用现有图标（不发 QuickLook 请求）
+    /// Types worth a content thumbnail: images/audio-video/PDF; directories and app bundles use existing icons (no QuickLook request)
     private func wantsThumbnail(_ item: FileItem) -> Bool {
         guard !item.isDirectory, !item.isPackage, let id = item.contentTypeID else { return false }
         if let cached = Self.thumbEligible[id] { return cached }
@@ -451,7 +451,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
             self.sizeTasks[url] = nil
             guard let size else { return }
             self.sizeOverlay[url] = size
-            // 仅当该行仍代表同一 URL 时刷新该行的大小列
+            // Refresh this row's size column only if it still represents the same URL
             guard let row = self.row(forURL: url) else { return }
             let col = self.tableView.column(withIdentifier: .init("size"))
             guard col >= 0 else { return }
@@ -468,7 +468,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
             guard let cg else { return }
             let image = NSImage(cgImage: cg, size: NSSize(width: 16, height: 16))
             self.thumbOverlay[url] = image
-            // 直接换图不 reload 行：避免打断可能进行中的行内重命名
+            // Swap the image directly without reloading the row, to avoid interrupting an inline rename in progress
             guard let row = self.row(forURL: url),
                   let cell = self.tableView.view(atColumn: 0, row: row, makeIfNecessary: false)
                     as? NameCellView else { return }
@@ -476,14 +476,14 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         }
     }
 
-    // MARK: 选中态
+    // MARK: Selection state
 
     var selectedItems: [FileItem] {
         tableView.selectedRowIndexes.compactMap { item(atRow: $0) }
     }
     var selectedURLs: [URL] { selectedItems.map(\.url) }
 
-    /// 按 URL 集恢复选中（视图模式切换时选中迁移用）；标准化路径匹配（尾斜杠跨源差异，I-39）
+    /// Restores the selection from a URL set (used to carry selection across view mode switches); matches standardized paths (trailing-slash differences across sources, I-39)
     func select(urls: [URL]) {
         let wanted = Set(urls.map { $0.standardizedFileURL.path })
         var indexes = IndexSet()
@@ -495,7 +495,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         if let first = indexes.first { tableView.scrollRowToVisible(first) }
     }
 
-    // MARK: 显露（新建后选中并进入重命名）
+    // MARK: Reveal (select and enter rename after creating)
 
     func prepareReveal(_ url: URL, rename: Bool) { pendingReveal = (url, rename) }
 
@@ -504,38 +504,38 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         return pendingReveal
     }
 
-    /// UISelfTest（I-55）：是否还挂着待定位目标——用于验证落空的 pending 会被就地作废，
-    /// 不会留成日后突然"幽灵跳选"并抢键盘焦点的定时炸弹
+    /// UISelfTest (I-55): whether a pending reveal is still set; verifies a missed pending target is voided on the spot
+    /// and not left as a time bomb that later "ghost-selects" and steals keyboard focus
     var uiTestHasPendingReveal: Bool { pendingReveal != nil }
 
     private func revealPendingIfPossible() {
         guard let pending = pendingReveal else { return }
         guard let row = row(forURL: pending.url) else {
-            // 目标所在目录已经载入、却仍然找不到目标（被隐藏文件过滤掉 / 已被删除 / 名字对不上）：
-            // 就地作废。否则这条 pending 会一直挂着，等到用户日后任意一次刷新或进入某个恰好
-            // 含同名项的目录时突然"幽灵跳选"，还顺手抢走键盘焦点。
+            // The target's directory has loaded yet the target still isn't found (filtered as hidden / deleted / name mismatch):
+            // void it on the spot. Otherwise the pending target stays set until some later refresh or entering a directory that happens
+            // to have an item of that name, where it suddenly "ghost-selects" and steals keyboard focus too.
             if model.isLoadedDirectory(forParentOf: pending.url) { pendingReveal = nil }
             return
         }
         pendingReveal = nil
         tableView.selectRowIndexes([row], byExtendingSelection: false)
         tableView.scrollRowToVisible(row)
-        // I-48：定位后聚焦表格，令选中显示蓝色强调高亮——否则表格非 first responder 时选中只显示
-        // 未强调灰（深色模式下几乎不可见），用户报"打开了但没蓝色选中"（浏览器/外部 reveal 落新窗时尤甚）。
+        // I-48: focus the table after revealing so the selection shows the blue accent highlight; otherwise, without first responder, it shows
+        // only an unemphasized gray (nearly invisible in dark mode), and users report "it opened but no blue selection" (especially for browser/external reveals landing in a new window).
         if !pending.rename { view.window?.makeFirstResponder(tableView) }
         if pending.rename { beginRename(row: row) }
     }
 
-    // MARK: 打开行为（spec 功能 9：文件走系统默认 App；文件夹窗格内导航）
+    // MARK: Open behaviour (spec feature 9: files open in the system default app; folders navigate within the pane)
 
     @objc private func didDoubleClick(_ sender: Any?) {
         let row = tableView.clickedRow
-        // 双击空白（clickedRow<0）：按使用习惯前往上层文件夹
+        // Double-clicking empty space (clickedRow<0): go to the parent folder, per usage preference
         if row < 0 {
             if Preferences.doubleClickBlank { goUp() }
             return
         }
-        guard let item = item(atRow: row) else { return }   // 组头行双击无操作
+        guard let item = item(atRow: row) else { return }   // Double-clicking a group header does nothing
         open(item)
     }
 
@@ -543,39 +543,39 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         if item.isDirectory && !item.isPackage {
             onNavigate?(item.url)
         } else {
-            coordinator?.recordAccess(item.url)   // M28：打开文件 = 一次使用记账
+            coordinator?.recordAccess(item.url)   // M28: opening a file = one usage record
             NSWorkspace.shared.open(item.url)
         }
     }
 
-    /// 前往上层文件夹（双击空白 / Backspace=up 共用；已在根目录则不动）
+    /// Goes to the parent folder (shared by double-click on empty space / Backspace=up; no-op at the root)
     private func goUp() {
         let parent = currentDirectory.deletingLastPathComponent().standardizedFileURL
         guard parent.path != currentDirectory.standardizedFileURL.path else { return }
         onNavigate?(parent)
     }
 
-    /// Backspace 键分发（使用习惯：忽略/返回/移废纸篓/上层）
+    /// Backspace key dispatch (usage preference: ignore/back/move to Trash/up)
     private func handleBackspace() {
         switch Preferences.backspaceAction {
         case "back": onNavigateBack?()
         case "delete": coordinator?.moveToTrash(selectedURLs)
         case "up": goUp()
-        default: break  // ignore：不拦截
+        default: break  // ignore: don't intercept
         }
     }
 
-    // MARK: 右键菜单
+    // MARK: Context menu
 
     private func buildMenu(clickedRow row: Int) -> NSMenu {
-        // 组头行右键：组过滤菜单（仅显示此组 / 显示全部组）
+        // Right-click on a group header: group filter menu (Show Only This Group / Show All Groups)
         if isGroupRow(row), case .group(let key, _, _) = listRows[row] {
             return buildGroupMenu(key: key)
         }
         return FileContextMenuBuilder.menu(selection: selectedItems, directory: currentDirectory, target: self)
     }
 
-    /// 组头右键菜单（FG-3：仅显示此组 / 显示全部组）
+    /// Group header context menu (FG-3: Show Only This Group / Show All Groups)
     private func buildGroupMenu(key: String) -> NSMenu {
         let menu = NSMenu()
         let only = menu.addItem(withTitle: L10n.t("group.filter.only"),
@@ -596,7 +596,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
 
     @objc private func groupFilterAll(_ sender: Any?) { clearGroupFilter() }
 
-    // MARK: 行内重命名（FG-6：失败原子回滚旧名 + beep + 原位红字 2s）
+    // MARK: Inline rename (FG-6: on failure, atomically roll back the old name + beep + red text in place for 2s)
 
     private func beginRenameSelected() {
         let rows = tableView.selectedRowIndexes
@@ -616,11 +616,11 @@ final class FileListViewController: NSViewController, FileRevealTarget {
     private func submitRename(_ item: FileItem, newName: String, row: Int) {
         coordinator?.rename(item.url, to: newName) { [weak self] ok in
             if !ok { self?.flashRenameError(row: row) }
-            // 成功：coordinator 已 reload；失败：未 reload，label 仍显旧名（原子回滚）
+            // Success: the coordinator already reloaded; failure: no reload, the label still shows the old name (atomic rollback)
         }
     }
 
-    /// FG-6 就地错误：beep + 行上红字 2s，不跳页不白屏
+    /// FG-6 in-place error: beep + red text on the row for 2s, no page jump or blank screen
     private func flashRenameError(row: Int) {
         NSSound.beep()
         guard item(atRow: row) != nil else { return }
@@ -638,40 +638,40 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         }
     }
 
-    // MARK: 菜单命令（响应链）
+    // MARK: Menu commands (responder chain)
 
     @objc func toggleHiddenFiles(_ sender: Any?) { model.includeHidden.toggle() }
     @objc func refresh(_ sender: Any?) { model.reload() }
 
-    /// 使用分组开关（显示菜单）：翻转偏好并广播，所有列表窗格重组即时生效
+    /// Use Groups toggle (View menu): flips the preference and broadcasts; all list panes regroup at once
     @objc func toggleGrouping(_ sender: Any?) {
         Preferences.listGrouping.toggle()
         NotificationCenter.default.post(name: .nspaceGroupingChanged, object: nil)
     }
 
-    // 复制/剪切/粘贴/拷贝路径（Edit 菜单 ⌘C/⌘X/⌘V/⌘⇧C 与右键菜单共用）
+    // Copy/Cut/Paste/Copy Path (shared by the Edit menu ⌘C/⌘X/⌘V/⌘⇧C and the context menu)
     @objc func copyItems(_ sender: Any?) { coordinator?.copy(selectedURLs) }
     @objc func cutItems(_ sender: Any?) { coordinator?.cut(selectedURLs) }
-    /// 放回原处（仅废纸篓内；只对台账里有记录的项有效，其余诚实置灰）
+    /// Put Back (only inside the Trash; works only for items in the ledger, others honestly grayed out)
     @objc func putBackItems(_ sender: Any?) { coordinator?.putBack(selectedURLs) }
 
-    // ---- 自测通道（I-65）----
-    /// 真实 scrollView 的底部内缩（不复刻常量：常量改了而接线没改，这条才会红）
+    // ---- Self-test channel (I-65) ----
+    /// Bottom inset of the real scrollView (doesn't copy the constant: this only goes red if the constant changes without the wiring)
     var uiTestBottomInset: CGFloat { scrollView.contentInsets.bottom }
-    /// 走 BlankAreaScrollView 真实注入的回调（不直调 buildMenu，否则接线断了也验不出）
+    /// Goes through the callback actually injected into BlankAreaScrollView (not buildMenu directly, or broken wiring would go undetected)
     func uiTestBlankAreaMenu() -> NSMenu? { scrollView.onBlankMenu?() }
 
     @objc func pasteItems(_ sender: Any?) { coordinator?.paste(into: currentDirectory, revealIn: self) }
-    /// 拷贝路径（⌘⇧C）：**空选中时回落到当前目录**——用户点文件夹空白处按快捷键，
-    /// 意图就是"复制我现在所在这个文件夹的路径"（Finder ⌥⌘C 在空白处同样给当前文件夹）。
-    /// 此前只传 selectedURLs，空选中即空数组，copyPaths 的 guard 直接吞掉，表现为快捷键没反应。
+    /// Copy Path (⌘⇧C): **with nothing selected, falls back to the current directory**. Pressing the shortcut on empty space in a folder
+    /// means "copy the path of the folder I'm in" (Finder's ⌥⌘C on empty space also gives the current folder).
+    /// It used to pass only selectedURLs, an empty array with no selection, which copyPaths' guard swallowed, so the shortcut seemed dead.
     @objc func copyPath(_ sender: Any?) { copyPath(to: .general) }
 
-    /// 自测注入私有 pasteboard 用（产品路径恒走 .general）
+    /// For self-tests to inject a private pasteboard (the product path always uses .general)
     func copyPath(to pasteboard: NSPasteboard) {
         coordinator?.copyPaths(selectedURLs.isEmpty ? [currentDirectory] : selectedURLs, to: pasteboard)
     }
-    // NSText 标准选择器转发（当表视图为第一响应者时 ⌘C/⌘X/⌘V 生效）
+    // NSText standard selector forwarding (⌘C/⌘X/⌘V work when the table view is first responder)
     @objc func copy(_ sender: Any?) { copyItems(sender) }
     @objc func cut(_ sender: Any?) { cutItems(sender) }
     @objc func paste(_ sender: Any?) { pasteItems(sender) }
@@ -679,7 +679,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
     @objc func duplicateItems(_ sender: Any?) { coordinator?.duplicate(selectedURLs) }
     @objc func moveToTrash(_ sender: Any?) { coordinator?.moveToTrash(selectedURLs) }
 
-    // 归档：压缩任意选中；解压支持的归档（into=nil 同目录 / 选目录）
+    // Archives: compress any selection; extract supported archives (into=nil same directory / choose directory)
     @objc func compressItems(_ sender: Any?) { coordinator?.compress(selectedURLs) }
     @objc func extractItems(_ sender: Any?) { coordinator?.extract(selectedArchiveURLs, into: nil) }
     @objc func extractItemsTo(_ sender: Any?) {
@@ -694,7 +694,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         coordinator?.extract(selectedArchiveURLs, into: dir)
     }
 
-    /// 选中项里可解压的归档 URL（右键"解压"据此过滤）
+    /// Extractable archive URLs in the selection (context menu "Extract" filters on this)
     private var selectedArchiveURLs: [URL] {
         selectedItems.filter { ArchiveEngineNode.isSupportedArchive($0.url) }.map(\.url)
     }
@@ -723,7 +723,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         NSWorkspace.shared.open(selectedURLs, withApplicationAt: app, configuration: cfg)
     }
 
-    /// AirDrop 选中项（工具栏图标入口；失败 beep 不弹窗）
+    /// AirDrop the selection (toolbar icon entry; failure beeps, no alert)
     @objc func airdropSelected(_ sender: Any?) {
         let urls = selectedURLs
         guard !urls.isEmpty,
@@ -738,10 +738,10 @@ final class FileListViewController: NSViewController, FileRevealTarget {
     }
 
     @objc func openInTerminal(_ sender: Any?) {
-        // 选中文件夹则进其内，否则用当前目录
+        // Enter the selected folder if any, otherwise use the current directory
         let dir: URL = selectedItems.first(where: { $0.isDirectory })?.url ?? currentDirectory
         let ws = NSWorkspace.shared
-        // 终端选择走设置（auto=iTerm 优先回退 Terminal）
+        // Terminal choice comes from settings (auto = prefer iTerm, fall back to Terminal)
         let choice = Preferences.terminalChoice
         let terminal: URL? = choice == "auto"
             ? (ws.urlForApplication(withBundleIdentifier: "com.googlecode.iterm2")
@@ -751,10 +751,10 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         ws.open([dir], withApplicationAt: terminal, configuration: NSWorkspace.OpenConfiguration())
     }
 
-    // MARK: Quick Look（空格开关；方向键经 selectionDidChange 连续预览）
+    // MARK: Quick Look (space toggles; arrow keys preview continuously via selectionDidChange)
 
-    /// I-45：收起走淡出而非"缩到图标"（用户嫌缩放突兀）——收起前置位，sourceFrame 返回 .zero
-    /// 令 QL 用淡出（直接消失）；开启时复位以保留从图标放大的进入手感。QL 关闭时会重查 sourceFrame。
+    /// I-45: dismiss with a fade rather than "shrink to icon" (users found the zoom abrupt): set before dismissing so sourceFrame returns .zero
+    /// and QL fades (just disappears); reset on opening to keep the zoom-from-icon entry. QL re-queries sourceFrame when closing.
     private var quickLookDismissing = false
 
     @objc func toggleQuickLook(_ sender: Any?) {
@@ -786,8 +786,8 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         onNavigate?(pkg.url)
     }
 
-    /// UITEST 专用（I-45）：验证 QL 收起态 sourceFrame 退化为 .zero（→ 淡出/直接消失），
-    /// 开启态为行内图标矩形（→ 从图标放大）。QL 面板动画本身无法无头断言，此处只验分支逻辑。
+    /// UITEST only (I-45): verifies sourceFrame degrades to .zero when dismissing (→ fade/disappear),
+    /// and is the row's icon rect when open (→ zoom from icon). The QL panel animation can't be asserted headless, so this only checks the branch logic.
     func uiTestQLSourceFrame(dismissing: Bool, for url: URL) -> NSRect {
         quickLookDismissing = dismissing
         let r = previewPanel(nil, sourceFrameOnScreenFor: url as NSURL)
@@ -796,20 +796,20 @@ final class FileListViewController: NSViewController, FileRevealTarget {
     }
 }
 
-// MARK: - 菜单校验（按选中态启用/禁用）
+// MARK: - Menu validation (enable/disable by selection state)
 
 extension FileListViewController: @preconcurrency NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         let hasSelection = !tableView.selectedRowIndexes.isEmpty
         let single = tableView.selectedRowIndexes.count == 1
         switch menuItem.action {
-        // 拷贝路径恒可用：空选中回落到当前目录（归在 hasSelection 组里会把菜单项禁用，
-        // 连带 ⌘⇧C 快捷键在空白处直接哑火——用户报的正是这个）
+        // Copy Path is always available: with no selection it falls back to the current directory (in the hasSelection group the item would be disabled,
+        // killing ⌘⇧C on empty space too, which is exactly what users reported)
         case #selector(copyPath(_:)):
             return true
         case #selector(putBackItems(_:)):
             return TrashLocation.isInsideTrash(currentDirectory) && !selectedURLs.isEmpty
-        // 在废纸篓里做副本 = 又造一个只能被清空的文件，禁掉
+        // A duplicate in the Trash = one more file that can only be emptied, so disable it
         case #selector(duplicateItems(_:)) where TrashLocation.isInsideTrash(currentDirectory):
             return false
         case #selector(copyItems(_:)), #selector(cutItems(_:)),
@@ -825,9 +825,9 @@ extension FileListViewController: @preconcurrency NSMenuItemValidation {
         case #selector(toggleGrouping(_:)):
             menuItem.state = Preferences.listGrouping ? .on : .off
             return true
-        // 废纸篓里禁掉「把活文件放进来」的动作（Finder 同样禁用）。废纸篓可浏览之后
-        // 这些入口才第一次可达：放进来的文件既无撤销、也无「放回原处」元数据，
-        // 将来清空废纸篓就真没了。
+        // Inside the Trash, disable actions that "bring live files in" (Finder disables them too). These became reachable only once
+        // the Trash was browsable: files put here have no undo and no Put Back metadata,
+        // so emptying the Trash later would really lose them.
         case #selector(pasteItems(_:)), #selector(paste(_:)):
             return TrashLocation.isInsideTrash(currentDirectory) ? false : pasteboardHasFiles
         case #selector(newFolderHere(_:)), #selector(newFileHere(_:)):
@@ -843,7 +843,7 @@ extension FileListViewController: @preconcurrency NSMenuItemValidation {
     }
 }
 
-// MARK: - 列头右键菜单（可选列勾选，QSpace 式）
+// MARK: - Column header context menu (optional column toggles, QSpace style)
 
 extension FileListViewController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -870,18 +870,18 @@ extension FileListViewController: NSMenuDelegate {
 
 extension Notification.Name {
     static let nspaceColumnsChanged = Notification.Name("nspaceColumnsChanged")
-    /// 分组开关变更（显示菜单「使用分组」/ 设置项）：所有列表窗格重建行序即时生效
+    /// Grouping toggle changed (View menu "Use Groups" / settings): all list panes rebuild row order at once
     static let nspaceGroupingChanged = Notification.Name("nspaceGroupingChanged")
 }
 
-// MARK: - 数据源 / 委托
+// MARK: - Data source / delegate
 
 extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
     func numberOfRows(in tableView: NSTableView) -> Int {
         listRows.count
     }
 
-    // MARK: 组行机制（M26）：isGroupRow + 组头不可选 + 组头行高 24
+    // MARK: Group row mechanics (M26): isGroupRow + headers unselectable + header row height 24
 
     func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
         isGroupRow(row)
@@ -896,7 +896,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        // 组头行：整行铺满的组头视图（仅首列构建一次，其余列返回 nil）
+        // Group header row: full-width header view (built once for the first column, nil for the others)
         if isGroupRow(row) {
             guard tableColumn == nil || tableColumn == tableView.tableColumns.first else { return nil }
             guard case .group(_, let title, let count) = listRows[row] else { return nil }
@@ -911,7 +911,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
             let cell = tableView.makeView(withIdentifier: .init("nameCell"), owner: nil) as? NameCellView
                 ?? NameCellView(identifier: .init("nameCell"))
             let cut = coordinator?.isCut(item.url) ?? false
-            // 快路径先出类型图标；已到货的内容缩略图直接用（升级路径见 requestThumbnail）
+            // Fast path shows the type icon first; a delivered content thumbnail is used directly (upgrade path in requestThumbnail)
             cell.configure(icon: thumbOverlay[item.url] ?? Formatters.icon(for: item),
                            name: item.name, dimmed: item.isHidden || cut)
             return cell
@@ -927,7 +927,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
         case "added":
             cell.configure(item.added.map { Formatters.relativeDate($0) } ?? "—", alignment: .left, monospacedDigits: true)
         case "size":
-            // 文件用快照字节数；目录快照为 nil → 已回填的 FolderSize 结果，否则占位"—"
+            // Files use the snapshot byte count; directories are nil in the snapshot → backfilled FolderSize result, otherwise placeholder "—"
             if let bytes = item.size ?? sizeOverlay[item.url] {
                 let parts = Formatters.sizeParts(fromByteCount: bytes)
                 cell.configureSize(value: parts.value, unit: parts.unit, alignment: .right)
@@ -946,25 +946,25 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
         guard let d = tableView.sortDescriptors.first, let key = d.key,
               let sortKey = SortSpec.Key(rawValue: key) else { return }
         model.sort = SortSpec(key: sortKey, ascending: d.ascending, foldersFirst: model.sort.foldersFirst)
-        // I-50：改排序即落盘（否则排序只在干净退出才保存，非干净退出重启回退到旧排序）——同 I-47 导航即落盘
+        // I-50: persist on sort change (otherwise sorting saves only on a clean exit, and an unclean exit restarts with the old sort); same as I-47 persist-on-navigate
         (NSApp.delegate as? AppDelegate)?.noteStateChanged()
     }
 
-    /// 把 model.sort 反向同步到列头指示器（I-58）。
-    /// 此前数据流是**单向**的：只有「用户点列头 → sortDescriptorsDidChange → model.sort」，
-    /// 没有反向。于是会话恢复、新建窗格/标签、重建可选列之后，数据按 model.sort 排对了，
-    /// 列头的排序箭头却停在默认的「名称」上——用户看到的就是「排序状态丢了」。
-    /// 列 id 与 SortSpec.Key.rawValue 一一对应（addColumn 用同一 id 建 sortDescriptorPrototype）。
+    /// Syncs model.sort back to the column header indicator (I-58).
+    /// The data flow used to be **one-way**: only "user clicks header → sortDescriptorsDidChange → model.sort",
+    /// with no way back. So after session restore, new panes/tabs or rebuilding optional columns, data sorted correctly by model.sort
+    /// while the column header arrow stayed on the default "Name", and users saw "the sort state was lost".
+    /// Column ids map one-to-one to SortSpec.Key.rawValue (addColumn builds sortDescriptorPrototype from the same id).
     private func syncSortIndicatorFromModel() {
         let wanted = NSSortDescriptor(key: model.sort.key.rawValue, ascending: model.sort.ascending)
         let current = tableView.sortDescriptors.first
-        // 已一致就别赋值：赋值会回调 sortDescriptorsDidChange，白白触发一次落盘
+        // Skip the assignment if already consistent: it calls back sortDescriptorsDidChange and triggers a needless save
         guard current?.key != wanted.key || current?.ascending != wanted.ascending else { return }
         tableView.sortDescriptors = [wanted]
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
-        // I-32：选中真源记账（用户点选/程序化 select 都经此；reloadData 本身不触发，故缓存保留删除前值）
+        // I-32: selection source-of-truth bookkeeping (user clicks and programmatic selects both come here; reloadData itself doesn't, so the cache keeps the pre-delete value)
         selectionURLCache = Set(selectedURLs)
         onSelectionChange?()
         if QLPreviewPanel.sharedPreviewPanelExists(),
@@ -973,37 +973,37 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
         }
     }
 
-    // MARK: 拖拽源（可拖到 Finder/其他 App/另一窗格/侧边栏书签/暂存架）
+    // MARK: Drag source (can drag to Finder/other apps/another pane/sidebar bookmarks/stash shelf)
 
     func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> (any NSPasteboardWriting)? {
-        // I-43：AppKit 起拖时才调本方法——置位供 mouseDown 区分"拖拽"与"纯单击已选中行"
+        // I-43: AppKit calls this only when a drag starts; sets the flag so mouseDown can tell "drag" from "plain click on a selected row"
         (tableView as? FocusReportingTableView)?.dragInitiated = true
-        guard let item = item(atRow: row) else { return nil }   // 组头行不可拖
+        guard let item = item(atRow: row) else { return nil }   // Group headers can't be dragged
         return item.url as NSURL
     }
 
-    // MARK: 投放目标（BG-1：落点只发意图，kind 判定与提交在 coordinator）
+    // MARK: Drop target (BG-1: the destination only sends intent; kind decision and submission live in the coordinator)
 
     func tableView(_ tableView: NSTableView, validateDrop info: any NSDraggingInfo,
                    proposedRow row: Int, proposedDropOperation op: NSTableView.DropOperation) -> NSDragOperation {
         guard let urls = Self.draggedFileURLs(info), !urls.isEmpty else {
             cancelSpringLoad(); return []
         }
-        // 落点归一：目录行=投进该文件夹；文件行/组头/空白=投进当前目录
+        // Normalize the destination: directory row = drop into that folder; file row/header/empty space = drop into the current directory
         var targetRow = -1
         if op == .on, let it = item(atRow: row), it.isDirectory, !it.isPackage {
             targetRow = row
         }
         let target = targetRow >= 0 ? (item(atRow: targetRow)?.url ?? currentDirectory) : currentDirectory
-        // 拒绝把目录投进它自己/子孙
+        // Refuse dropping a directory into itself/a descendant
         guard urls.allSatisfy({ !FileOpsCoordinator.isSelfOrDescendant(destination: target, ofSource: $0) }) else {
             cancelSpringLoad(); return []
         }
-        // ⌥ 按下时 AppKit 已把源掩码过滤为 .copy
+        // With ⌥ held, AppKit has already filtered the source mask to .copy
         let optionCopy = info.draggingSourceOperationMask == .copy
-        // 落点是移动还是复制：按拖放偏好 + ⌥ 统一判定（视觉反馈与实际提交共用同一逻辑）
+        // Move or copy at the destination: decided uniformly from the drag preference + ⌥ (visual feedback and the actual submission share the logic)
         let willMove = FileOpsCoordinator.effectiveMove(urls: urls, into: target, optionCopy: optionCopy)
-        // 移动落在同目录是无操作 → 拒绝（复制放行，语义=制作副本）
+        // A move into the same directory is a no-op → refuse (copy is allowed, meaning make a duplicate)
         let destPath = target.standardizedFileURL.path
         if willMove, urls.allSatisfy({ $0.standardizedFileURL.deletingLastPathComponent().path == destPath }) {
             cancelSpringLoad(); return []
@@ -1012,10 +1012,10 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
             tableView.setDropRow(targetRow, dropOperation: .on)
             scheduleSpringLoad(row: targetRow, url: target)
         } else {
-            tableView.setDropRow(-1, dropOperation: .on)  // 整表高亮 = 投进当前目录
+            tableView.setDropRow(-1, dropOperation: .on)  // Whole-table highlight = drop into the current directory
             cancelSpringLoad()
         }
-        // 光标反馈与实际提交一致（同卷移动 / 跨卷复制 / 偏好覆盖）
+        // Cursor feedback matches the actual submission (same-volume move / cross-volume copy / preference override)
         return willMove ? .move : .copy
     }
 
@@ -1037,7 +1037,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
                                             options: [.urlReadingFileURLsOnly: true]) as? [URL]
     }
 
-    // MARK: spring-loaded：拖拽悬停文件夹行 ~0.8s 自动导航进入（计时器实现，简单可靠优先）
+    // MARK: spring-loaded: hovering a drag over a folder row for ~0.8s navigates into it (timer-based, simple and reliable first)
 
     private func scheduleSpringLoad(row: Int, url: URL) {
         guard springLoad?.row != row else { return }
@@ -1058,7 +1058,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 }
 
-// MARK: - Quick Look 数据源/委托（多选预览；面板内方向键翻页由 QL 自持）
+// MARK: - Quick Look data source/delegate (multi-selection preview; arrow paging inside the panel is handled by QL)
 
 extension FileListViewController: @preconcurrency QLPreviewPanelDataSource, @preconcurrency QLPreviewPanelDelegate {
     func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
@@ -1071,14 +1071,14 @@ extension FileListViewController: @preconcurrency QLPreviewPanelDataSource, @pre
         return urls[index] as NSURL
     }
 
-    /// 面板收到键盘事件先转回表（空格关面板由面板自己处理；方向键落回列表推进选中）
+    /// Key events on the panel go back to the table first (the panel handles space-to-close itself; arrows fall back to the list to advance the selection)
     func previewPanel(_ panel: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
         guard event.type == .keyDown, event.keyCode == 125 || event.keyCode == 126 else { return false }
         focusTarget.keyDown(with: event)
         return true
     }
 
-    /// 缩放动画起点=行内图标位置（Finder 手感）；收起时返回 .zero → QL 淡出（I-45 不再缩到图标）
+    /// Zoom animation origin = the row's icon position (Finder feel); returns .zero when dismissing → QL fades (I-45: no more shrink to icon)
     func previewPanel(_ panel: QLPreviewPanel!, sourceFrameOnScreenFor item: (any QLPreviewItem)!) -> NSRect {
         if quickLookDismissing { return .zero }
         guard let url = (item as? NSURL) as URL?,
@@ -1090,7 +1090,7 @@ extension FileListViewController: @preconcurrency QLPreviewPanelDataSource, @pre
     }
 }
 
-// MARK: - 过滤态药丸（FG-1：10% 药丸，克制样式，深浅色自适应重解析）
+// MARK: - Filter-state pill (FG-1: 10% pill, restrained style, re-resolved for light/dark)
 
 @MainActor
 final class FilterPillButton: NSButton {
@@ -1108,53 +1108,53 @@ final class FilterPillButton: NSButton {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let base = NSColor.controlBackgroundColor
-            let bg = base.blended(withFraction: 0.10, of: Theme.accent) ?? base   // 10% 药丸
+            let bg = base.blended(withFraction: 0.10, of: Theme.accent) ?? base   // 10% pill
             layer?.backgroundColor = bg.cgColor
             layer?.cornerRadius = 8
         }
     }
 }
 
-// MARK: - UISelfTest 探针（M26：只读断言入口，非产品路径）
+// MARK: - UISelfTest probes (M26: read-only assertion hooks, not a product path)
 
 extension FileListViewController {
-    /// 组头行数（分组断言用）
+    /// Number of group headers (for grouping assertions)
     var uiTestGroupHeaderCount: Int {
         listRows.reduce(0) { if case .group = $1 { return $0 + 1 }; return $0 }
     }
-    /// 组头标题串（按行序）
+    /// Group header titles (in row order)
     var uiTestGroupTitles: [String] {
         listRows.compactMap { if case .group(_, let t, _) = $0 { return t }; return nil }
     }
-    /// 组头（标题, 项数）二元组（按行序）。折叠已取消，所以不再有第三项。
+    /// Group header (title, item count) pairs (in row order). Collapsing was dropped, so there's no third element any more.
     var uiTestGroups: [(title: String, count: Int)] {
         listRows.compactMap {
             if case .group(_, let t, let c) = $0 { return (t, c) }
             return nil
         }
     }
-    /// 组键（稳定键，按行序）
+    /// Group keys (stable keys, in row order)
     var uiTestGroupKeys: [String] {
         listRows.compactMap { if case .group(let k, _, _) = $0 { return k }; return nil }
     }
-    /// 当前展示行总数
+    /// Total number of displayed rows
     var uiTestRowCount: Int { listRows.count }
-    /// 项行数（非组头行）
+    /// Number of item rows (non-header)
     var uiTestItemRowCount: Int {
         listRows.reduce(0) { if case .item = $1 { return $0 + 1 }; return $0 }
     }
-    /// 过滤态药丸是否可见
+    /// Whether the filter-state pill is visible
     var uiTestFilterPillVisible: Bool { !filterPill.isHidden }
-    /// 分组是否生效（偏好开 + 日期排序键）
+    /// Whether grouping is active (preference on + date sort key)
     var uiTestGroupingActive: Bool { groupingActive }
-    /// 走表视图**真实** mouseDown 分支点组头（不复刻判定：接线断了这条才会红）
+    /// Clicks a group header through the table view's **real** mouseDown branch (doesn't copy the decision: this goes red only if the wiring breaks)
     func uiTestClickGroupRowRaw(_ row: Int) {
         let rect = tableView.rect(ofRow: row)
         guard let win = view.window,
@@ -1167,8 +1167,8 @@ extension FileListViewController {
                                           eventNumber: 0, clickCount: 1, pressure: 1) else { return }
         tableView.mouseDown(with: ev)
     }
-    /// 选中第一个项行（组头不可选，所以要跳过组头）
-    /// 按 URL 集选中（走真实选中变更链）
+    /// Selects the first item row (headers are unselectable, so they must be skipped)
+    /// Selects by URL set (through the real selection change chain)
     func uiTestSelect(urls: [URL]) {
         let wanted = Set(urls.map(\.standardizedFileURL.path))
         var idx = IndexSet()
@@ -1178,15 +1178,15 @@ extension FileListViewController {
         }
         tableView.selectRowIndexes(idx, byExtendingSelection: false)
     }
-    /// 视图层**原始**选中行数（直查 tableView，不经任何缓存——
-    /// reloadData 清空选中这类问题只有直查才看得见）
+    /// **Raw** selected row count at the view layer (queries tableView directly, bypassing any cache;
+    /// problems like reloadData clearing the selection are visible only by querying directly)
     var uiTestRawSelectionCount: Int { tableView.selectedRowIndexes.count }
 
     func uiTestSelectFirstItem() {
         guard let r = uiTestFirstItemRow else { return }
         tableView.selectRowIndexes([r], byExtendingSelection: false)
     }
-    /// 组头单元格真有底色（"印在背景条上"验的是这个，不是验没崩）
+    /// The header cell really has a background ("printed on a background strip" is what this verifies, not just that nothing crashed)
     var uiTestGroupHeaderIsBackgroundBar: Bool {
         guard let r = listRows.firstIndex(where: { if case .group = $0 { return true }; return false }),
               let cell = tableView.view(atColumn: 0, row: r, makeIfNecessary: true) as? GroupHeaderView,
@@ -1194,7 +1194,7 @@ extension FileListViewController {
         return bg.alpha > 0.01
     }
 
-    /// 首个非组头（项）行的表行号
+    /// Table row of the first non-header (item) row
     var uiTestFirstItemRow: Int? {
         for (r, lr) in listRows.enumerated() { if case .item = lr { return r } }
         return nil

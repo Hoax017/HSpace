@@ -1,11 +1,11 @@
 import AppKit
 
-/// 外观主题小工具（App 层）：强调色与明暗模式的唯一读取点。
-/// 读 Preferences（外部化配置），nil/非法值回退系统默认；设置变更后经 broadcastChanged 即时刷新。
+/// Appearance theme helpers (app layer): the single read point for accent color and light/dark mode.
+/// Reads Preferences (externalized config); nil/invalid values fall back to the system default; settings changes refresh at once through broadcastChanged.
 @MainActor
 enum Theme {
-    /// 候选强调色板（8 色，RRGGBB）；另有"系统"项（accentColorHex=nil）走 controlAccentColor。
-    /// 取自 macOS 系统强调色近似值，稳定不随系统语言变化。
+    /// Candidate accent palette (8 colors, RRGGBB); there is also a "System" entry (accentColorHex = nil) that uses controlAccentColor.
+    /// Taken from approximate macOS system accent colors; stable regardless of system language.
     static let accentPalette: [(hex: String, nameKey: String)] = [
         ("FF3B30", "accent.red"),
         ("FF9500", "accent.orange"),
@@ -17,7 +17,7 @@ enum Theme {
         ("FF2D55", "accent.pink"),
     ]
 
-    /// 当前强调色：偏好 hex → NSColor；nil 或解析失败回退系统 controlAccentColor。
+    /// Current accent color: preference hex -> NSColor; nil or parse failure falls back to the system controlAccentColor.
     static var accent: NSColor {
         guard let hex = Preferences.accentColorHex, let color = NSColor(hex: hex) else {
             return .controlAccentColor
@@ -25,7 +25,7 @@ enum Theme {
         return color
     }
 
-    /// 应用明暗模式到 NSApp（启动 + 设置变更）：nil=跟随系统 / aqua=浅色 / darkAqua=深色
+    /// Applies light/dark mode to NSApp (at launch + on settings changes): nil = system / aqua = light / darkAqua = dark
     static func applyAppearance() {
         switch Preferences.appearanceMode {
         case "light": NSApp.appearance = NSAppearance(named: .aqua)
@@ -34,8 +34,8 @@ enum Theme {
         }
     }
 
-    /// 主题变更广播（设置页任一外观项改动后调用）：
-    /// 先套明暗模式，再发通知，最后遍历所有窗口令各窗格重刷描色/暗化——即时生效。
+    /// Theme change broadcast (called after any appearance item changes on the settings page):
+    /// applies light/dark first, posts the notification, then walks all windows so each pane refreshes its tint/dimming, effective immediately.
     static func broadcastChanged() {
         applyAppearance()
         NotificationCenter.default.post(name: .nspaceThemeChanged, object: nil)
@@ -46,13 +46,13 @@ enum Theme {
 }
 
 extension Notification.Name {
-    /// 外观变更广播（强调色/明暗/高亮/暗化）——窗格描色与内容暗化据此重刷
+    /// Appearance change broadcast (accent/light-dark/highlight/dimming): pane tinting and content dimming refresh from this
     static let nspaceThemeChanged = Notification.Name("nspaceThemeChanged")
 }
 
 extension NSImage {
-    /// 官方 SF Symbol 取像（§6.1：一律官方原版，禁自绘 path / 禁 emoji 文字充当图标）；
-    /// 系统无此符号时回退到 fallback。
+    /// Official SF Symbol lookup (§6.1: always the official original; no hand-drawn paths, no emoji text as icons);
+    /// falls back to `fallback` when the system lacks the symbol.
     static func officialSymbol(_ name: String, fallback: String? = nil,
                               accessibility: String? = nil) -> NSImage? {
         if let img = NSImage(systemSymbolName: name, accessibilityDescription: accessibility) {
@@ -66,7 +66,7 @@ extension NSImage {
 }
 
 extension NSColor {
-    /// 从 6 位 hex（RRGGBB，可含前缀 #）构造 sRGB 颜色；长度/进制非法返回 nil
+    /// Builds an sRGB color from 6-digit hex (RRGGBB, optional # prefix); invalid length or radix returns nil
     convenience init?(hex: String) {
         var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.hasPrefix("#") { s.removeFirst() }

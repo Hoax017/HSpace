@@ -1,9 +1,9 @@
 import Foundation
 import NSpaceContracts
 
-// LocalOps 胶囊唯一对外契约面（Axiom 3）：
-// 目录级本地原子操作 —— 重命名 / 新建文件夹 / 新建文件 / 移到废纸篓
-// 节点边界按不可逆副作用切：每种操作 = 一次原子提交单位；与 Transfer（跨目录传输）互补不重叠
+// LocalOps pod's sole public contract surface (Axiom 3):
+// Directory-level local atomic operations: rename / new folder / new file / move to Trash
+// Node boundaries follow irreversible side effects: each operation = one atomic commit unit; complements Transfer (cross-directory transfer) without overlap
 
 public struct LocalOpsError: ClassifiedError {
     public let errorClass: ErrorClass
@@ -17,8 +17,8 @@ public struct LocalOpsError: ClassifiedError {
     }
 }
 
-/// 新建条目的默认基名（UI 无名创建时用；重名自动追加序号 " 2"/" 3"…）。
-/// 纯逻辑、可黑盒单测：在目录内找到首个不冲突的候选名。
+/// Default base name for new entries (used when the UI creates without a name; duplicates get " 2"/" 3"… appended).
+/// Pure logic, black-box unit-testable: finds the first non-conflicting candidate name in the directory.
 public func uniqueName(base: String, ext: String, in directory: URL,
                        existsCheck: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }) -> String {
     func compose(_ n: Int) -> String {

@@ -1,10 +1,10 @@
 import AppKit
 import NSpaceContracts
 
-// MARK: - 决议状态机（纯逻辑 seam：UI 与 UISelfTest 共用，无 AppKit 依赖，可 headless 断言）
+// MARK: - Decision state machine (pure-logic seam shared by the UI and UISelfTest; no AppKit dependency, can be asserted headless)
 
-/// 逐冲突推进的决议状态机。checkbox 勾选时按「目标文件夹」批量：
-/// 一次决议套用到当前冲突所属文件夹内的全部未决冲突；跨文件夹需分别决议（面板逐文件夹再现）。
+/// Decision state machine that advances conflict by conflict. With the checkbox on, it batches by "destination folder":
+/// one decision applies to all unresolved conflicts in the current conflict's folder; other folders are decided separately (the panel reappears per folder).
 struct ConflictDecisionMachine {
     let conflicts: [FileConflict]
     private(set) var decisions: [URL: ConflictDecision] = [:]
@@ -12,26 +12,26 @@ struct ConflictDecisionMachine {
 
     init(_ conflicts: [FileConflict]) { self.conflicts = conflicts }
 
-    /// 首个尚未决议的冲突（决议后自然推进；批量后跳过整个文件夹）
+    /// First conflict not yet decided (advances naturally after a decision; a batch skips the whole folder)
     var currentConflict: FileConflict? {
         cancelled ? nil : conflicts.first { decisions[$0.source] == nil }
     }
     var isComplete: Bool { cancelled || currentConflict == nil }
-    /// nil = 用户取消整个操作（契约：ConflictArbiter 返回 nil）
+    /// nil = the user cancelled the whole operation (contract: ConflictArbiter returns nil)
     var result: [URL: ConflictDecision]? { cancelled ? nil : decisions }
 
     private func folderKey(_ c: FileConflict) -> String {
         c.existing.deletingLastPathComponent().standardizedFileURL.path
     }
 
-    /// 仅决议当前这一条（未勾 checkbox）
+    /// Decides only the current conflict (checkbox off)
     mutating func decideCurrent(_ d: ConflictDecision) {
         guard let c = currentConflict else { return }
         decisions[c.source] = d
     }
 
-    /// 批量决议：当前冲突所属文件夹内全部未决冲突套用同一决议（勾了 checkbox）。
-    /// checkbox 一次只作用于一个文件夹——多文件夹冲突需多次（面板逐文件夹再现）。
+    /// Batch decision: all unresolved conflicts in the current conflict's folder get the same decision (checkbox on).
+    /// The checkbox affects one folder at a time; multi-folder conflicts need several rounds (the panel reappears per folder).
     mutating func decideCurrentFolder(_ d: ConflictDecision) {
         guard let c = currentConflict else { return }
         let key = folderKey(c)
@@ -43,9 +43,9 @@ struct ConflictDecisionMachine {
     mutating func cancel() { cancelled = true }
 }
 
-// MARK: - 冲突裁决 Arbiter（内核经此在活动窗口就地弹自绘 sheet）
+// MARK: - Conflict Arbiter (the kernel uses it to show a custom sheet in place on the active window)
 
-/// 无状态 → 线程安全（@unchecked Sendable，仅在 MainActor 上触碰 UI）。
+/// Stateless → thread-safe (@unchecked Sendable; touches UI only on the MainActor).
 final class ConflictSheet: ConflictArbiter, @unchecked Sendable {
     func arbitrate(operation id: UUID, conflicts: [FileConflict]) async -> [URL: ConflictDecision]? {
         await withCheckedContinuation { (cont: CheckedContinuation<[URL: ConflictDecision]?, Never>) in
@@ -55,9 +55,9 @@ final class ConflictSheet: ConflictArbiter, @unchecked Sendable {
         }
     }
 
-    // MARK: UISelfTest headless seam（绝不弹真模态——看门狗会挂死；只驱动决议状态机验批量/推进/取消）
+    // MARK: UISelfTest headless seam (never shows a real modal, which would hang the watchdog; only drives the state machine to verify batching/advancing/cancelling)
 
-    /// 逐动作驱动状态机，回终局决议；action：("item", d) 决议当前 / ("folder", d) 批量本文件夹 / ("cancel", _)
+    /// Drives the state machine action by action and returns the final decisions; actions: ("item", d) decide current / ("folder", d) batch this folder / ("cancel", _)
     @MainActor
     static func uiTestResolve(_ conflicts: [FileConflict],
                               actions: [(String, ConflictDecision?)]) -> [URL: ConflictDecision]? {
@@ -73,7 +73,7 @@ final class ConflictSheet: ConflictArbiter, @unchecked Sendable {
         return m.result
     }
 
-    /// 面板出现次数（= 需要用户逐次拍板的文件夹数，勾 checkbox 情形）：逐文件夹批量直到全决。
+    /// Number of panel appearances (= folders the user must decide in turn, checkbox case): batches folder by folder until all are decided.
     @MainActor
     static func uiTestFolderPromptCount(_ conflicts: [FileConflict], batchDecision: ConflictDecision) -> Int {
         var m = ConflictDecisionMachine(conflicts)
@@ -82,25 +82,25 @@ final class ConflictSheet: ConflictArbiter, @unchecked Sendable {
         return prompts
     }
 
-    /// 无模态构建并配置首冲突的面板供截图/断言（人眼终审自绘布局；不 beginSheet，不进模态）
+    /// Builds and configures the first conflict's panel without a modal, for screenshots/assertions (final human review of the custom layout; no beginSheet, no modal)
     @MainActor
     static func uiTestPanel(_ conflicts: [FileConflict], host: NSWindow) -> NSWindow? {
         ConflictSheetController.uiTestPanel(conflicts, host: host)
     }
 }
 
-// MARK: - 自绘 sheet 控制器（三按钮右对齐 取消/合并/替换 + 左下「应用到此文件夹」checkbox；QSpace 观感）
+// MARK: - Custom sheet controller (three right-aligned buttons Cancel/Merge/Replace + bottom-left "Apply to this folder" checkbox; QSpace look)
 
 @MainActor
 private final class ConflictSheetController: NSObject {
-    private static var live: ConflictSheetController?   // 生命周期锚（sheet 存活期间持有自己）
+    private static var live: ConflictSheetController?   // Lifetime anchor (holds itself while the sheet is alive)
 
     private let panel: NSPanel
     private let hostWindow: NSWindow
     private var machine: ConflictDecisionMachine
     private let completion: ([URL: ConflictDecision]?) -> Void
 
-    // 内容控件（逐冲突重配置）
+    // Content controls (reconfigured for each conflict)
     private let titleLabel = NSTextField(labelWithString: "")
     private let messageLabel = NSTextField(labelWithString: "")
     private let srcIcon = NSImageView()
@@ -135,10 +135,10 @@ private final class ConflictSheetController: NSObject {
     private func start() {
         guard let conflict = machine.currentConflict else { finish(machine.result); return }
         configure(for: conflict)
-        hostWindow.beginSheet(panel) { _ in }   // 决议经按钮 action 走 finish(endSheet)，此回调不承载结果
+        hostWindow.beginSheet(panel) { _ in }   // Decisions go through button actions to finish(endSheet); this callback carries no result
     }
 
-    /// UISelfTest：无模态构建并配置首冲突，返回面板窗口供截图/断言（不 beginSheet，不持 live）
+    /// UISelfTest: builds and configures the first conflict without a modal, returning the panel window for screenshots/assertions (no beginSheet, no live)
     static func uiTestPanel(_ conflicts: [FileConflict], host: NSWindow) -> NSWindow? {
         guard let first = conflicts.first else { return nil }
         let c = ConflictSheetController(conflicts: conflicts, host: host, completion: { _ in })
@@ -147,17 +147,17 @@ private final class ConflictSheetController: NSObject {
         return c.panel
     }
 
-    // MARK: 逐冲突重配置
+    // MARK: Per-conflict reconfiguration
 
     private func configure(for conflict: FileConflict) {
         titleLabel.stringValue = L10n.f("conflict.title", conflict.existing.lastPathComponent)
         messageLabel.stringValue = L10n.t("conflict.message")
         configureRow(icon: srcIcon, label: srcLabel, title: L10n.t("conflict.source"), url: conflict.source)
         configureRow(icon: dstIcon, label: dstLabel, title: L10n.t("conflict.existing"), url: conflict.existing)
-        // 合并仅对「双方都是目录」有意义；文件冲突禁用（保持三按钮布局一致，禁用即诚实不可点）
+        // Merging only makes sense when both sides are directories; disabled for file conflicts (keeps the button layout stable; disabled is honestly unclickable)
         mergeButton?.isEnabled = conflict.bothDirectories
-        keepBothButton?.isEnabled = true   // 文件与文件夹都可以改名共存
-        // checkbox 每次面板出现（每文件夹）重置为未勾——勾选是对"这一次这个文件夹"的显式批量选择
+        keepBothButton?.isEnabled = true   // Files and folders can both be renamed to coexist
+        // Reset the checkbox each time the panel appears (per folder): checking it is an explicit batch choice for "this folder, this time"
         applyFolderCheck.state = .off
     }
 
@@ -171,12 +171,12 @@ private final class ConflictSheetController: NSObject {
         label.stringValue = "\(title)   \(dateStr) · \(sizeStr)"
     }
 
-    // MARK: 动作（勾 checkbox → 批量本文件夹；否则只决当前）
+    // MARK: Actions (checkbox on → batch this folder; otherwise decide only the current one)
 
     @objc private func onReplace() { apply(.replace) }
     @objc private func onMerge() { apply(.mergeFolders) }
-    /// 两者保留：自动改名共存（`文件 2.txt`）。引擎侧 `.keepBoth` 早就实现了
-    /// （含批内撞名去重），旧版只是没给按钮——用户报告"只有合并、取消，没有改名"。
+    /// Keep Both: auto-rename so both coexist (`file 2.txt`). The engine's `.keepBoth` has long existed
+    /// (including de-duplication of collisions within a batch); the old version just had no button. User report: "only Merge and Cancel, no rename".
     @objc private func onKeepBoth() { apply(.keepBoth) }
     @objc private func onCancel() { machine.cancel(); finish(nil) }
 
@@ -192,7 +192,7 @@ private final class ConflictSheetController: NSObject {
         ConflictSheetController.live = nil
     }
 
-    // MARK: 布局构建（4pt 网格；三按钮右对齐 + 左下 checkbox）
+    // MARK: Layout construction (4pt grid; three right-aligned buttons + bottom-left checkbox)
 
     private func buildContent() {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 440, height: 224))
@@ -213,7 +213,7 @@ private final class ConflictSheetController: NSObject {
         applyFolderCheck.title = L10n.t("conflict.applyFolder")
         applyFolderCheck.font = .systemFont(ofSize: 11)
 
-        // 三按钮：取消 / 合并 / 替换（右对齐，替换为默认=回车）
+        // Three buttons: Cancel / Merge / Replace (right-aligned; Replace is the default = Return)
         let cancelB = makeButton("conflict.cancel", #selector(onCancel)); cancelB.keyEquivalent = "\u{1b}"
         let mergeB = makeButton("conflict.merge", #selector(onMerge)); mergeButton = mergeB
         let keepBothB = makeButton("conflict.keepBoth", #selector(onKeepBoth)); keepBothButton = keepBothB

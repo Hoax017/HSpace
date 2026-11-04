@@ -2,7 +2,7 @@ import Testing
 import Foundation
 import SessionStore
 
-/// 黑盒验收：真实临时目录（无 Fake Mock）
+/// Black-box acceptance: real temp directory (no fakes or mocks)
 @Suite struct SessionStoreTests {
     func makeStore() throws -> (SessionStore, URL) {
         let dir = FileManager.default.temporaryDirectory
@@ -33,8 +33,8 @@ import SessionStore
         defer { try? FileManager.default.removeItem(at: dir) }
         let snap = Self.sample()
         await store.save(snap)
-        await store.flush()  // 跳过防抖立即落盘
-        // 新实例从磁盘重载（跨启动恢复验收）
+        await store.flush()  // skip the debounce and persist immediately
+        // A new instance reloads from disk (cross-launch restore acceptance)
         let store2 = SessionStore(directory: dir)
         let loaded = await store2.load()
         #expect(loaded == snap)
@@ -58,7 +58,7 @@ import SessionStore
     @Test func debounceCoalescesWrites() async throws {
         let (store, dir) = try makeStore()
         defer { try? FileManager.default.removeItem(at: dir) }
-        // 连续 save 只留最后一份（防抖合并）
+        // Consecutive saves keep only the last one (debounce coalescing)
         var snap = Self.sample()
         await store.save(snap)
         snap.windows[0].activeWorkspace = 1
@@ -68,11 +68,11 @@ import SessionStore
         #expect(loaded?.windows[0].activeWorkspace == 1)
     }
 
-    /// 旧格式（windows 每项直接是 SessionWindow）一次性迁移：包成单窗口的工作区数组
+    /// One-time migration of the old format (each windows item directly a SessionWindow): wrapped into one window's workspace array
     @Test func legacyFormatMigratesToWorkspaces() async throws {
         let (store, dir) = try makeStore()
         defer { try? FileManager.default.removeItem(at: dir) }
-        // 手写旧结构 JSON（M13：windows=[SessionWindow]，各存一份）
+        // Hand-written old-structure JSON (M13: windows=[SessionWindow], one copy each)
         let legacyJSON = """
         {"windows":[
           {"layoutRaw":1,"activePaneIndex":0,"panes":[{"activeTabIndex":0,"tabs":[{"path":"/tmp","sortKey":"name","sortAscending":true,"includeHidden":false}]}]},
@@ -81,16 +81,16 @@ import SessionStore
         """
         try Data(legacyJSON.utf8).write(to: dir.appendingPathComponent("session.json"))
         let loaded = await store.load()
-        // 两个旧窗口 → 一个窗口的两个工作区
+        // Two old windows → two workspaces of one window
         #expect(loaded?.windows.count == 1)
         #expect(loaded?.windows[0].workspaces.count == 2)
         #expect(loaded?.windows[0].activeWorkspace == 0)
         #expect(loaded?.windows[0].workspaces[1].layoutRaw == 2)
     }
 
-    /// 窗格内多标签（M13）退役的一次性迁移：旧档案每个窗格是 `tabs` 数组 + `activeTabIndex`，
-    /// 新结构只有一个 `tab`。必须留下**当时活动的那个**，不是第一个——用户真实会话里活动标签
-    /// 普遍不是 0（外部打开一路往后堆），取错就等于把他正在看的目录换成很久以前那个。
+    /// One-time migration for retiring per-pane tabs (M13): in old archives each pane has a `tabs` array + `activeTabIndex`,
+    /// the new structure has one `tab`. It must keep **the one active at the time**, not the first: in real user sessions the active tab
+    /// is usually not 0 (external opens kept piling on), and picking wrong swaps the directory they were viewing for one from long ago.
     @Test func legacyPaneTabsKeepActiveTabOnly() async throws {
         let (store, dir) = try makeStore()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -110,7 +110,7 @@ import SessionStore
         let loaded = await store.load()
         let panes = try #require(loaded?.windows.first?.workspaces.first?.panes)
         #expect(panes.count == 2)
-        // 索引 2 那个（不是 /tmp），且它的排序/隐藏/视图模式一并带过来
+        // The one at index 2 (not /tmp), bringing its sort/hidden/view mode along
         #expect(panes[0].tab.path == "/etc")
         #expect(panes[0].tab.sortKey == "size")
         #expect(panes[0].tab.sortAscending == false)
@@ -119,7 +119,7 @@ import SessionStore
         #expect(panes[1].tab.path == "/var")
     }
 
-    /// 越界的 activeTabIndex 不许让整份会话解码失败（那等于用户所有窗口一起丢）
+    /// An out-of-range activeTabIndex must not fail decoding of the whole session (that would lose all the user's windows at once)
     @Test func legacyPaneTabsOutOfRangeIndexFallsBackToFirst() async throws {
         let (store, dir) = try makeStore()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -136,7 +136,7 @@ import SessionStore
         #expect(loaded?.windows.first?.workspaces.first?.panes.first?.tab.path == "/tmp")
     }
 
-    /// 迁移只发生在读的那一次：存回去就是新结构，旧键不再出现在磁盘上
+    /// Migration happens only on that one read: saving writes the new structure, and old keys no longer appear on disk
     @Test func migratedSessionWritesNewShapeOnly() async throws {
         let (store, dir) = try makeStore()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -158,7 +158,7 @@ import SessionStore
         #expect(text.contains("\"tab\""))
         #expect(!text.contains("\"tabs\""))
         #expect(!text.contains("activeTabIndex"))
-        #expect(text.contains("/usr"))       // 留下的是当时活动的那个
+        #expect(text.contains("/usr"))       // what stays is the one active at the time
         #expect(!text.contains("/tmp"))
     }
 }

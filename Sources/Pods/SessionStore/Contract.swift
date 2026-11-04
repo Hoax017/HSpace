@@ -1,14 +1,14 @@
 import Foundation
 import NSpaceContracts
 
-// SessionStore 胶囊唯一对外契约面（Axiom 3）：窗口/布局/窗格/标签会话快照的唯一 Commit Owner
+// SessionStore pod's sole public contract surface (Axiom 3): sole Commit Owner of the window/layout/pane/tab session snapshot
 
 public struct SessionTab: Sendable, Codable, Equatable {
     public var path: String
     public var sortKey: String
     public var sortAscending: Bool
     public var includeHidden: Bool
-    /// 视图模式原始值（icons/list/columns 的 Int raw）；旧档案缺省 nil=列表
+    /// View mode raw value (Int raw of icons/list/columns); missing in old archives, nil = list
     public var viewMode: Int?
 
     public init(path: String, sortKey: String = "name", sortAscending: Bool = true,
@@ -21,11 +21,11 @@ public struct SessionTab: Sendable, Codable, Equatable {
     }
 }
 
-/// 一个窗格 = 一个浏览上下文。
+/// One pane = one browsing context.
 ///
-/// v0.19.26 起窗格内不再有多标签（M13 的「每窗格多标签」退役：产品定位只认窗口级工作区标签，
-/// 而窗格标签栏默认隐藏、建出来的标签用户看不见，外部打开又一直往里堆——用户报告
-/// 「⌥⌘T 没反应」「这个好像没什么作用」）。外部打开改落到工作区标签，那一层本来就可见可关。
+/// Since v0.19.26 panes no longer have multiple tabs (M13's "per-pane tabs" is retired: the product recognizes only window-level workspace tabs,
+/// while the pane tab bar was hidden by default, tabs created there were invisible, and external opens kept piling into them; users reported
+/// "⌥⌘T does nothing" and "this doesn't seem to do anything"). External opens now land in workspace tabs, a layer that is visible and closable.
 public struct SessionPane: Sendable, Codable, Equatable {
     public var tab: SessionTab
 
@@ -37,18 +37,18 @@ public struct SessionPane: Sendable, Codable, Equatable {
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        // 先试新结构
+        // Try the new structure first
         if let t = try? c.decode(SessionTab.self, forKey: .tab) {
             self.tab = t
             return
         }
-        // 旧结构（窗格内多标签）一次性迁移：只留当时的**活动**标签，其余丢弃。
-        // 不展开成多个工作区——用户会话里最多的一个窗格有 5 个标签，全展开会炸出二十几个
-        // 工作区，那不是"删掉这层"该有的结果。
+        // One-time migration of the old structure (multiple tabs per pane): keep only the **active** tab at that time, discard the rest.
+        // Do not expand into multiple workspaces: the user's busiest pane has 5 tabs, and expanding all of them would explode into twenty-odd
+        // workspaces, not what "removing this layer" should produce.
         let tabs = try c.decode([SessionTab].self, forKey: .tabs)
         let idx = (try? c.decode(Int.self, forKey: .activeTabIndex)) ?? 0
-        // 空数组是不可能状态（旧实现保证每窗格至少一个标签）；真遇上给空路径，
-        // 由上层「会话恢复时路径已消失 → 回退个人目录」接住（spec.md §风险表）。
+        // An empty array is an impossible state (the old implementation guaranteed at least one tab per pane); if it does occur, use an empty path,
+        // caught upstream by "path gone at session restore → fall back to home" (spec.md risk table).
         self.tab = tabs.indices.contains(idx) ? tabs[idx] : (tabs.first ?? SessionTab(path: ""))
     }
 
@@ -59,7 +59,7 @@ public struct SessionPane: Sendable, Codable, Equatable {
 }
 
 public struct SessionWindow: Sendable, Codable, Equatable {
-    /// PaneLayout.rawValue（UI 层枚举不进胶囊契约）
+    /// PaneLayout.rawValue (UI-layer enums stay out of pod contracts)
     public var layoutRaw: Int
     public var panes: [SessionPane]
     public var activePaneIndex: Int
@@ -71,8 +71,8 @@ public struct SessionWindow: Sendable, Codable, Equatable {
     }
 }
 
-/// 一个 OS 窗口 = 一组工作区（M17：工作区标签迁出原生 NSWindow tabbing → 自管）。
-/// 每个工作区复用 SessionWindow 编码（布局+窗格+标签+路径+排序+视图模式）。
+/// One OS window = a group of workspaces (M17: workspace tabs moved out of native NSWindow tabbing → self-managed).
+/// Each workspace reuses the SessionWindow encoding (layout + panes + tabs + paths + sort + view mode).
 public struct SessionWorkspaces: Sendable, Codable, Equatable {
     public var workspaces: [SessionWindow]
     public var activeWorkspace: Int
@@ -83,9 +83,9 @@ public struct SessionWorkspaces: Sendable, Codable, Equatable {
     }
 }
 
-/// 会话快照（M17 结构）：windows 每项 = 一个窗口内的工作区数组。
-/// 旧格式（windows 每项直接是 SessionWindow，即"多窗口各存一份"）解码时一次性迁移：
-/// 全部旧窗口包成【单个】窗口的工作区数组（保留 M13 平铺标签所见）。
+/// Session snapshot (M17 structure): each windows item = the workspace array inside one window.
+/// The old format (each windows item directly a SessionWindow, i.e. "one copy per window") is migrated once on decode:
+/// all old windows are wrapped into the workspace array of a **single** window (preserving what M13 flat tabs showed).
 public struct SessionSnapshot: Sendable, Codable, Equatable {
     public var windows: [SessionWorkspaces]
 
@@ -97,12 +97,12 @@ public struct SessionSnapshot: Sendable, Codable, Equatable {
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        // 先试新结构（元素含 workspaces 键）
+        // Try the new structure first (elements contain the workspaces key)
         if let ws = try? container.decode([SessionWorkspaces].self, forKey: .windows) {
             self.windows = ws
             return
         }
-        // 回退旧结构：windows 每项是 SessionWindow → 全部包成单窗口的工作区数组
+        // Fall back to the old structure: each windows item is a SessionWindow → wrap them all into one window's workspace array
         let legacy = try container.decode([SessionWindow].self, forKey: .windows)
         self.windows = legacy.isEmpty ? [] : [SessionWorkspaces(workspaces: legacy, activeWorkspace: 0)]
     }

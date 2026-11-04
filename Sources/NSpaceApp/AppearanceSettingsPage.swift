@@ -1,14 +1,14 @@
 import AppKit
 
-/// 外观设置页（QSpace 外观面 v1 子集）：明暗模式 / 主题色板 / 列表字号 / 活动窗格高亮 / 非活动窗格暗化。
-/// 全部即时生效并持久化：明暗·强调色·高亮·暗化经 Theme.broadcastChanged 重刷；字号经列重建路径重刷。
+/// Appearance settings page (v1 subset of QSpace's appearance options): light/dark mode / theme palette / list font size / active pane highlight / inactive pane dimming.
+/// Everything applies immediately and persists: mode, accent, highlight and dimming refresh via Theme.broadcastChanged; font size refreshes through the column rebuild path.
 @MainActor
 final class AppearanceSettingsPage: NSObject, SettingsPage {
     var pageTitleKey: String { "settings.tab.appearance" }
 
-    /// 明暗模式三选一（0=跟随系统 / 1=浅色 / 2=深色）
+    /// Light/dark mode radio group (0 = system / 1 = light / 2 = dark)
     private var modeButtons: [NSButton] = []
-    /// 色板按钮（tag=调色板下标；系统项 tag=-1）
+    /// Swatch buttons (tag = palette index; the system entry has tag = -1)
     private var accentButtons: [NSButton] = []
     private let dimValueLabel = NSTextField(labelWithString: "")
 
@@ -41,7 +41,7 @@ final class AppearanceSettingsPage: NSObject, SettingsPage {
         return v
     }
 
-    // MARK: 小节标题
+    // MARK: Section titles
 
     private func sectionLabel(_ key: String) -> NSTextField {
         let label = NSTextField(labelWithString: L10n.t(key))
@@ -49,7 +49,7 @@ final class AppearanceSettingsPage: NSObject, SettingsPage {
         return label
     }
 
-    // MARK: 明暗模式（radio 三选一）
+    // MARK: Light/dark mode (three radios)
 
     private func buildModeRow() -> NSView {
         let specs: [(tag: Int, key: String)] = [
@@ -90,10 +90,10 @@ final class AppearanceSettingsPage: NSObject, SettingsPage {
         Theme.broadcastChanged()
     }
 
-    // MARK: 主题色板（8 色 + 系统项）
+    // MARK: Theme palette (8 colors + system entry)
 
     private func buildAccentRow() -> NSView {
-        // 系统项（tag=-1）：跟随系统强调色
+        // System entry (tag = -1): follows the system accent color
         let systemDot = accentDot(color: .controlAccentColor, tag: -1,
                                   tooltip: L10n.t("accent.system"), showGlyph: true)
         accentButtons.append(systemDot)
@@ -110,7 +110,7 @@ final class AppearanceSettingsPage: NSObject, SettingsPage {
         return row
     }
 
-    /// 单个色点：无边框圆形按钮，选中态加白/灰描边环
+    /// One swatch: borderless round button; the selected state gets a white/gray ring
     private func accentDot(color: NSColor, tag: Int, tooltip: String, showGlyph: Bool) -> NSButton {
         let b = NSButton()
         b.title = ""
@@ -124,7 +124,7 @@ final class AppearanceSettingsPage: NSObject, SettingsPage {
         b.layer?.backgroundColor = color.cgColor
         b.layer?.borderColor = NSColor.controlBackgroundColor.cgColor
         if showGlyph {
-            // 系统项加一枚小圆点符号，区别于纯色
+            // The system entry gets a small dotted glyph to set it apart from solid colors
             b.image = NSImage(systemSymbolName: "circle.dashed",
                               accessibilityDescription: tooltip)
             b.imagePosition = .imageOnly
@@ -143,7 +143,7 @@ final class AppearanceSettingsPage: NSObject, SettingsPage {
         Theme.broadcastChanged()
     }
 
-    /// 刷新色板选中环（匹配当前偏好）
+    /// Refresh the swatch selection ring (matches the current preference)
     private func refreshAccentSelection() {
         let selectedTag: Int
         if let hex = Preferences.accentColorHex,
@@ -157,7 +157,7 @@ final class AppearanceSettingsPage: NSObject, SettingsPage {
         }
     }
 
-    // MARK: 列表字号（11-14 popup）
+    // MARK: List font size (11-14 popup)
 
     private func buildFontRow() -> NSView {
         let label = NSTextField(labelWithString: L10n.t("settings.appearance.fontSize"))
@@ -179,11 +179,11 @@ final class AppearanceSettingsPage: NSObject, SettingsPage {
 
     @objc private func fontSizeChanged(_ sender: NSPopUpButton) {
         Preferences.listFontSize = sender.selectedTag()
-        // 复用列重建路径：所有列表视图重建列 + 按新字号重取字体/行高
+        // Reuse the column rebuild path: all list views rebuild columns and re-fetch font/row height for the new size
         NotificationCenter.default.post(name: .nspaceColumnsChanged, object: nil)
     }
 
-    // MARK: 高亮活动窗格
+    // MARK: Highlight active pane
 
     private func buildHighlightRow() -> NSButton {
         let b = NSButton(checkboxWithTitle: L10n.t("settings.appearance.highlightActive"),
@@ -198,7 +198,7 @@ final class AppearanceSettingsPage: NSObject, SettingsPage {
         Theme.broadcastChanged()
     }
 
-    // MARK: 非活动窗格暗化（0-30% slider）
+    // MARK: Inactive pane dimming (0-30% slider)
 
     private func buildDimRow() -> NSView {
         let label = NSTextField(labelWithString: L10n.t("settings.appearance.dimInactive"))

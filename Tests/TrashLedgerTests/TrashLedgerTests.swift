@@ -3,7 +3,7 @@ import Foundation
 import TrashLedger
 import NSpaceContracts
 
-/// 黑盒验收：真实临时目录 + 真实落盘（无 Fake Mock）
+/// Black-box acceptance: real temp directory + real persistence (no fakes or mocks)
 @Suite struct TrashLedgerTests {
     static func tempDir() throws -> URL {
         let url = FileManager.default.temporaryDirectory
@@ -16,7 +16,7 @@ import NSpaceContracts
         let dir = try Self.tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let trashed = dir.appendingPathComponent("in-trash.txt")
-        try Data("x".utf8).write(to: trashed)              // 必须真存在（自净会丢弃不存在的条目）
+        try Data("x".utf8).write(to: trashed)              // must really exist (self-pruning drops entries that do not)
         let original = dir.appendingPathComponent("orig/in-trash.txt")
 
         let led = TrashLedger(directory: dir)
@@ -34,7 +34,7 @@ import NSpaceContracts
         let original = dir.appendingPathComponent("o/t.txt")
 
         await TrashLedger(directory: dir).record([(original: original, trashed: trashed)])
-        // 全新实例 = 模拟重启，只能从盘上读
+        // A fresh instance = simulated restart, can only read from disk
         let fresh = TrashLedger(directory: dir)
         #expect(await fresh.origin(of: trashed) != nil)
     }
@@ -50,7 +50,7 @@ import NSpaceContracts
             (original: dir.appendingPathComponent("o/alive.txt"), trashed: alive),
             (original: dir.appendingPathComponent("o/vanished.txt"), trashed: vanished),
         ])
-        // 废纸篓里那一项没了（被清空/被别的应用删掉）→ 条目必须作废，不许把过期事实交出去
+        // The Trash item is gone (emptied / deleted by another app) → the entry must be voided, no handing out stale facts
         try FileManager.default.removeItem(at: vanished)
         let fresh = TrashLedger(directory: dir)
         #expect(await fresh.origin(of: vanished) == nil)
@@ -74,7 +74,7 @@ import NSpaceContracts
         let dir = try Self.tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let led = TrashLedger(directory: dir)
-        // 别的应用删掉的项：没有记录 → 必须诚实返回 nil，调用方据此置灰
+        // An item deleted by another app: no record → must honestly return nil, and the caller grays it out
         #expect(await led.origin(of: dir.appendingPathComponent("stranger.txt")) == nil)
         let many = await led.origins(of: [dir.appendingPathComponent("a"), dir.appendingPathComponent("b")])
         #expect(many.isEmpty)

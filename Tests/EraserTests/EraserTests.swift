@@ -3,8 +3,8 @@ import Foundation
 import Eraser
 import NSpaceContracts
 
-/// 黑盒验收：真实物理 I/O 于临时夹具（无 Fake Mock）。
-/// 永久删除是本仓唯一不可逆操作，所以**守卫**的测试比"能删"的测试更重要。
+/// Black-box acceptance: real physical I/O on temp fixtures (no fakes or mocks).
+/// Permanent deletion is the only irreversible operation in this repo, so tests of the **guards** matter more than tests that it "can delete".
 @Suite struct EraserTests {
     static func tempDir() throws -> URL {
         let url = FileManager.default.temporaryDirectory
@@ -16,17 +16,17 @@ import NSpaceContracts
         NodeContext(operationID: UUID(), report: { _ in }, resolveConflicts: { _ in [:] })
     }
 
-    // MARK: 围栏守卫（爆炸半径）——纯逻辑，Oracle 不需要文件系统
+    // MARK: Fence guard (blast radius): pure logic, the Oracle needs no file system
 
     @Test func fenceAcceptsInsideRejectsOutsideAndRootItself() {
         let fence = URL(fileURLWithPath: "/tmp/fence")
         #expect(EraserLimits.isFenced(URL(fileURLWithPath: "/tmp/fence/a.txt"), by: fence))
         #expect(EraserLimits.isFenced(URL(fileURLWithPath: "/tmp/fence/sub/deep.txt"), by: fence))
-        #expect(!EraserLimits.isFenced(URL(fileURLWithPath: "/tmp/fence"), by: fence))       // 围栏自身
+        #expect(!EraserLimits.isFenced(URL(fileURLWithPath: "/tmp/fence"), by: fence))       // the fence itself
         #expect(!EraserLimits.isFenced(URL(fileURLWithPath: "/tmp/other/a.txt"), by: fence))
-        // 前缀相似但不同目录：/tmp/fence-evil 绝不许被 /tmp/fence 的围栏放行
+        // Similar prefix but different directory: /tmp/fence-evil must never pass the /tmp/fence fence
         #expect(!EraserLimits.isFenced(URL(fileURLWithPath: "/tmp/fence-evil/a.txt"), by: fence))
-        // 路径穿越写法经 standardized 归一后仍在围栏外
+        // Path traversal spelled out stays outside the fence after standardization
         #expect(!EraserLimits.isFenced(URL(fileURLWithPath: "/tmp/fence/../other/a.txt"), by: fence))
     }
 
@@ -44,7 +44,7 @@ import NSpaceContracts
                 OperationSpec(kind: .delete, sources: [inside, stray], destination: dir),
                 context: Self.context())
         }
-        // 整批拒绝：围栏内那一项也**不许**被删（不做"删一半"）
+        // Whole batch refused: the item inside the fence must **not** be deleted either (no "delete half")
         #expect(FileManager.default.fileExists(atPath: inside.path))
         #expect(FileManager.default.fileExists(atPath: stray.path))
     }
@@ -56,13 +56,13 @@ import NSpaceContracts
         try Data("x".utf8).write(to: f)
         await #expect(throws: (any Error).self) {
             _ = try await EraserNode().execute(
-                OperationSpec(kind: .delete, sources: [f]),   // 无 destination
+                OperationSpec(kind: .delete, sources: [f]),   // no destination
                 context: Self.context())
         }
         #expect(FileManager.default.fileExists(atPath: f.path))
     }
 
-    // MARK: 真删 + 部分失败如实回报
+    // MARK: Real deletion + truthful partial failure reports
 
     @Test func erasesFilesAndDirectoriesInsideFence() async throws {
         let dir = try Self.tempDir()
@@ -80,7 +80,7 @@ import NSpaceContracts
         #expect(r.failures.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: file.path))
         #expect(!FileManager.default.fileExists(atPath: sub.path))
-        #expect(r.trashedItems.isEmpty)      // 永久删除没有可撤销的落点，不许假装有
+        #expect(r.trashedItems.isEmpty)      // permanent deletion has no undoable location, it must not pretend to have one
     }
 
     @Test func partialFailureReportsWhatWasErased() async throws {
@@ -88,7 +88,7 @@ import NSpaceContracts
         defer { try? FileManager.default.removeItem(at: dir) }
         let real = dir.appendingPathComponent("real.txt")
         try Data("x".utf8).write(to: real)
-        let ghost = dir.appendingPathComponent("ghost.txt")     // 不存在 → 必然失败
+        let ghost = dir.appendingPathComponent("ghost.txt")     // does not exist → certain to fail
 
         let r = try await EraserNode().execute(
             OperationSpec(kind: .delete, sources: [real, ghost], destination: dir),

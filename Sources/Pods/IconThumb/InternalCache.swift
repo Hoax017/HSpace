@@ -1,15 +1,15 @@
 import Foundation
 import CoreGraphics
 
-// 私有关注点：LRU 缓存（NSCache 包装）+ 防陈旧缓存键。
+// Private concern: LRU cache (NSCache wrapper) + staleness-proof cache keys.
 
-/// NSCache 只收 class；CGImage 是 struct 语义的 CF 类型，用引用盒子承载。
+/// NSCache accepts only classes; CGImage is a struct-like CF type, so it is held in a reference box.
 final class ThumbnailBox {
     let image: CGImage
     init(_ image: CGImage) { self.image = image }
 }
 
-/// LRU 缩略图缓存：countLimit=512（滚动列表可见窗口的数倍，足够复用又受控）。
+/// LRU thumbnail cache: countLimit=512 (several times the visible window of a scrolling list, enough to reuse yet bounded).
 final class ThumbnailCache: @unchecked Sendable {
     private let cache = NSCache<NSString, ThumbnailBox>()
 
@@ -26,7 +26,7 @@ final class ThumbnailCache: @unchecked Sendable {
     }
 }
 
-/// 缓存键 = 路径 + 尺寸 + scale + mtime：mtime 变化即换键，旧图自然被 LRU 淘汰（防陈旧）。
+/// Cache key = path + size + scale + mtime: a changed mtime changes the key, and old images age out of the LRU naturally (no staleness).
 func cacheKey(url: URL, size: CGFloat, scale: CGFloat) -> String {
     let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
         .contentModificationDate?.timeIntervalSince1970 ?? 0

@@ -1,10 +1,10 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// 全局呼出/隐藏热键（M24 用户点名：替代 Raycast 桥接）。
-/// Carbon RegisterEventHotKey——系统认可的全局热键通道，无需辅助功能权限。
-/// 语义：NSpace 在前台 → 隐藏；在后台/被遮挡 → 激活置顶（无窗则开新窗）。
-/// 组合键外部化存 UserDefaults "globalHotkey" = "modsRaw|keyCode|显示串"；默认未设置（设置-通用录制）。
+/// Global show/hide hotkey (M24 user request: replaces the Raycast bridge).
+/// Carbon RegisterEventHotKey, the system-sanctioned global hotkey channel; no Accessibility permission needed.
+/// Semantics: NSpace in front -> hide; in background/covered -> activate and raise (open a new window if there is none).
+/// The key combo is externalized in UserDefaults "globalHotkey" = "modsRaw|keyCode|displayString"; unset by default (recorded in Settings > General).
 @MainActor
 enum GlobalHotkey {
     private static var hotKeyRef: EventHotKeyRef?
@@ -12,7 +12,7 @@ enum GlobalHotkey {
 
     static let prefKey = "globalHotkey"
 
-    /// 当前绑定（modsRaw 为 NSEvent.ModifierFlags.rawValue）
+    /// Current binding (modsRaw is NSEvent.ModifierFlags.rawValue)
     static var current: (mods: NSEvent.ModifierFlags, keyCode: UInt32, display: String)? {
         guard let raw = UserDefaults.standard.string(forKey: prefKey) else { return nil }
         let parts = raw.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
@@ -30,7 +30,7 @@ enum GlobalHotkey {
         apply()
     }
 
-    /// 依当前偏好（重新）注册；返回是否注册成功（未设置=成功注销也返回 true）
+    /// (Re)registers from the current preference; returns whether registration succeeded (unset = a clean unregister also returns true)
     @discardableResult
     static func apply() -> Bool {
         unregister()
@@ -57,16 +57,16 @@ enum GlobalHotkey {
         if let handlerRef { RemoveEventHandler(handlerRef); Self.handlerRef = nil }
     }
 
-    /// 呼出/隐藏切换（热键回调；UISelfTest 直接调用作真效果断言）
+    /// Show/hide toggle (hotkey callback; UISelfTest calls it directly for real-effect assertions)
     static func toggle() {
         if NSApp.isActive {
             NSApp.hide(nil)
         } else {
             NSApp.unhide(nil)
             NSApp.activate()
-            // unhide 是异步的：此刻问 NSApp.windows 的 isVisible 一律还是 false，据此判断"有没有主窗"
-            // 会误判成没有 → 每次热键呼出都多开一个空窗（慢机器上必现）。改问 AppDelegate 的窗口台账，
-            // 它在 windowWillClose 里同步维护，是唯一同步可信的答案。
+            // unhide is asynchronous: isVisible from NSApp.windows is still false at this point, so asking it "is there a main window"
+            // gets a false no, and each hotkey summon opens a surplus empty window (always on slow machines). Ask AppDelegate's window ledger instead:
+            // it is updated synchronously in windowWillClose and is the only synchronously reliable answer.
             let delegate = NSApp.delegate as? AppDelegate
             if delegate?.hasLiveMainWindow == true {
                 delegate?.frontmostMainWindow?.makeKeyAndOrderFront(nil)

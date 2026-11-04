@@ -1,7 +1,7 @@
 import Foundation
 import NSpaceContracts
 
-/// 构造工厂（Axiom 2：无全局状态，句柄经构造产出）。
+/// Construction factory (Axiom 2: no global state, handles are produced by construction).
 public struct DirectoryWatch: DirectoryWatching {
     public init() {}
 
@@ -10,14 +10,14 @@ public struct DirectoryWatch: DirectoryWatching {
     }
 }
 
-/// FSEvents 监听句柄：暴露 `signals` 信号流与挂起/恢复/停止控制。
+/// FSEvents watch handle: exposes the `signals` stream plus suspend/resume/stop controls.
 ///
-/// 后台窗格挂起是产品北极星：`suspend()` 真停 FSEventStream（零回调、零功耗），
-/// `resume()` 再启动；`stop()` / deinit 彻底拆流并收尾信号流。
+/// Background pane suspension is a product north star: `suspend()` really stops the FSEventStream (zero callbacks, zero power),
+/// `resume()` starts it again; `stop()` / deinit fully tear down the stream and finish the signal stream.
 public final class DirectoryWatcher: Sendable {
-    /// 目录变化信号流（0.3s latency 合并突发事件；bufferingNewest(1) 把多次变化坍缩成一次待重载）。
+    /// Directory change signal stream (0.3s latency coalesces bursts; bufferingNewest(1) collapses multiple changes into one pending reload).
     public let signals: AsyncStream<Void>
-    /// FSEventStream 创建失败时非 nil（transient）；调用方据此降级为手动刷新（⌘R），不崩。
+    /// Non-nil when FSEventStream creation fails (transient); callers degrade to manual refresh (⌘R) without crashing.
     public var startupError: DirectoryWatchError? { pump.startupError }
 
     private let pump: WatchPump
@@ -30,13 +30,13 @@ public final class DirectoryWatcher: Sendable {
         pump.start()
     }
 
-    /// 挂起监听：停止 FSEventStream（不再产生回调），但保留句柄可后续 resume。
+    /// Suspends watching: stops the FSEventStream (no more callbacks) but keeps the handle for a later resume.
     public func suspend() { pump.suspend() }
 
-    /// 恢复监听：重启 FSEventStream，只收到恢复之后发生的变化。
+    /// Resumes watching: restarts the FSEventStream, receiving only changes after the resume.
     public func resume() { pump.resume() }
 
-    /// 停止并拆除监听，收尾信号流（幂等）。
+    /// Stops and tears down watching, finishing the signal stream (idempotent).
     public func stop() { pump.stop() }
 
     deinit { pump.stop() }

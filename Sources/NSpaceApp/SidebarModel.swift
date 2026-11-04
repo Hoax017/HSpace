@@ -3,11 +3,11 @@ import NSpaceContracts
 import VolumeInfo
 import BookmarkStore
 
-/// 侧边栏树模型：书签（BookmarkStore，含起始位置种子）+ iCloud + 位置（VolumeInfo）。
-/// 暂存架（StashStore）在专区呈现不入 outline。NSOutlineView 需要引用身份，故节点为 class。
+/// Sidebar tree model: bookmarks (BookmarkStore, including starting location seeds) + iCloud + locations (VolumeInfo).
+/// The stash shelf (StashStore) is shown in its own area, not in the outline. NSOutlineView needs reference identity, so nodes are classes.
 @MainActor
 final class SidebarGroupNode {
-    /// 分组种类；rawValue 即分组顺序持久化键（Preferences.sidebarGroupOrder / 拖拽 pasteboard）
+    /// Group kind; rawValue is the persistence key for group order (Preferences.sidebarGroupOrder / drag pasteboard)
     enum Kind: String { case bookmarks, icloud, volumes }
     let kind: Kind
     let title: String
@@ -29,12 +29,12 @@ final class SidebarLeafNode {
     let payload: Payload
     let title: String
     let icon: NSImage
-    /// 导航目标；书签目标丢失时为 nil（UI 置灰）
+    /// Navigation target; nil when a bookmark's target is lost (UI grays it out)
     let url: URL?
     let subtitle: String?
-    /// 标题色覆盖（操作行等非导航行不按 url==nil 置灰）
+    /// Title color override (non-navigation rows such as action rows are not grayed for url==nil)
     let titleColor: NSColor?
-    /// 图标着色（Finder 式蓝色收藏图标）
+    /// Icon tint (Finder-style blue favorites icon)
     let tint: NSColor?
 
     init(payload: Payload, title: String, icon: NSImage, url: URL?, subtitle: String? = nil,
@@ -54,7 +54,7 @@ final class SidebarModel {
     let bookmarkStore: BookmarkStore
     private let volumeInfo = VolumeInfo()
 
-    /// 暂存架控制器（MainWindowController 注入；M14 起由 StashShelfView 专区消费）
+    /// Stash shelf controller (injected by MainWindowController; consumed by the StashShelfView area since M14)
     var stash: StashShelfController?
 
     private(set) var groups: [SidebarGroupNode] = []
@@ -66,19 +66,19 @@ final class SidebarModel {
     }
 
     func start() {
-        // 起始位置种子：新装/无 bookmarks.json 时把个人域已知目录注入书签（一次性，胶囊幂等）
+        // Starting location seeds: on a fresh install/no bookmarks.json, inject known personal directories as bookmarks (one-time, idempotent in the pod)
         Task { [weak self] in
             guard let self else { return }
             await self.bookmarkStore.seedIfEmpty(Self.seedPlaces())
-            // I-14 一次性补种：旧纯数组档案（非空即被判"已播种"）导致默认种子从未注入——
-            // 合并缺失项一次；此后用户删除的种子不复活，设置窗「恢复默认书签」可随时手动恢复
+            // I-14 one-time reseed: old plain-array archives (non-empty counted as "already seeded") meant default seeds were never injected;
+            // merge missing items once; after that, seeds the user deletes stay deleted, and "Restore Default Bookmarks" in settings can bring them back any time
             if !UserDefaults.standard.bool(forKey: "seedsMergedV2") {
                 await self.bookmarkStore.restoreMissingSeeds(Self.seedPlaces())
                 UserDefaults.standard.set(true, forKey: "seedsMergedV2")
             }
             self.rebuild()
         }
-        // 卷挂载/卸载自动刷新
+        // Auto-refresh on volume mount/unmount
         volumeWatchTask = Task { [weak self] in
             guard let self else { return }
             for await _ in self.volumeInfo.changes() {
@@ -87,10 +87,10 @@ final class SidebarModel {
         }
     }
 
-    // 模型与窗口同生命周期；如需提前停表调 stop()
+    // The model shares the window's lifetime; call stop() to stop the watcher early
     func stop() { volumeWatchTask?.cancel() }
 
-    /// 设置窗「恢复默认书签」入口（I-14）：补齐缺失种子并刷新；返回新增数供吐司反馈
+    /// Entry for "Restore Default Bookmarks" in settings (I-14): refills missing seeds and refreshes; returns the count added for toast feedback
     func restoreDefaultSeeds() async -> Int {
         let added = await bookmarkStore.restoreMissingSeeds(Self.seedPlaces())
         rebuild()
@@ -110,8 +110,8 @@ final class SidebarModel {
     }
 
     private func applyRebuild(bookmarks: [BookmarkItem]) {
-        // 书签组：起始位置种子与用户书签同栈。已知路径优先 Finder 原版侧栏图标（CoreTypes 模板），
-        // 次选 SF Symbol+符号蓝，其余真实文件图标。
+        // Bookmark group: starting location seeds stack with user bookmarks. Known paths prefer Finder's original sidebar icons (CoreTypes templates),
+        // then SF Symbol + symbol blue, otherwise the real file icon.
         let bookmarkGroup = SidebarGroupNode(kind: .bookmarks, title: L10n.t("sidebar.bookmarks"))
         bookmarkGroup.children = bookmarks.map { item in
             let url = bookmarkStore.resolve(item)
@@ -133,7 +133,7 @@ final class SidebarModel {
                                    url: url, tint: tint)
         }
 
-        // iCloud 独立分组（QSpace 同构）：仅当 iCloud 云盘目录存在才有条目/显示
+        // Separate iCloud group (same structure as QSpace): has an entry and shows only if the iCloud Drive directory exists
         let icloudGroup = SidebarGroupNode(kind: .icloud, title: L10n.t("sidebar.icloud.section"))
         let icloudURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs")
@@ -150,7 +150,7 @@ final class SidebarModel {
         volumeGroup.children = volumeInfo.volumes().map { vol in
             let icon = NSWorkspace.shared.icon(forFile: vol.url.path)
             icon.size = NSSize(width: 16, height: 16)
-            // 只读卷（DMG 等）可用容量为 0：显示"只读"而非误导性的"0 KB 可用"
+            // Read-only volumes (DMGs etc.) have 0 available capacity: show "Read Only" rather than a misleading "0 KB available"
             let subtitle: String?
             if vol.availableCapacity > 0 {
                 let free = ByteCountFormatter.string(fromByteCount: vol.availableCapacity, countStyle: .file)
@@ -162,8 +162,8 @@ final class SidebarModel {
                                    subtitle: subtitle)
         }
 
-        // 按 Preferences.sidebarGroupOrder 输出分组顺序（用户点名：书签可拖到最前）。
-        // 空的 iCloud 组不显示；顺序表未覆盖的分组按固定序补尾（向后兼容/新分组）。
+        // Emit groups in Preferences.sidebarGroupOrder order (user request: bookmarks can be dragged to the top).
+        // An empty iCloud group is not shown; groups missing from the order list are appended in a fixed order (backward compatibility/new groups).
         var available: [String: SidebarGroupNode] = [
             SidebarGroupNode.Kind.bookmarks.rawValue: bookmarkGroup,
             SidebarGroupNode.Kind.volumes.rawValue: volumeGroup,
@@ -184,8 +184,8 @@ final class SidebarModel {
         onChange?()
     }
 
-    /// 起始位置种子候选（个人域已知位置；不含 iCloud——iCloud 独立成节）。存在才纳入。
-    /// name 由此给定（BookmarkStore 胶囊不含 L10n），与后续 symbolFor 的路径映射对齐。
+    /// Starting location seed candidates (known personal locations; excludes iCloud, which has its own section). Included only if they exist.
+    /// Names are given here (the BookmarkStore pod has no L10n), aligned with the later path mapping in symbolFor.
     static func seedPlaces() -> [(URL, String)] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let candidates: [(URL, String)] = [
@@ -201,7 +201,7 @@ final class SidebarModel {
         return candidates.filter { FileManager.default.fileExists(atPath: $0.0.path) }
     }
 
-    /// home 域已知位置 → (SF Symbol, 符号蓝)。书签行渲染时匹配：命中用符号蓝标，否则真实文件夹图标。
+    /// Known home locations -> (SF Symbol, symbol blue). Matched while rendering bookmark rows: a hit uses the blue symbol, otherwise the real folder icon.
     static func symbolFor(url: URL) -> (String, NSColor)? {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let map: [(URL, String)] = [
@@ -212,7 +212,7 @@ final class SidebarModel {
             (home.appendingPathComponent("Music"), "music.note"),
             (home.appendingPathComponent("Pictures"), "photo"),
             (home.appendingPathComponent("Downloads"), "arrow.down.circle"),
-            // /Applications 不入映射：走 NSWorkspace 真实文件夹图标（原版 A 工具徽标，I-20 用户点名）
+            // /Applications is left out of the map: it uses NSWorkspace's real folder icon (the original A-tools badge, I-20 user request)
         ]
         let target = url.standardizedFileURL.path
         for (u, symbol) in map where u.standardizedFileURL.path == target {
@@ -221,9 +221,9 @@ final class SidebarModel {
         return nil
     }
 
-    /// Finder 原版侧栏图标（I-20b 用户点名"原版"）：直读系统 CoreTypes 公共资源的
-    /// Sidebar*.icns（Finder 自己用的同一批模板图），isTemplate 随主题着色。
-    /// 优先级高于 SF 近似映射；文件不存在（系统版本差异）自动回退。
+    /// Finder's original sidebar icons (I-20b user request for the "original"): reads Sidebar*.icns directly from the public CoreTypes
+    /// resources (the same template images Finder uses), isTemplate tints with the theme.
+    /// Takes priority over the approximate SF mapping; a missing file (system version differences) falls back automatically.
     static func finderSidebarIcon(url: URL) -> NSImage? {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let map: [(URL, String)] = [

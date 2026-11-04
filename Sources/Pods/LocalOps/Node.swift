@@ -1,7 +1,7 @@
 import Foundation
 import NSpaceContracts
 
-/// 本地操作节点（rename / newFolder / newFile / trash）。构造零参注入（Axiom 2：无全局可变状态）。
+/// Local operations node (rename / newFolder / newFile / trash). Zero-argument construction injection (Axiom 2: no global mutable state).
 public struct LocalOpsNode: OperationNode {
     public init() {}
 
@@ -12,14 +12,14 @@ public struct LocalOpsNode: OperationNode {
             return try renameEntry(spec, context: context, started: started)
         case .newFolder:
             return try createEntry(spec, context: context, isDirectory: true,
-                                   defaultBase: "未命名文件夹", started: started)
+                                   defaultBase: "untitled folder", started: started)
         case .newFile:
             return try createEntry(spec, context: context, isDirectory: false,
-                                   defaultBase: "未命名", started: started)
+                                   defaultBase: "untitled", started: started)
         case .trash:
             return try trashEntries(spec, context: context, started: started)
         default:
-            throw LocalOpsError(.logic, "LocalOpsNode 不处理 \(spec.kind.rawValue)")
+            throw LocalOpsError(.logic, "LocalOpsNode does not handle\(spec.kind.rawValue)")
         }
     }
 }

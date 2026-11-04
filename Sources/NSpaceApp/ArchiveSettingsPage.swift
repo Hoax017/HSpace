@@ -1,18 +1,18 @@
 import AppKit
 
-/// 归档设置页（SettingsPage 插件）：压缩格式 / 压缩后保留原文件 / 解压包裹文件夹 / 解压后保留压缩包。
-/// 全部落 Preferences 外部化键；控件即时生效。作为 SettingsPages.extraPages 一员被设置窗渲染成一个页签。
+/// Archive settings page (SettingsPage plugin): compression format / keep originals after compressing / extraction wrapper folder / keep archive after extracting.
+/// Everything is stored in Preferences' externalized keys; controls apply immediately. Rendered as one tab of the settings window through SettingsPages.extraPages.
 @MainActor
 final class ArchiveSettingsPage: NSObject, SettingsPage {
     var pageTitleKey: String { "settings.tab.archive" }
 
     func makeView() -> NSView {
-        // 作用域说明置顶：本页只管 NSpace 自带压缩/解压命令，双击打开始终走系统默认程序（I-06）
+        // Scope note on top: this page covers only NSpace's own compress/extract commands; double-click always uses the system default app (I-06)
         let scopeNote = NSTextField(wrappingLabelWithString: L10n.t("settings.archiveScopeNote"))
         scopeNote.font = .systemFont(ofSize: 11)
         scopeNote.textColor = .secondaryLabelColor
 
-        // 压缩格式 popup
+        // Compression format popup
         let formatLabel = NSTextField(labelWithString: L10n.t("settings.archiveFormat"))
         formatLabel.font = .systemFont(ofSize: 12)
         let formatPopup = NSPopUpButton()
@@ -30,12 +30,12 @@ final class ArchiveSettingsPage: NSObject, SettingsPage {
         formatRow.spacing = 8
         formatLabel.widthAnchor.constraint(equalToConstant: 152).isActive = true
 
-        // 压缩后保留原文件
+        // Keep originals after compressing
         let keepOriginal = checkbox("settings.archiveKeepOriginal",
                                     checked: Preferences.archiveKeepOriginal,
                                     action: #selector(keepOriginalChanged(_:)))
 
-        // 解压确保创建包裹文件夹 + 说明
+        // Always create a wrapper folder on extraction + note
         let wrapper = checkbox("settings.extractCreateWrapper",
                                checked: Preferences.extractCreateWrapper,
                                action: #selector(wrapperChanged(_:)))
@@ -43,12 +43,12 @@ final class ArchiveSettingsPage: NSObject, SettingsPage {
         wrapperNote.font = .systemFont(ofSize: 11)
         wrapperNote.textColor = .tertiaryLabelColor
 
-        // 解压后保留压缩包
+        // Keep archive after extracting
         let keepArchive = checkbox("settings.extractKeepArchive",
                                    checked: Preferences.extractKeepArchive,
                                    action: #selector(keepArchiveChanged(_:)))
 
-        // 弱加密诚实说明
+        // Honest note about weak encryption
         let cryptoNote = NSTextField(wrappingLabelWithString: L10n.t("settings.archiveCryptoNote"))
         cryptoNote.font = .systemFont(ofSize: 11)
         cryptoNote.textColor = .tertiaryLabelColor

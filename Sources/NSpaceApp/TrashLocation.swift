@@ -1,23 +1,23 @@
 import Foundation
 
-/// 废纸篓位置的唯一口径（用户报告「nspace 缺少废纸篓功能」）。
+/// Single source of truth for Trash locations (user report: "nspace has no Trash feature").
 ///
-/// 单独成节点而不是散在各调用点写 `.appendingPathComponent(".Trash")`：
-/// 甲板钮、Go 菜单、窗格动作、自测四处都要问同一个问题，散着写就会各自漂。
-/// 只读路径推导，不含任何写型 API（BG-1）。
+/// A dedicated node rather than `.appendingPathComponent(".Trash")` scattered at call sites:
+/// the deck button, Go menu, pane action and self-test all ask the same question and would otherwise drift apart.
+/// Read-only path derivation; contains no write APIs (BG-1).
 enum TrashLocation {
-    /// 当前用户的废纸篓（`~/.Trash`）。
-    /// 注：`~/.Trash` 自身带 hidden 标志，但 DirectoryReader 的 `.skipsHiddenFiles`
-    /// 过滤的是**被列出的条目**、不是被列举的那个目录，所以不开"显示隐藏文件"也能正常浏览
-    /// （实测 15/17 项）。
+    /// The current user's Trash (`~/.Trash`).
+    /// Note: `~/.Trash` itself has the hidden flag, but DirectoryReader's `.skipsHiddenFiles`
+    /// filters the **listed entries**, not the directory being enumerated, so it browses fine without "Show Hidden Files"
+    /// (measured: 15/17 items).
     static var userTrash: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash", isDirectory: true)
     }
 
-    /// 某个位置**对应的**废纸篓。
-    /// 旧版只有 userTrash：在外置盘上浏览时，垃圾桶钮「打开废纸篓」会跳回启动盘的
-    /// `~/.Trash`，而拖进去的文件被 `fm.trashItem` 放进了**该卷**的 `.Trashes/<uid>`
-    /// ——按钮说的和做的不是同一个地方。只做只读路径推导，不创建任何目录（BG-1）。
+    /// The Trash that **corresponds to** a location.
+    /// The old version only had userTrash: browsing an external disk, the trash button "Open Trash" jumped back to the startup
+    /// disk's `~/.Trash`, while files dragged in were placed by `fm.trashItem` in **that volume's** `.Trashes/<uid>`,
+    /// so the button pointed somewhere other than where files went. Read-only path derivation; creates no directories (BG-1).
     static func trash(for url: URL) -> URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
         guard let vol = (try? url.resourceValues(forKeys: [.volumeURLKey]))?.volume,
@@ -26,30 +26,30 @@ enum TrashLocation {
         else { return userTrash }
         let perVolume = vol.appendingPathComponent(".Trashes", isDirectory: true)
             .appendingPathComponent(String(getuid()), isDirectory: true)
-        // 该卷没有（或不可读）per-user 回收站时回落到用户废纸篓——诚实退化，不假装
+        // If the volume has no (or no readable) per-user trash, fall back to the user Trash: degrade honestly, don't pretend
         return FileManager.default.fileExists(atPath: perVolume.path) ? perVolume : userTrash
     }
 
-    /// 该 URL 是否就是废纸篓本身（只认用户废纸篓）
+    /// Whether this URL is the Trash itself (user Trash only)
     static func isTrash(_ url: URL) -> Bool {
         url.standardizedFileURL.path == userTrash.standardizedFileURL.path
     }
 
-    /// 该 URL 是否是**某个**废纸篓的根（用户废纸篓 或 该卷的 per-user 回收站）。
-    /// 「清倒」按钮只在根上出现——同 Finder：进到废纸篓里的子文件夹时不显示，
-    /// 那里点「清倒」会让人以为只清这一层。
+    /// Whether this URL is the root of **some** Trash (the user Trash or the volume's per-user trash).
+    /// The "Empty" button appears only at a root, as in Finder: it is hidden in subfolders of the Trash,
+    /// where clicking "Empty" would suggest it clears only that level.
     static func isTrashRoot(_ url: URL) -> Bool {
         let p = url.standardizedFileURL.path
         return p == userTrash.standardizedFileURL.path
             || p == trash(for: url).standardizedFileURL.path
     }
 
-    /// 该 URL 是否**位于废纸篓之内**（含任意深度的子层级）。
-    /// 只判"父目录是不是废纸篓"是不够的：`~/.Trash/某文件夹/文件` 会绕过守卫，
-    /// 而 trashItem 对它是把它从子层级悄悄提到废纸篓根下——用户看到文件"自己动了"。
+    /// Whether this URL is **inside a Trash** (at any depth).
+    /// Checking "is the parent the Trash" is not enough: `~/.Trash/folder/file` would bypass the guard,
+    /// and trashItem would silently lift it from the subfolder to the Trash root, so the user sees the file "move by itself".
     static func isInsideTrash(_ url: URL) -> Bool {
         let p = url.standardizedFileURL.path
-        // 用户废纸篓 + 该 URL 所在卷的 per-user 回收站，两处都算
+        // Both count: the user Trash and the per-user trash on the URL's volume
         for root in Set([userTrash.standardizedFileURL.path,
                          trash(for: url).standardizedFileURL.path]) {
             if p == root || p.hasPrefix(root.hasSuffix("/") ? root : root + "/") { return true }

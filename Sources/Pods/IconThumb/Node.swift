@@ -2,18 +2,18 @@ import Foundation
 import CoreGraphics
 import QuickLookThumbnailing
 
-/// 构造工厂 + 入口（Axiom 2：LRU 缓存为实例私有，非全局单例）。
-/// NSCache 自身线程安全，其余无可变状态，故 @unchecked Sendable 成立。
+/// Construction factory + entry point (Axiom 2: the LRU cache is instance-private, not a global singleton).
+/// NSCache is itself thread-safe and nothing else is mutable, so @unchecked Sendable holds.
 public final class IconThumb: IconThumbnailing, @unchecked Sendable {
     private let cache = ThumbnailCache()
-    private let scale: CGFloat = 2   // Retina 生成，契约文档承诺像素 ≤ size*scale
+    private let scale: CGFloat = 2   // generated for Retina; the contract documents pixels <= size*scale
 
     public init() {}
 
     public func thumbnail(for url: URL, size: CGFloat) async -> CGImage? {
         if Task.isCancelled { return nil }
 
-        // key 含 mtime：文件改动后旧缩略图自动失效（防陈旧），无需显式 invalidate。
+        // The key includes mtime: old thumbnails expire automatically after a file changes (no staleness), no explicit invalidate needed.
         let key = cacheKey(url: url, size: size, scale: scale)
         if let hit = cache.image(forKey: key) { return hit }
 

@@ -12,22 +12,22 @@ import Eraser
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let kernel = OperationKernel()
-    /// 冲突裁决面板（内核唯一 arbiter）——强持有，内核只存弱语义引用
+    /// Conflict arbitration sheet (the kernel's only arbiter): held strongly here, the kernel keeps only a weak-semantics reference
     private let conflictSheet = ConflictSheet()
     private var windowControllers: [MainWindowController] = []
-    /// 会话快照唯一 Commit Owner（M11）
+    /// Sole commit owner of session snapshots (M11)
     let sessionStore = SessionStore(directory: AppDelegate.supportDirectory)
-    /// 使用习惯学习（M28）：全应用打开/进入记账 → 聚焦搜索按 frecency 排序。单一实例，注入到各窗口 coordinator 与搜索面板。
+    /// Usage learning (M28): app-wide open/enter accounting feeds frecency ranking in focused search. Single instance, injected into each window's coordinator and the search panel.
     let frecencyStore = FrecencyStore(directory: AppDelegate.supportDirectory)
-    /// 「放回原处」台账（全应用共享；各窗口 coordinator 注入同一实例）。
-    /// macOS 的 put-back 元数据在 Finder 私有库里读不到（实测：唯一 xattr 是空的
-    /// com.apple.provenance、mdls 无来源、Finder 自己的 AppleScript original item 返回 -1728），
-    /// 所以要能放回就得自己记账。
+    /// "Put Back" ledger (shared app-wide; every window coordinator is given the same instance).
+    /// macOS put-back metadata sits in a private Finder store we cannot read (tested: the only xattr is an empty
+    /// com.apple.provenance, mdls shows no origin, Finder's own AppleScript `original item` returns -1728),
+    /// so supporting put-back means keeping our own records.
     let trashLedger = TrashLedger(directory: AppDelegate.supportDirectory)
 
-    /// 应用支持目录：UITEST 走隔离临时目录，绝不把测试夹具路径/记账污染进用户真实会话与搜索排序
-    /// （测试沙箱铁律，同 I-46 windowFrame 隔离；I-47 后 sessionStore 亦经此，因导航即落盘会写 session）。
-    /// 产品走 Application Support/NSpace。
+    /// Application support directory: UITEST uses an isolated temp directory so test fixture paths and records never pollute the user's real session or search ranking
+    /// (test sandbox hard rule, same as the I-46 windowFrame isolation; since I-47 sessionStore goes through this too, because navigation persists the session immediately).
+    /// The product uses Application Support/NSpace.
     static var supportDirectory: URL {
         let real = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("NSpace")
@@ -35,35 +35,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ? FileManager.default.temporaryDirectory.appendingPathComponent("nspace-uitest-support")
             : real
     }
-    /// 恢复完成前的状态变化不落盘（防启动过程把半成品覆盖上次会话）
+    /// State changes are not persisted until restore finishes (stops startup from overwriting the last session with a half-built one)
     private var sessionReady = false
-    /// 会话恢复完成前到达的外部打开请求（I-60）。
-    /// restoreSessionOrDefault 是 async（要 await 读 session.json），而 application(_:open:)
-    /// 由 LaunchServices 同步早到——NSpace 未运行时被"在访达中显示"拉起，请求会在零窗口时刻抵达，
-    /// activeMainWindowController() 返回 nil，于是掉进开新窗分支；随后会话恢复再开自己的窗，
-    /// 用户看到的就是"明明设了新标签页，却多冒一个窗"。这里先排队，恢复完再按正常落点处理。
+    /// External open requests that arrive before session restore finishes (I-60).
+    /// restoreSessionOrDefault is async (it awaits reading session.json), while application(_:open:)
+    /// arrives early and synchronously from LaunchServices: when "Reveal in Finder" launches a stopped NSpace, the request lands with zero windows,
+    /// activeMainWindowController() returns nil, and it drops into the new-window branch; session restore then opens its own window,
+    /// so the user gets an extra window despite having chosen new tab. Queue here and route normally once restore is done.
     private var pendingExternalOpens: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build()
-        Theme.applyAppearance()   // 外观：启动即套明暗模式（跟随系统/浅色/深色）
-        // M28：使用习惯学习排序——搜索面板共享同一 frecencyStore（全应用记账在各窗口 coordinator）
+        Theme.applyAppearance()   // Appearance: apply light/dark mode at launch (system/light/dark)
+        // M28: usage-based ranking; the search panel shares the same frecencyStore (app-wide accounting lives in each window coordinator)
         SearchPanelController.shared.frecencyStore = frecencyStore
-        // I-25 反向直达：Finder 右键"服务 → 用 NSpace 打开"（默认程序被 macOS 27 锁死后的正道）
+        // I-25 reverse entry: Finder context menu "Services > Open with NSpace" (the proper route now that macOS 27 locks the default handler)
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
-        // M24：全局呼出/隐藏热键（Carbon，无需 AX；偏好外部化，设置-通用可录制）
+        // M24: global show/hide hotkey (Carbon, no AX needed; the preference is externalized and recordable in Settings > General)
         GlobalHotkey.apply()
-        // 组合根（BG-2）：声明式注入 What —— 胶囊节点 + 冲突裁决者 + 进度订阅
+        // Composition root (BG-2): declaratively inject the What: pod nodes + conflict arbiter + progress subscription
         Task { @MainActor in
             await kernel.register(TransferNode(), for: [.copy, .move, .duplicate])
             await kernel.register(LocalOpsNode(), for: [.rename, .newFolder, .newFile, .trash])
             await kernel.register(ArchiveEngineNode(), for: [.compress, .extract])
-            // 永久删除单独成节点：不可逆操作不与其余本地操作共用一个成熟节点
+            // Permanent delete gets its own node: an irreversible operation does not share a mature node with the other local operations
             await kernel.register(EraserNode(), for: [.delete])
             await kernel.setArbiter(conflictSheet)
             ProgressWindowController.shared.start(kernel: kernel)
-            // 性能自证入口（北极星验收用，非产品路径）：NSPACE_PERF_DIRS=a:b:c:d → 四宫格各导航一目录
+            // Performance self-check entry (for north star acceptance, not a product path): NSPACE_PERF_DIRS=a:b:c:d navigates each quad pane to one directory
             if let spec = ProcessInfo.processInfo.environment["NSPACE_PERF_DIRS"], !spec.isEmpty {
                 let dirs = spec.split(separator: ":").map { URL(fileURLWithPath: String($0)) }
                 let wc = openWindow(at: dirs[0])
@@ -75,25 +75,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await restoreSessionOrDefault()
             }
             sessionReady = true
-            flushPendingExternalOpens()   // I-60：补落地恢复期间排队的外部打开（此刻窗口已在）
+            flushPendingExternalOpens()   // I-60: deliver the external opens queued during restore (windows exist now)
             NSApp.activate()
             if UISelfTest.isEnabled {
                 UISelfTest.run(delegate: self)
             } else if ProcessInfo.processInfo.environment["NSPACE_CONFLICT_PREVIEW"] != nil {
-                // 冲突面板真机预览（非产品路径，仅供人眼终审截图）：造夹具冲突并弹真 sheet
+                // Live conflict sheet preview (not a product path, only for human review screenshots): builds fixture conflicts and shows the real sheet
                 presentConflictPreview()
             } else if ProcessInfo.processInfo.environment["NSPACE_GROUPING_PREVIEW"] != nil {
-                // 图标视图分组真机预览（非产品路径，仅供人眼终审截图）：造跨年月夹具 + 图标视图 + 分组
+                // Live icon view grouping preview (not a product path, only for human review screenshots): builds cross-month fixtures + icon view + grouping
                 presentGroupingPreview()
             } else if ProcessInfo.processInfo.environment["NSPACE_PERF_DIRS"] == nil {
-                // 权限引导：未授权且未勾"不再提示" → 主窗口就绪后弹一次 sheet（自测/性能跑不打扰）
+                // Permissions prompt: not granted and "Don't ask again" unticked -> show one sheet once the main window is ready (self-test/perf runs are left alone)
                 promptFullDiskAccessIfNeeded()
             }
         }
     }
 
-    /// 冲突面板真机预览（NSPACE_CONFLICT_PREVIEW）：在自建夹具里造 3 条冲突弹真 sheet 供截图。
-    /// 沙箱铁律：只动 temporaryDirectory 下的自建夹具，绝不碰用户真实文件。
+    /// Live conflict sheet preview (NSPACE_CONFLICT_PREVIEW): builds 3 conflicts in private fixtures and shows the real sheet for screenshots.
+    /// Sandbox hard rule: only touch our own fixtures under temporaryDirectory, never the user's real files.
     private func presentConflictPreview() {
         guard let win = NSApp.windows.first(where: { $0.windowController is MainWindowController }) else { return }
         let fm = FileManager.default
@@ -102,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let dstDir = base.appendingPathComponent("dst")
         try? fm.createDirectory(at: srcDir, withIntermediateDirectories: true)
         try? fm.createDirectory(at: dstDir, withIntermediateDirectories: true)
-        let names = ["报告.pdf", "预算表.xlsx", "封面.png"]
+        let names = ["Report.pdf", "Budget.xlsx", "Cover.png"]
         var conflicts: [FileConflict] = []
         for n in names {
             let s = srcDir.appendingPathComponent(n)
@@ -111,9 +111,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? Data("dst".utf8).write(to: d)
             conflicts.append(FileConflict(source: s, existing: d, bothDirectories: false))
         }
-        // 再加一个目录冲突（让「合并」按钮可用，预览三按钮全态）
-        let sSub = srcDir.appendingPathComponent("素材")
-        let dSub = dstDir.appendingPathComponent("素材")
+        // Add one directory conflict too (enables the Merge button, so the preview shows all three buttons active)
+        let sSub = srcDir.appendingPathComponent("Assets")
+        let dSub = dstDir.appendingPathComponent("Assets")
         try? fm.createDirectory(at: sSub, withIntermediateDirectories: true)
         try? fm.createDirectory(at: dSub, withIntermediateDirectories: true)
         conflicts.insert(FileConflict(source: sSub, existing: dSub, bothDirectories: true), at: 0)
@@ -121,8 +121,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in _ = await conflictSheet.arbitrate(operation: UUID(), conflicts: conflicts) }
     }
 
-    /// 图标视图分组真机预览（NSPACE_GROUPING_PREVIEW）：跨年月夹具 + 图标视图 + 分组，供人眼终审截图。
-    /// 沙箱铁律：只动 temporaryDirectory 下的自建夹具。
+    /// Live icon view grouping preview (NSPACE_GROUPING_PREVIEW): cross-month fixtures + icon view + grouping, for human review screenshots.
+    /// Sandbox hard rule: only touch our own fixtures under temporaryDirectory.
     private func presentGroupingPreview() {
         guard let wc = NSApp.windows.compactMap({ $0.windowController as? MainWindowController }).first else { return }
         let fm = FileManager.default
@@ -132,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (mi, (y, m)) in [(2026, 8), (2026, 5), (2025, 12)].enumerated() {
             guard let date = cal.date(from: DateComponents(year: y, month: m, day: 15, hour: 12)) else { continue }
             for k in 0..<3 {
-                let f = box.appendingPathComponent("文件-\(mi)-\(k).txt")
+                let f = box.appendingPathComponent("File-\(mi)-\(k).txt")
                 try? Data("x".utf8).write(to: f)
                 try? fm.setAttributes([.modificationDate: date], ofItemAtPath: f.path)
             }
@@ -153,7 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
-    /// Dock 点击/重新激活且无可见窗口 → 开新窗（I-21：⌘W 关掉最后一个窗口后必须能回来）
+    /// Dock click or reactivation with no visible window -> open a new window (I-21: there must be a way back after ⌘W closes the last window)
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
             openWindow(at: FileManager.default.homeDirectoryForCurrentUser)
@@ -161,9 +161,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    /// ⌘W 分层关闭（I-21 用户语义）：目标 = key 窗口，无 key 时取 z 序最顶的可见窗口
-    /// （"位于软件上层的窗口"）。浮层（设置/任务/搜索等）→ 只关它；
-    /// 主窗口 → 关当前工作区标签（最后一个则关窗，可经 Dock 重开）
+    /// Layered ⌘W close (I-21 user semantics): the target is the key window, or with no key window the topmost visible one in z-order
+    /// (the "window on top of the app"). Floating panels (settings/tasks/search etc.) -> close just that;
+    /// main window -> close the current workspace tab (the last one closes the window, which Dock can reopen)
     @objc func closeTopmost(_ sender: Any?) {
         guard let target = NSApp.keyWindow ?? NSApp.orderedWindows.first(where: { $0.isVisible }) else { return }
         if let wc = target.windowController as? MainWindowController {
@@ -175,12 +175,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// open-URL 路由：目录 → 开窗定位；文件 → 父目录 + 选中该文件（替代 Finder 的入口）。
-    /// 打开模式（externalOpenTarget）：非 newWindow 且已有窗口 → 复用该窗口新建工作区标签定位。
+    /// open-URL routing: directory -> open a window there; file -> parent directory with the file selected (the Finder replacement entry).
+    /// Open mode (externalOpenTarget): anything but newWindow, with a window present -> reuse that window and open a new workspace tab there.
     func application(_ application: NSApplication, open urls: [URL]) {
         var fileURLs: [URL] = []
         for url in urls {
-            // nspace:// 方案（I-25 第三方集成）：nspace://open?path=… / nspace://reveal?path=…
+            // nspace:// scheme (I-25 third-party integration): nspace://open?path=… / nspace://reveal?path=…
             if url.scheme == "nspace" {
                 if let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
                    let path = comps.queryItems?.first(where: { $0.name == "path" })?.value {
@@ -193,7 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openFileURLs(fileURLs)
     }
 
-    /// 服务菜单入口（Finder 右键 → 服务 → 用 NSpace 打开；I-25）
+    /// Services menu entry (Finder context menu > Services > Open with NSpace; I-25)
     @objc func openInNSpace(_ pboard: NSPasteboard, userData: String, error: NSErrorPointer) {
         let urls = (pboard.readObjects(forClasses: [NSURL.self]) as? [URL]) ?? []
         openFileURLs(urls)
@@ -201,21 +201,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func openFileURLs(_ urls: [URL]) {
-        // 外部打开审计面包屑（I-28 NSFileViewer 链路诊断；单键覆盖写，量恒小）
+        // External-open audit breadcrumb (I-28 NSFileViewer chain diagnostics; a single overwritten key, so volume stays tiny)
         if let first = urls.first {
             UserDefaults.standard.set("\(Date().timeIntervalSince1970)|\(first.path)", forKey: "debug.lastExternalOpen")
         }
-        // I-60：会话还没恢复完（零窗口时刻）就落地，只会开出一个多余的新窗。先排队。
+        // I-60: routing before the session is restored (zero windows) would only open a surplus window. Queue first.
         guard sessionReady else {
             pendingExternalOpens.append(contentsOf: urls)
             return
         }
-        // 先按**父目录归并**再落地：一次「在访达中显示」常常带来同目录的好几个文件
-        // （微信选 5 个附件、浏览器多文件下载）。逐个 URL 各开一个落点的话，
-        // v0.19.26 起每个落点都是一整套布局的复制，四宫格下就是 20 次窗格重建。
-        // 同目录只开一个，落点数从"文件数"降回"目录数"。
+        // **Merge by parent directory** before routing: a single "Reveal in Finder" often brings several files from one directory
+        // (5 attachments picked in WeChat, a multi-file browser download). Opening one destination per URL would,
+        // since v0.19.26, duplicate a whole layout per destination: 20 pane rebuilds in a quad layout.
+        // Open each directory once, so destinations drop from "number of files" to "number of directories".
         var dirOrder: [URL] = []
-        var picks: [URL: URL] = [:]     // 目录 → 该目录下第一个要选中的文件（目录自身=nil 落点）
+        var picks: [URL: URL] = [:]     // Directory -> first file to select in it (nil = destination is the directory itself)
         for url in urls {
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { continue }
@@ -226,13 +226,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for directory in dirOrder {
             let selecting = picks[directory]
             if Preferences.externalOpenTarget != "newWindow", let wc = activeMainWindowController() {
-                // 现有窗口新建**工作区标签**（默认，用户点名）：复用活动窗口，活动窗格落到目标目录。
-                // v0.19.26 前这里走 pane.openNewTab —— 往窗格里塞一个标签，而窗格标签栏默认隐藏，
-                // 于是每次外部打开都在看不见的地方堆一个（用户会话里一个窗格堆到了 5 个），
-                // 既关不掉也回不去。工作区标签条本来就常显、带关闭钮，落这儿才可见可关。
+                // New **workspace tab** in the existing window (default, user request): reuse the active window and point the active pane at the target directory.
+                // Before v0.19.26 this used pane.openNewTab: it pushed a tab into the pane, whose tab bar is hidden by default,
+                // so every external open piled up somewhere invisible (one user session reached 5 tabs in a pane),
+                // impossible to close or return to. The workspace tab strip is always shown and has close buttons, so tabs landing there can be seen and closed.
                 //
-                // allowEvictingOldest: false —— 这是**别的 App** 触发的打开。到了工作区上限时
-                // 宁可就地导航，也不能因为对方点了「在访达中显示」就把用户最老的工作区顶掉。
+                // allowEvictingOldest: false: this open comes from **another app**. At the workspace limit we would
+                // rather navigate in place than evict the user's oldest workspace because some app hit "Reveal in Finder".
                 wc.openWorkspaceTab(at: directory, allowEvictingOldest: false)
                 if let selecting { wc.grid.activePane.reveal(selecting) }
                 wc.window?.makeKeyAndOrderFront(nil)
@@ -245,12 +245,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 活动主窗口（打开模式=activePane 的落点）：优先 keyWindow，其次 mainWindow，再退回任一存活窗口
+    /// Active main window (destination for open mode activePane): prefer keyWindow, then mainWindow, then any live window
     private func activeMainWindowController() -> MainWindowController? {
         if let key = NSApp.keyWindow?.windowController as? MainWindowController { return key }
         if let main = NSApp.mainWindow?.windowController as? MainWindowController { return main }
-        // 兜底取**最前**的可见主窗（orderedWindows 是前→后序），而不是"最后创建的那一个"——
-        // 后者在用户关掉新窗或多窗切换之后会指向背后、甚至已不可见的窗口，外部打开就落到看不见的地方。
+        // Fall back to the **frontmost** visible main window (orderedWindows is front to back), not the "last created" one:
+        // after the user closes a new window or switches between windows, that one can sit behind others or be invisible, and the external open lands out of sight.
         if let front = NSApp.orderedWindows.first(where: {
             $0.isVisible && $0.windowController is MainWindowController
         })?.windowController as? MainWindowController {
@@ -259,19 +259,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return windowControllers.last { $0.window != nil }
     }
 
-    /// 是否还有主窗口存活。**不能用 NSApp.windows 的 isVisible 判断**：unhide 是异步的，
-    /// 刚 NSApp.unhide(nil) 完窗口 isVisible 仍是 false，据此会误判"没有主窗"而多开一个空窗
-    /// （用户按全局热键呼出 NSpace 时冒出多余窗口）。窗口台账在 windowWillClose 里同步维护，可信。
+    /// Whether any main window is alive. **Do not use isVisible from NSApp.windows**: unhide is asynchronous,
+    /// right after NSApp.unhide(nil) windows still report isVisible false, which reads as "no main window" and opens a surplus empty one
+    /// (extra windows when the global hotkey summons NSpace). The window ledger is updated synchronously in windowWillClose and can be trusted.
     var hasLiveMainWindow: Bool { windowControllers.contains { $0.window != nil } }
 
-    /// 按窗口反查它的控制器（跨窗拖放要把撤销/吐司送回来源窗）
+    /// Look up a window's controller (cross-window drag and drop sends undo/toasts back to the source window)
     func mainWindowController(for window: NSWindow?) -> MainWindowController? {
         guard let window else { return nil }
         return windowControllers.first { $0.window === window }
     }
 
-    /// 最前的主窗口（全局热键呼出用）。不用 NSApp.windows.first —— 已 close() 但尚未析构的窗口
-    /// 仍留在里面，makeKeyAndOrderFront 会把它"复活"成用户以为早就关掉的僵尸窗。
+    /// Frontmost main window (for the global hotkey). Not NSApp.windows.first: a window that was close()d but not yet deallocated
+    /// stays in there, and makeKeyAndOrderFront would "revive" it as a zombie the user thinks is long gone.
     var frontmostMainWindow: NSWindow? {
         if let key = NSApp.keyWindow, key.windowController is MainWindowController { return key }
         if let main = NSApp.mainWindow, main.windowController is MainWindowController { return main }
@@ -293,8 +293,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SettingsWindowController.shared.showWindow(sender)
     }
 
-    /// 完全磁盘访问自动引导：未授权且未勾"不再提示" → 在主窗口上弹一次说明 sheet。
-    /// 三钮：去授权（开系统设置）/ 稍后（本次略过，下次再问）/ 不再提示（落 Preferences 标志）。
+    /// Full Disk Access guided prompt: not granted and "Don't ask again" unticked -> show one explanatory sheet on the main window.
+    /// Three buttons: grant (opens System Settings) / later (skip now, ask next time) / never ask (sets a Preferences flag).
     private func promptFullDiskAccessIfNeeded() {
         guard !Preferences.fdaPromptDismissed, !FinderIntegration.hasFullDiskAccess(),
               let window = windowControllers.first(where: { $0.window != nil })?.window else { return }
@@ -309,7 +309,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 switch response {
                 case .alertFirstButtonReturn: FinderIntegration.openFullDiskAccessSettings()
                 case .alertThirdButtonReturn: Preferences.fdaPromptDismissed = true
-                default: break  // 稍后
+                default: break  // Later
                 }
             }
         }
@@ -319,11 +319,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openWindow(at: FileManager.default.homeDirectoryForCurrentUser)
     }
 
-    // MARK: 会话恢复与保存（M11：重开即回到工作状态）
+    // MARK: Session restore and save (M11: reopening returns you to where you were)
 
     private func restoreSessionOrDefault() async {
-        // UITEST 隔离：自测断言依赖确定性初态（单工作区默认布局），不吃真实用户会话；
-        // frame 持久化场景（SETFRAME/EXPECTFRAME）走独立的 windowFrame 键，不受此影响
+        // UITEST isolation: self-test assertions rely on a deterministic initial state (single workspace, default layout), not the real user session;
+        // frame persistence scenarios (SETFRAME/EXPECTFRAME) use the separate windowFrame key and are unaffected
         if ProcessInfo.processInfo.environment["NSPACE_UITEST"] != nil {
             openWindow(at: FileManager.default.homeDirectoryForCurrentUser)
             return
@@ -332,7 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openWindow(at: FileManager.default.homeDirectoryForCurrentUser)
             return
         }
-        // 每个保存的"窗口"= 一组工作区（M17）：各成独立 OS 窗口，工作区数组自管恢复
+        // Each saved "window" = one set of workspaces (M17): each becomes its own OS window, and its workspace array restores itself
         var first: MainWindowController?
         for ws in snapshot.windows {
             let firstPane = ws.workspaces.first(where: { !$0.panes.isEmpty })
@@ -344,11 +344,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         first?.window?.makeKeyAndOrderFront(nil)
     }
 
-    /// UISelfTest（I-60）：排队中的外部打开请求数 / 会话是否已就绪
+    /// UISelfTest (I-60): number of queued external opens / whether the session is ready
     var uiTestPendingExternalOpenCount: Int { pendingExternalOpens.count }
     var uiTestSessionReady: Bool { sessionReady }
 
-    /// UISelfTest（I-60）：在"会话未就绪"状态下投递一次外部打开（复现冷启动那一刻）
+    /// UISelfTest (I-60): deliver an external open in the "session not ready" state (reproduces the cold-start moment)
     func uiTestDeliverExternalOpenWhileNotReady(_ url: URL) {
         let saved = sessionReady
         sessionReady = false
@@ -356,10 +356,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sessionReady = saved
     }
 
-    /// UISelfTest（I-60）：手动冲刷队列（模拟会话恢复完成）
+    /// UISelfTest (I-60): flush the queue by hand (simulates session restore finishing)
     func uiTestFlushPendingExternalOpens() { flushPendingExternalOpens() }
 
-    /// I-60：把会话恢复期间排队的外部打开请求补落地（此刻窗口已在，走正常的"现有窗口新工作区标签"分支）
+    /// I-60: deliver external opens queued during session restore (windows exist now, so the normal "new workspace tab in existing window" branch applies)
     private func flushPendingExternalOpens() {
         guard !pendingExternalOpens.isEmpty else { return }
         let queued = pendingExternalOpens
@@ -367,7 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openFileURLs(queued)
     }
 
-    /// 状态变化落盘请求（位置/布局/工作区变化处调用；SessionStore 内部 1s 防抖合并）
+    /// Request to persist state (called on location/layout/workspace changes; SessionStore debounces and merges over 1s internally)
     func noteStateChanged() {
         guard sessionReady else { return }
         let snapshot = SessionSnapshot(windows: windowControllers.compactMap { wc in
@@ -377,7 +377,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await sessionStore.save(snapshot) }
     }
 
-    /// 退出前强制落盘（同步等待 ≤1s；防抖中的快照不丢）
+    /// Force persistence before quitting (synchronous wait of at most 1s; a snapshot still in debounce is not lost)
     func applicationWillTerminate(_ notification: Notification) {
         let snapshot = SessionSnapshot(windows: windowControllers.compactMap { wc in
             wc.window != nil ? wc.workspaceSnapshot() : nil
@@ -390,8 +390,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             done.signal()
         }
         _ = done.wait(timeout: .now() + 1)
-        // 强制刷偏好落盘：更新流程 openApplication+terminate 会尽快杀本进程，
-        // 保证窗口尺寸/侧栏宽/列显隐等最后写入在被杀前已持久（cfprefsd 未及异步落盘的兜底）
+        // Force preferences to disk so the last writes (window size, sidebar width, column visibility, etc.)
+        // are persisted before the process exits (a fallback for cfprefsd not having flushed asynchronously)
         UserDefaults.standard.synchronize()
     }
 }
@@ -406,7 +406,7 @@ extension AppDelegate: NSWindowDelegate {
         noteStateChanged()
     }
 
-    /// ⌘Z 路由到该窗口的文件操作撤销栈（撤销废纸篓等）
+    /// ⌘Z routes to this window's file operation undo stack (undoing a trash, etc.)
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
         windowControllers.first(where: { $0.window === window })?.coordinator.undoManager
     }

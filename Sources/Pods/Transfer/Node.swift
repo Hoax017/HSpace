@@ -1,7 +1,7 @@
 import Foundation
 import NSpaceContracts
 
-/// 传输节点（copy / move / duplicate）。构造零参注入（Axiom 2：无全局可变状态）。
+/// Transfer node (copy / move / duplicate). Zero-argument construction injection (Axiom 2: no global mutable state).
 public struct TransferNode: OperationNode {
     public init() {}
 
@@ -9,14 +9,14 @@ public struct TransferNode: OperationNode {
         let started = Date()
         let plan = try makePlan(spec)
 
-        // 微步 1：预扫描总量（进度分母）
+        // Micro-step 1: pre-scan totals (progress denominator)
         let scan = try preScan(sources: plan.entries.map(\.source))
         context.report(.scanTotals(files: scan.total.files, bytes: scan.total.bytes))
 
-        // 微步 2：冲突检测 + 挂起裁决
+        // Micro-step 2: conflict detection + suspend for decisions
         let resolved = try await resolveConflicts(plan: plan, context: context)
 
-        // 微步 3：逐文件传输（协作式取消经 CancelFlag 透传进 copyfile 回调）
+        // Micro-step 3: per-file transfer (cooperative cancellation reaches the copyfile callback via CancelFlag)
         let flag = CancelFlag()
         let progress = ProgressAggregator(report: context.report)
         return try await withTaskCancellationHandler {

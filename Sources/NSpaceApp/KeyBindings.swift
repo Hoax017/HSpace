@@ -1,27 +1,27 @@
 import AppKit
 
-/// 快捷键注册表（外部化配置：菜单快捷键不硬编码，UserDefaults 可改，设置窗可录制）。
-/// 键存储格式 "kb.<id>" = "<modsRaw>|<key>"；缺省用注册表默认值。
+/// Shortcut registry (externalized config: menu shortcuts are not hard-coded, can be changed in UserDefaults and recorded in the settings window).
+/// Storage format "kb.<id>" = "<modsRaw>|<key>"; falls back to the registry default.
 @MainActor
 enum KeyBindings {
     struct Entry {
         let id: String
-        let titleKey: String     // 设置窗显示名（本地化键）
+        let titleKey: String     // Display name in the settings window (L10n key)
         let defaultKey: String
         let defaultMods: NSEvent.ModifierFlags
     }
 
-    /// 常用命令注册表（设置窗按此渲染；新增可配快捷键 = 加一行）
+    /// Common command registry (the settings window renders from this; a new configurable shortcut = one more line)
     static let registry: [Entry] = [
         Entry(id: "newTab", titleKey: "menu.newWorkspace", defaultKey: "t", defaultMods: [.command]),
         Entry(id: "closeTab", titleKey: "menu.closeWorkspace", defaultKey: "w", defaultMods: [.command]),
-        // F5 复制 / F6 移动 到另一窗格（QSpace 肌肉记忆；M19 从菜单硬编码迁入注册表，可改键）
+        // F5 copy / F6 move to the other pane (QSpace muscle memory; moved in M19 from menu hard-coding to the registry, rebindable)
         Entry(id: "copyToOtherPane", titleKey: "menu.copyToOtherPane", defaultKey: "\u{F708}", defaultMods: []),
         Entry(id: "moveToOtherPane", titleKey: "menu.moveToOtherPane", defaultKey: "\u{F709}", defaultMods: []),
         Entry(id: "nextWorkspace", titleKey: "menu.nextWorkspace", defaultKey: "]", defaultMods: [.command, .shift]),
         Entry(id: "prevWorkspace", titleKey: "menu.prevWorkspace", defaultKey: "[", defaultMods: [.command, .shift]),
-        // ⌃⇥ / ⌃⇧⇥ 工作区循环（Tab 无法作菜单 keyEquivalent，由事件监视器读本注册表的修饰键，
-        // 而非硬编码——满足 §0「快捷键一律走 KeyBindings 注册表」）
+        // ⌃⇥ / ⌃⇧⇥ workspace cycling (Tab cannot be a menu keyEquivalent, so an event monitor reads the modifiers from this registry,
+        // rather than hard-coding them, satisfying §0 "all shortcuts go through the KeyBindings registry")
         Entry(id: "cycleWorkspace", titleKey: "menu.nextWorkspace", defaultKey: "\t", defaultMods: [.control]),
         Entry(id: "cycleWorkspaceBack", titleKey: "menu.prevWorkspace", defaultKey: "\t", defaultMods: [.control, .shift]),
         Entry(id: "newFolder", titleKey: "menu.newFolder", defaultKey: "n", defaultMods: [.command, .shift]),
@@ -32,7 +32,7 @@ enum KeyBindings {
         Entry(id: "moveToTrash", titleKey: "menu.moveToTrash", defaultKey: "\u{8}", defaultMods: [.command]),
         Entry(id: "copyPath", titleKey: "menu.copyPath", defaultKey: "c", defaultMods: [.command, .shift]),
         Entry(id: "toggleHidden", titleKey: "menu.toggleHidden", defaultKey: ".", defaultMods: [.command, .shift]),
-        // 使用分组（M26）：默认无键（用户按需自配），走注册表可配
+        // Use Groups (M26): no default key (set your own if wanted), configurable through the registry
         Entry(id: "toggleGrouping", titleKey: "menu.toggleGrouping", defaultKey: "", defaultMods: []),
         Entry(id: "refresh", titleKey: "menu.refresh", defaultKey: "r", defaultMods: [.command]),
         Entry(id: "back", titleKey: "menu.back", defaultKey: "[", defaultMods: [.command]),
@@ -41,19 +41,19 @@ enum KeyBindings {
         Entry(id: "goDown", titleKey: "menu.goDown", defaultKey: "\u{F701}", defaultMods: [.command]),
         Entry(id: "goToPath", titleKey: "menu.goToPath", defaultKey: "l", defaultMods: [.command]),
         Entry(id: "goTrash", titleKey: "menu.goTrash", defaultKey: "", defaultMods: []),
-        // 用户点名默认：⌘F 当前文件夹、⇧⌘F 全局
+        // User-requested defaults: ⌘F current folder, ⇧⌘F global
         Entry(id: "searchHere", titleKey: "menu.searchHere", defaultKey: "f", defaultMods: [.command]),
         Entry(id: "searchGlobal", titleKey: "menu.searchGlobal", defaultKey: "f", defaultMods: [.command, .shift]),
         Entry(id: "toggleSidebar", titleKey: "menu.toggleSidebar", defaultKey: "s", defaultMods: [.command, .option]),
-        // 视图模式（I-13：从硬编码 ⌘1/2/3 迁入注册表；默认让位给工作区数字直达 → ⌥⌘1/2/3，可改）
+        // View modes (I-13: moved from hard-coded ⌘1/2/3 to the registry; defaults give way to workspace digits -> ⌥⌘1/2/3, rebindable)
         Entry(id: "viewAsIcons", titleKey: "menu.viewAsIcons", defaultKey: "1", defaultMods: [.command, .option]),
         Entry(id: "viewAsList", titleKey: "menu.viewAsList", defaultKey: "2", defaultMods: [.command, .option]),
         Entry(id: "viewAsColumns", titleKey: "menu.viewAsColumns", defaultKey: "3", defaultMods: [.command, .option]),
     ]
-    // 工作区数字直达 ⌘1..9（I-13 用户点名，QSpace 肌肉记忆）
+    // Direct workspace digits ⌘1..9 (I-13 user request, QSpace muscle memory)
     + (1...9).map { Entry(id: "workspace\($0)", titleKey: "menu.gotoWorkspace\($0)",
                           defaultKey: "\($0)", defaultMods: [.command]) }
-    // 窗格布局 ⌃⌘1..5（M19：从菜单硬编码迁入注册表；titleKey 复用 PaneLayout 各布局名键）
+    // Pane layouts ⌃⌘1..5 (M19: moved from menu hard-coding to the registry; titleKey reuses each PaneLayout name key)
     + PaneLayout.allCases.enumerated().map { i, layout in
         Entry(id: "layout\(i + 1)", titleKey: layout.titleKey,
               defaultKey: "\(i + 1)", defaultMods: [.control, .command])
@@ -63,7 +63,7 @@ enum KeyBindings {
         registry.first { $0.id == id }
     }
 
-    /// 当前生效绑定（用户覆盖 > 注册表默认）
+    /// Binding in effect (user override > registry default)
     static func binding(_ id: String) -> (key: String, mods: NSEvent.ModifierFlags) {
         guard let e = entry(id) else { return ("", []) }
         if let raw = UserDefaults.standard.string(forKey: "kb.\(id)") {
@@ -83,14 +83,14 @@ enum KeyBindings {
         UserDefaults.standard.removeObject(forKey: "kb.\(id)")
     }
 
-    /// 应用到菜单项（MainMenu 构建时调用）
+    /// Apply to a menu item (called while MainMenu builds)
     static func apply(_ id: String, to item: NSMenuItem) {
         let b = binding(id)
         item.keyEquivalent = b.key
         item.keyEquivalentModifierMask = b.mods
     }
 
-    /// 人类可读描述（设置窗展示："⇧⌘F"）
+    /// Human-readable description (settings window display: "⇧⌘F")
     static func display(_ id: String) -> String {
         let b = binding(id)
         guard !b.key.isEmpty else { return "—" }
@@ -117,7 +117,7 @@ enum KeyBindings {
         }
     }
 
-    /// 变更后重建主菜单即时生效
+    /// Rebuild the main menu after a change so it takes effect at once
     static func rebuildMenus() {
         NSApp.mainMenu = MainMenu.build()
     }

@@ -1,7 +1,7 @@
 import AppKit
 
-/// 权限设置页：完全磁盘访问（FDA）状态检测 + 引导。检测走只读探测（FinderIntegration.hasFullDiskAccess，
-/// 不违 BG-1）；状态行绿✓/橙⚠，配"打开系统设置""重新检测"按钮与说明文案。
+/// Permissions settings page: Full Disk Access (FDA) status check + guidance. The check is a read-only probe (FinderIntegration.hasFullDiskAccess,
+/// no BG-1 violation); the status line is green ✓ / orange ⚠, with "Open System Settings" and "Check Again" buttons and explanatory text.
 @MainActor
 final class PermissionsSettingsPage: NSObject, SettingsPage {
     var pageTitleKey: String { "settings.tab.permissions" }
@@ -47,7 +47,7 @@ final class PermissionsSettingsPage: NSObject, SettingsPage {
         return v
     }
 
-    /// 重新探测并刷新状态行（授权后回本页点"重新检测"即时反映）
+    /// Re-probes and refreshes the status line (after granting, "Check Again" on this page shows it at once)
     private func refreshStatus() {
         if FinderIntegration.hasFullDiskAccess() {
             statusLabel.stringValue = L10n.t("settings.perm.granted")

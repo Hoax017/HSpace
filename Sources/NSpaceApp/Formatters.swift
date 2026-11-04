@@ -2,16 +2,16 @@ import AppKit
 import UniformTypeIdentifiers
 import NSpaceContracts
 
-/// 展示格式化器：全部缓存复用（DateFormatter/ByteCountFormatter 构造昂贵）；
-/// kind 显示串与图标按 UTType 缓存（万级目录滚动零重复计算）
+/// Display formatters, all cached and reused (DateFormatter/ByteCountFormatter are expensive to construct);
+/// kind strings and icons are cached per UTType (zero repeated work when scrolling directories of tens of thousands)
 @MainActor
 enum Formatters {
-    /// 列表/单元格字号（外观设置项；读 Preferences.listFontSize）——变更后经列重建路径重刷
+    /// List/cell font size (appearance setting; reads Preferences.listFontSize). Changes are applied through the column rebuild path
     static var listFontSize: CGFloat { CGFloat(Preferences.listFontSize) }
 
-    /// 相对时间显示（M29）：今天/昨天 →「今天 22:57」；本年 → 省年份「8月24日 22:57」；
-    /// 仅非本年 → 带年份「2025年8月24日 22:57」。`now` 可注入以便确定性测试。
-    /// 参照 Finder：列表列与「显示简介」均用相对格式，本年不赘述年份（用户点名 2026-08-27）。
+    /// Relative date display (M29): today/yesterday → "Today 22:57"; this year → year omitted, "Aug 24, 22:57";
+    /// other years only → with year, "Aug 24, 2025, 22:57". `now` is injectable for deterministic tests.
+    /// Follows Finder: the list column and Get Info both use the relative form, omitting the current year (owner request 2026-08-27).
     static func relativeDate(_ date: Date, now: Date = Date()) -> String {
         let cal = Calendar.current
         if cal.isDate(date, inSameDayAs: now) {
@@ -26,21 +26,21 @@ enum Formatters {
         return otherYearDateTime.string(from: date)
     }
 
-    /// 仅时间「22:57」——今天/昨天前缀后拼接（`j` 依 locale 定 12/24 时制）
+    /// Time only, "22:57", appended after the today/yesterday prefix (`j` picks 12/24-hour from the locale)
     private static let timeOnly: DateFormatter = {
         let f = DateFormatter()
         f.setLocalizedDateFormatFromTemplate("jmm")
         return f
     }()
 
-    /// 本年日期「8月24日 22:57」（en:「Aug 24, 10:57 PM」）——无年份
+    /// Date in the current year, e.g. "Aug 24, 10:57 PM": no year
     private static let sameYearDateTime: DateFormatter = {
         let f = DateFormatter()
         f.setLocalizedDateFormatFromTemplate("MMMdjmm")
         return f
     }()
 
-    /// 非本年日期「2025年8月24日 22:57」——带年份
+    /// Date in another year, e.g. "Aug 24, 2025, 22:57": with year
     private static let otherYearDateTime: DateFormatter = {
         let f = DateFormatter()
         f.setLocalizedDateFormatFromTemplate("yMMMdjmm")
@@ -53,8 +53,8 @@ enum Formatters {
         return f
     }()
 
-    /// 大小串拆成（数值, 单位）——供大小列墨色三级分色（数值 labelColor / 单位 secondaryLabelColor）。
-    /// 以最后一个空格为界；无空格（罕见）则整串作数值、单位空。
+    /// Splits a size string into (value, unit) for the three-tier ink of the size column (value labelColor / unit secondaryLabelColor).
+    /// Splits at the last space; with no space (rare) the whole string is the value and the unit is empty.
     static func sizeParts(fromByteCount bytes: Int64) -> (value: String, unit: String) {
         let s = size.string(fromByteCount: bytes)
         if let r = s.range(of: " ", options: .backwards) {
@@ -76,8 +76,8 @@ enum Formatters {
         return name
     }
 
-    /// 图标双路径：普通文件走 UTType 通用图标（同步快路径，按类型缓存）；
-    /// 包/应用（.app 等）的真实图标存于 bundle 内，必须按文件路径读，否则显示空白——按路径缓存
+    /// Two icon paths: ordinary files use the generic UTType icon (fast synchronous path, cached per type);
+    /// packages/apps (.app etc) keep their real icon inside the bundle and must be read by file path or they show blank; cached per path
     static func icon(for item: FileItem) -> NSImage {
         if item.isPackage {
             let key = "path:" + item.url.path
@@ -96,8 +96,8 @@ enum Formatters {
         return image
     }
 
-    /// 大图标（图标网格/分栏预览列用）：保留系统多分辨率表示、不改 size——
-    /// 与 16pt 列表缓存分开（NSImage.size 是共享可变态，混用会把列表图标撑大）；显示端由 NSImageView 按需缩放
+    /// Large icon (for the icon grid and column preview): keeps the system's multi-resolution representations, size untouched.
+    /// Cached separately from the 16pt list icons (NSImage.size is shared mutable state; mixing them would inflate list icons); NSImageView scales as needed for display
     static func fullIcon(for item: FileItem) -> NSImage {
         let key: String = item.isPackage
             ? "path:" + item.url.path

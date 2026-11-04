@@ -1,12 +1,12 @@
 import AppKit
 
-/// 全代码菜单栏。只挂当前里程碑已实现的命令——无真实功能则删界面元素（spec 六）。
+/// Menu bar built entirely in code. Lists only commands implemented in the current milestone: no real feature, no UI element (spec section 6).
 @MainActor
 enum MainMenu {
     static func build() -> NSMenu {
         let main = NSMenu()
 
-        // App 菜单
+        // App menu
         let appItem = main.addItem(withTitle: "NSpace", action: nil, keyEquivalent: "")
         let appMenu = NSMenu()
         appItem.submenu = appMenu
@@ -21,7 +21,7 @@ enum MainMenu {
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: L10n.t("menu.quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
-        // 文件
+        // File
         let fileItem = main.addItem(withTitle: L10n.t("menu.file"), action: nil, keyEquivalent: "")
         let fileMenu = NSMenu(title: L10n.t("menu.file"))
         fileItem.submenu = fileMenu
@@ -58,7 +58,7 @@ enum MainMenu {
                                          action: #selector(FileListViewController.moveToTrash(_:)), keyEquivalent: "")
         KeyBindings.apply("moveToTrash", to: trashItem)
         fileMenu.addItem(.separator())
-        // F5 复制 / F6 移动 到另一窗格（QSpace 肌肉记忆；默认 F5/F6，可在设置改键）
+        // F5 copy / F6 move to the other pane (QSpace muscle memory; defaults F5/F6, rebindable in settings)
         let f5 = fileMenu.addItem(withTitle: L10n.t("menu.copyToOtherPane"),
                                   action: #selector(FileListViewController.copyToOtherPane(_:)), keyEquivalent: "")
         KeyBindings.apply("copyToOtherPane", to: f5)
@@ -66,13 +66,13 @@ enum MainMenu {
                                   action: #selector(FileListViewController.moveToOtherPane(_:)), keyEquivalent: "")
         KeyBindings.apply("moveToOtherPane", to: f6)
         fileMenu.addItem(.separator())
-        // ⌘W 分层关闭（I-21）：路由到 AppDelegate.closeTopmost——浮层优先，主窗才关工作区标签
+        // Layered ⌘W close (I-21): routes to AppDelegate.closeTopmost; floating panels first, only main windows close a workspace tab
         let closeTabItem = fileMenu.addItem(withTitle: L10n.t("menu.closeWorkspace"), action: #selector(AppDelegate.closeTopmost(_:)), keyEquivalent: "")
         KeyBindings.apply("closeTab", to: closeTabItem)
         let closeWinItem = fileMenu.addItem(withTitle: L10n.t("menu.closeWindow"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         closeWinItem.keyEquivalentModifierMask = [.command, .shift]
 
-        // 编辑（文本编辑标准链，路径编辑框/重命名要用）
+        // Edit (standard text editing chain, used by the path field and rename)
         let editItem = main.addItem(withTitle: L10n.t("menu.edit"), action: nil, keyEquivalent: "")
         let editMenu = NSMenu(title: L10n.t("menu.edit"))
         editItem.submenu = editMenu
@@ -87,12 +87,12 @@ enum MainMenu {
         KeyBindings.apply("copyPath", to: copyPathItem)
         editMenu.addItem(withTitle: L10n.t("menu.selectAll"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
-        // 显示
+        // View
         let viewItem = main.addItem(withTitle: L10n.t("menu.view"), action: nil, keyEquivalent: "")
         let viewMenu = NSMenu(title: L10n.t("menu.view"))
         viewItem.submenu = viewMenu
 
-        // 视图模式（M9：每窗格独立；I-13 迁注册表默认 ⌥⌘1/2/3，validateMenuItem 打勾当前模式）
+        // View modes (M9: per pane; I-13 moved to the registry with defaults ⌥⌘1/2/3; validateMenuItem ticks the current mode)
         let modeSpecs: [(String, Selector, String, String)] = [
             ("menu.viewAsIcons", #selector(PaneViewController.viewAsIcons(_:)), "viewAsIcons", "square.grid.2x2"),
             ("menu.viewAsList", #selector(PaneViewController.viewAsList(_:)), "viewAsList", "list.bullet"),
@@ -105,7 +105,7 @@ enum MainMenu {
         }
         viewMenu.addItem(.separator())
 
-        // 布局子菜单（默认 ⌃⌘1..5；M19 迁注册表，可在设置改键）
+        // Layout submenu (default ⌃⌘1..5; M19 moved to the registry, rebindable in settings)
         let layoutItem = viewMenu.addItem(withTitle: L10n.t("menu.layout"), action: nil, keyEquivalent: "")
         let layoutMenu = NSMenu(title: L10n.t("menu.layout"))
         layoutItem.submenu = layoutMenu
@@ -127,7 +127,7 @@ enum MainMenu {
                                           action: #selector(FileListViewController.toggleHiddenFiles(_:)),
                                           keyEquivalent: "")
         KeyBindings.apply("toggleHidden", to: hiddenItem)
-        // 使用分组（M26）：日期排序时列表按「年/月」分组；validateMenuItem 打勾当前态
+        // Use Groups (M26): groups the list by year/month when sorted by date; validateMenuItem ticks the current state
         let groupingItem = viewMenu.addItem(withTitle: L10n.t("menu.toggleGrouping"),
                                             action: #selector(FileListViewController.toggleGrouping(_:)),
                                             keyEquivalent: "")
@@ -136,7 +136,7 @@ enum MainMenu {
                          action: #selector(FileListViewController.refresh(_:)), keyEquivalent: "")
         KeyBindings.apply("refresh", to: refreshItem)
 
-        // 前往
+        // Go
         let goItem = main.addItem(withTitle: L10n.t("menu.go"), action: nil, keyEquivalent: "")
         let goMenu = NSMenu(title: L10n.t("menu.go"))
         goItem.submenu = goMenu
@@ -163,7 +163,7 @@ enum MainMenu {
                        action: #selector(PaneViewController.editPath(_:)), keyEquivalent: "")
         KeyBindings.apply("goToPath", to: pathItem)
         goMenu.addItem(.separator())
-        // 聚焦搜索：默认 ⌘F 当前文件夹 / ⇧⌘F 全局（可在设置改键）
+        // Focused search: default ⌘F current folder / ⇧⌘F global (rebindable in settings)
         let hereSearch = goMenu.addItem(withTitle: L10n.t("menu.searchHere"),
                        action: #selector(MainWindowController.showSearchHere(_:)), keyEquivalent: "")
         KeyBindings.apply("searchHere", to: hereSearch)
@@ -172,14 +172,14 @@ enum MainMenu {
                                           keyEquivalent: "")
         KeyBindings.apply("searchGlobal", to: globalSearch)
 
-        // 窗口
+        // Window
         let windowItem = main.addItem(withTitle: L10n.t("menu.window"), action: nil, keyEquivalent: "")
         let windowMenu = NSMenu(title: L10n.t("menu.window"))
         windowItem.submenu = windowMenu
         windowMenu.addItem(withTitle: L10n.t("menu.minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: L10n.t("menu.zoom"), action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         windowMenu.addItem(.separator())
-        // 工作区数字直达 ⌘1..9（I-13；tag = 工作区下标，超出现有数量时 validate 置灰）
+        // Direct workspace digits ⌘1..9 (I-13; tag = workspace index, validate grays out items beyond the current count)
         for n in 1...9 {
             let item = windowMenu.addItem(withTitle: L10n.t("menu.gotoWorkspace\(n)"),
                                           action: #selector(MainWindowController.switchWorkspaceByNumber(_:)),
@@ -192,12 +192,12 @@ enum MainMenu {
         return main
     }
 
-    // MARK: 自测通道（I-62）
+    // MARK: Self-test channel (I-62)
 
-    /// 从**真实已装配**的主菜单树里按 action 找菜单项（不复刻构建逻辑，
-    /// 否则"菜单项建了但没挂上去"这种错验不出来）
-    /// 返回 (菜单项, 它所在菜单的标题)——只答"树里某处有这个 action"是不够的，
-    /// 那样把它挂到任何菜单下都算通过；调用方要能验它真在「前往」里。
+    /// Finds a menu item by action in the **real assembled** main menu tree (rather than re-creating the build logic,
+    /// which could never catch "the item was built but never attached")
+    /// Returns (menu item, title of its owning menu): answering only "this action exists somewhere in the tree" is not enough,
+    /// since attaching it under any menu would pass; the caller must be able to verify it really sits in Go.
     static func uiTestMenuItem(for action: Selector) -> (item: NSMenuItem, ownerTitle: String)? {
         func find(_ menu: NSMenu) -> (NSMenuItem, String)? {
             for item in menu.items {

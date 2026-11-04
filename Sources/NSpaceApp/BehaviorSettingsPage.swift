@@ -1,12 +1,12 @@
 import AppKit
 
-/// 使用习惯设置页（QSpace 对齐子集）：Enter/Backspace/拖放/双击空白/默认排序/工作区标签上限，
-/// 以及底部"打开模式"小节（外部 open-URL 落点）。全部项经 Preferences 外部化，即时生效于新窗格/新操作。
+/// Behavior settings page (QSpace-aligned subset): Enter/Backspace/drag/double-click blank/default sort/workspace tab limit,
+/// plus the "Open Mode" section at the bottom (destination for external open-URL). All items go through Preferences and apply at once to new panes/new operations.
 @MainActor
 final class BehaviorSettingsPage: NSObject, SettingsPage {
     var pageTitleKey: String { "settings.tab.behavior" }
 
-    // 取值表（tag=索引；持久化存字符串/整数值，规避魔法数散落）
+    // Value tables (tag = index; persisted as string/integer values, which keeps magic numbers from spreading)
     private let enterValues = ["rename", "open"]
     private let backspaceValues = ["ignore", "back", "delete", "up"]
     private let dragValues = ["auto", "copy", "move"]
@@ -35,25 +35,25 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
         let blank = checkRow("settings.behavior.doubleClickBlank",
             checked: Preferences.doubleClickBlank, action: #selector(doubleClickBlankChanged(_:)))
 
-        // M26：列表视图按「年/月」分组（默认开，日期排序时生效）
+        // M26: group the list view by year/month (on by default, applies when sorted by date)
         let grouping = checkRow("settings.behavior.listGrouping",
             checked: Preferences.listGrouping, action: #selector(listGroupingChanged(_:)))
 
-        // M28：聚焦搜索按使用习惯智能排序（默认开）
+        // M28: smart focused-search ranking by usage (on by default)
         let smartSearch = checkRow("settings.behavior.smartSearchSort",
             checked: Preferences.searchSmartSort, action: #selector(smartSearchSortChanged(_:)))
 
         let sortRow = makeSortRow()
 
         let tabLimitNote = note("settings.behavior.tabLimit.note")
-        // I-17：工作区标签上限（M17 新增外部化键，同超限覆盖最老语义）
+        // I-17: workspace tab limit (externalized key added in M17, overflow replaces the oldest)
         let wsLimitRow = popupRow("settings.behavior.wsTabLimit",
             optionKeys: ["settings.behavior.tabLimit.none", "settings.behavior.tabLimit.5",
                          "settings.behavior.tabLimit.10", "settings.behavior.tabLimit.20"],
             selectedTag: tabLimitValues.firstIndex(of: Preferences.workspaceTabLimit) ?? 0,
             action: #selector(wsTabLimitChanged(_:)))
 
-        // 打开模式小节（对应 QSpace"打开到"）
+        // Open Mode section (QSpace's "Open To")
         let openHeader = sectionHeader("settings.behavior.openSection")
         let openRow = popupRow("settings.behavior.openTarget",
             optionKeys: ["settings.behavior.openTarget.newTab", "settings.behavior.openTarget.newWindow"],
@@ -73,7 +73,7 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
         return wrap(stack)
     }
 
-    // MARK: 默认排序行（键 popup + 升降序 popup 并列）
+    // MARK: Default sort row (key popup beside ascending/descending popup)
 
     private func makeSortRow() -> NSView {
         let label = fieldLabel("settings.behavior.sort")
@@ -104,7 +104,7 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
         return row
     }
 
-    // MARK: 行/控件工厂
+    // MARK: Row/control factories
 
     private func fieldLabel(_ key: String) -> NSTextField {
         let l = NSTextField(labelWithString: L10n.t(key))
@@ -182,7 +182,7 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
         return v
     }
 
-    // MARK: 动作（即时落 Preferences）
+    // MARK: Actions (written to Preferences immediately)
 
     @objc private func enterChanged(_ sender: NSButton) {
         guard enterValues.indices.contains(sender.tag) else { return }
@@ -206,11 +206,11 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
 
     @objc private func listGroupingChanged(_ sender: NSButton) {
         Preferences.listGrouping = sender.state == .on
-        NotificationCenter.default.post(name: .nspaceGroupingChanged, object: nil)  // 打开窗格即时重组
+        NotificationCenter.default.post(name: .nspaceGroupingChanged, object: nil)  // open panes regroup at once
     }
 
     @objc private func smartSearchSortChanged(_ sender: NSButton) {
-        Preferences.searchSmartSort = sender.state == .on   // 下次搜索即时生效（restartSearch 读取）
+        Preferences.searchSmartSort = sender.state == .on   // takes effect on the next search (read by restartSearch)
     }
 
     @objc private func sortKeyChanged(_ sender: NSPopUpButton) {
@@ -220,7 +220,7 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
     }
 
     @objc private func sortOrderChanged(_ sender: NSPopUpButton) {
-        Preferences.defaultSortAscending = sender.selectedTag() == 0  // 0=升序 1=降序
+        Preferences.defaultSortAscending = sender.selectedTag() == 0  // 0 = ascending, 1 = descending
     }
 
     @objc private func wsTabLimitChanged(_ sender: NSPopUpButton) {

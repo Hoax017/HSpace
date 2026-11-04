@@ -3,9 +3,9 @@ import NSpaceContracts
 import SearchEngine
 import Frecency
 
-/// UI 自测通道（NSPACE_UITEST=1 时启动后自动执行；非产品路径，环境变量门控）。
-/// 无需辅助功能/录屏权限：场景由程序化驱动，截图走自渲染（cacheDisplay），
-/// 断言写 /tmp/nspace-ui/report.txt，完成后按结果 exit(0/1)。
+/// UI self-test channel (runs automatically after launch when NSPACE_UITEST=1; not a product path, gated by an environment variable).
+/// Needs no Accessibility or Screen Recording permission: scenarios are driven programmatically, screenshots are self-rendered (cacheDisplay),
+/// assertions are written to /tmp/nspace-ui/report.txt, and the process exits with 0/1 based on the result when done.
 @MainActor
 enum UISelfTest {
     static var isEnabled: Bool {
@@ -13,7 +13,7 @@ enum UISelfTest {
     }
 
     private static let outDir: URL = {
-        // 并行 worktree 隔离：NSPACE_UITEST_OUT 指定私有输出目录，避免多实例抢 /tmp/nspace-ui
+        // Parallel worktree isolation: NSPACE_UITEST_OUT names a private output directory so instances do not fight over /tmp/nspace-ui
         if let custom = ProcessInfo.processInfo.environment["NSPACE_UITEST_OUT"], !custom.isEmpty {
             return URL(fileURLWithPath: custom)
         }
@@ -23,49 +23,49 @@ enum UISelfTest {
     private static var failed = false
 
     static func run(delegate: AppDelegate) {
-        // 看门狗：任何场景 await 悬死（等交互 sheet 之类）→ 180 秒强制收尾报 FAIL，绝不无限挂
+        // Watchdog: if any scenario's await hangs (waiting on an interactive sheet, say), force a FAIL finish after 180 s; never hang forever
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(180))
-            record(false, "看门狗触发：自测超时未收尾（最后到达点见 progress.txt）")
+            record(false, "Watchdog fired: self-test timed out before finishing (see progress.txt for the last point reached)")
             finish()
         }
         Task { @MainActor in
             try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
             lines = []
             failed = false
-            // 等窗口就绪
+            // Wait for the window to be ready
             try? await Task.sleep(for: .milliseconds(600))
             guard let wc = NSApp.windows.compactMap({ $0.windowController as? MainWindowController }).first,
                   let window = wc.window else {
-                record(false, "窗口未创建")
+                record(false, "Window was not created")
                 return finish()
             }
-            // harness 前置：强制本 App 成为前台活动应用，令随后需真键窗焦点的场景（I-30 字段编辑补全
-            // popup）能显示，不被其他前台 App 抢焦造成补全 popup 嵌套 runloop 挂死（并行/后台启动加固）。
+            // harness preflight: force this app to be the active foreground app so the scenarios that follow, which need real key-window focus (the I-30 field-editor completion
+            // popup), can show it, and another foreground app stealing focus cannot hang the popup's nested runloop (hardening for parallel/background launches).
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             try? await Task.sleep(for: .milliseconds(200))
 
-            // 场景0：frame 持久化端到端（SETFRAME 阶段设定并退出；EXPECT 阶段断言恢复）
+            // Scenario 0: frame persistence end to end (the SETFRAME phase sets and exits; the EXPECT phase asserts the restore)
             let env = ProcessInfo.processInfo.environment
             if let spec = env["NSPACE_UITEST_SETFRAME"] {
                 let parts = spec.split(separator: ",").compactMap { Double($0) }
                 if parts.count == 2 {
-                    // 全部主窗口共用同一个 windowFrame.uitest 键：只要还有第二个窗口，
-                    // 它在本进程退出前触发一次 frame 变化就会把刚写好的值覆盖掉
-                    // （实测三轮复现一次「期望 900x520 实得 600x400」——600x400 正是新窗默认尺寸）。
-                    // 落盘这一趟只留被测窗口，去掉这个竞态；断的是仪器，不碰产品的持久化路径。
+                    // All main windows share one windowFrame.uitest key: as long as a second window exists,
+                    // one frame change from it before this process exits overwrites the value just written
+                    // (measured: one in three runs reproduced "expected 900x520, got 600x400", and 600x400 is exactly the default size of a new window).
+                    // Keep only the window under test for this persistence pass to remove the race; this cuts the instrument, not the product's persistence path.
                     for w in NSApp.windows
                     where (w.windowController is MainWindowController) && w !== window { w.close() }
                     window.setFrame(NSRect(x: 120, y: 120, width: parts[0], height: parts[1]),
                                     display: true)
-                    // 显式走自管持久化（模拟用户拖拽结束的落盘路径）
-                    // 走真实链路：发 didEndLiveResize 通知 → 观察者 persistFrameNow（不许直调捷径，
-                    // 否则测不到观察者接线断裂——用户 2026-08-26 质询后加固）
+                    // Go through self-managed persistence explicitly (simulates the save path at the end of a user drag)
+                    // Use the real chain: post didEndLiveResize → observer persistFrameNow (no direct-call shortcuts,
+                    // or a broken observer wiring goes undetected; hardened after the user challenged it on 2026-08-26)
                     NotificationCenter.default.post(name: NSWindow.didEndLiveResizeNotification,
                                                     object: wc.window)
                     try? await Task.sleep(for: .milliseconds(300))
-                    record(true, "SETFRAME \(Int(parts[0]))x\(Int(parts[1])) 已设置并退出")
+                    record(true, "SETFRAME \(Int(parts[0]))x\(Int(parts[1])) set, exiting")
                 }
                 return finish()
             }
@@ -73,9 +73,9 @@ enum UISelfTest {
                 let parts = spec.split(separator: ",").compactMap { Double($0) }
                 if parts.count == 2 {
                     let ok = abs(window.frame.width - parts[0]) < 2 && abs(window.frame.height - parts[1]) < 2
-                    record(ok, "frame 持久化恢复: 期望 \(Int(parts[0]))x\(Int(parts[1])) 实得 \(Int(window.frame.width))x\(Int(window.frame.height))")
+                    record(ok, "frame persistence restored: expected \(Int(parts[0]))x\(Int(parts[1])) got \(Int(window.frame.width))x\(Int(window.frame.height))")
                 }
-                // 继续跑常规场景
+                // Continue with the regular scenarios
             }
 
             if env["NSPACE_UITEST_ONLY"] == "trash" {
@@ -88,11 +88,11 @@ enum UISelfTest {
 
             capture(window, "00-baseline")
             let baseline = window.frame
-            // 窗口尺寸持久化根因锁（用户报告"更新后尺寸回默认"）：关闭 macOS 原生窗口恢复，
-            // 仅自管 windowFrame 键权威——跨版本更新不与被系统作废的 savedState 竞争
+            // Root-cause lock for window size persistence (user report: "size reverts to default after an update"): disable macOS native window restoration,
+            // the self-managed windowFrame key alone is authoritative, so a cross-version update does not compete with a savedState the system invalidated
             record(window.isRestorable == false,
-                   "窗口尺寸自管恢复：isRestorable=false（不与 macOS 原生恢复竞争）")
-            // 抓现行：任何窗口尺寸变化记录调用栈（定位"视图切换改窗口尺寸"的真凶）
+                   "Window size self-restored: isRestorable=false (does not compete with macOS native restoration)")
+            // Catch it in the act: log the call stack on any window size change (to find what really "changes window size on view switch")
             var resizeLogs: [String] = []
             let obs = NotificationCenter.default.addObserver(
                 forName: NSWindow.didResizeNotification, object: window, queue: .main) { note in
@@ -111,7 +111,7 @@ enum UISelfTest {
                     for sub in v.subviews { walk(sub, depth: depth + 1) }
                 }
                 if let cv = (note.object as? NSWindow)?.contentView { walk(cv, depth: 0) }
-                resizeLogs.append("RESIZE → \(Int(f.width))x\(Int(f.height))\n必需尺寸约束:\n" + dump.joined(separator: "\n"))
+                resizeLogs.append("RESIZE → \(Int(f.width))x\(Int(f.height))\nrequired size constraints:\n" + dump.joined(separator: "\n"))
             }
             defer { NotificationCenter.default.removeObserver(obs) }
 
@@ -119,8 +119,8 @@ enum UISelfTest {
 
             await runFileOperationsScenario(wc: wc, window: window)
 
-            // NSPACE_UITEST_ONLY=i37：聚焦跑 I-37（跳过 I-30/I-32——二者依赖 NSTextView.complete()
-            // 补全 popup 的嵌套事件循环，在非前台/无 key 窗的 headless 环境会阻塞）。仅调试 I-37 时用。
+            // NSPACE_UITEST_ONLY=i37: focused I-37 run (skips I-30/I-32: both depend on the nested event loop of the NSTextView.complete()
+            // completion popup, which blocks in a headless environment that is not frontmost or has no key window). For debugging I-37 only.
             let focusI37 = env["NSPACE_UITEST_ONLY"] == "i37"
             if !focusI37 {
                 await runPathCompletionScenario(wc: wc, window: window)
@@ -136,8 +136,8 @@ enum UISelfTest {
 
             await runBreadcrumbFitScenario(wc: wc, window: window)
 
-            // ── 场景 I-62：废纸篓——甲板钮恒可用、点击在应用内导航、拖入=移到废纸篓 ────────
-            // 调面包屑时不创建废纸篓夹具。
+            // ── Scenario I-62: Trash: deck button always usable, click navigates in-app, drop = move to Trash ────────
+            // No Trash fixtures are created while debugging the breadcrumb.
             if !focusI37 {
                 await runTrashNavigationScenario(wc: wc, window: window)
                 await runTrashOperationsScenario(wc: wc, window: window)
@@ -146,67 +146,67 @@ enum UISelfTest {
 
             await runBreadcrumbHitScenario(wc: wc, window: window)
 
-            if focusI37 { return finish() }   // 聚焦模式：I-37 验完即收尾
+            if focusI37 { return finish() }   // Focused mode: finish once I-37 is verified
 
-            // ── 场景 I-65：⌘V 粘成新文件 / 单击已选中项重命名 / 底部留白 / 新建文件快捷键 ──
+            // ── Scenario I-65: ⌘V pastes as a new file / click on selected item renames / blank bottom area / new-file shortcut ──
             await runPasteAndRenameScenario(wc: wc, window: window)
 
-            // ── 场景 I-66：设置项搜索框（搜得到 + 跳得到对应页）──────────────────────
+            // ── Scenario I-66: settings search box (finds items + jumps to the right page) ──────────────────────
             await runSettingsSearchScenario(window: window)
 
-            // ── 场景 I-67：复制/剪切不许清掉选中 ───────────────────────────────────
+            // ── Scenario I-67: copy/cut must not clear the selection ───────────────────────────────────
             await runSelectionSurvivesClipboardScenario(wc: wc, window: window)
 
-            // ── 场景 I-68：侧栏点一次就跳 + 高亮跟随窗格 ────────────────────────────
+            // ── Scenario I-68: sidebar navigates on the first click + highlight follows the pane ────────────────────────────
             await runSidebarNavigationScenario(wc: wc, window: window)
 
 
-            // ── 场景 I-70/71/72：⌘T 新工作区继承 / ⌥⌘T 标签栏可见 / 工作区标签条可点 ────
+            // ── Scenario I-70/71/72: ⌘T new workspace inherits / ⌥⌘T tab bar visible / workspace tab bar clickable ────
             await runWorkspaceTabScenario(wc: wc, window: window)
-            // ── 场景 M26：列表「年/月」分组 + 折叠 + 组过滤 + 跨排序选中保持 + 开关 ─────────
-            // 铁律：只动自建 nspace-uitest-m26-* 夹具（assertSandboxed 守卫）；6 文件造 3 个不同年月。
+            // ── Scenario M26: list "year/month" grouping + collapse + group filter + selection kept across sorts + toggle ─────────
+            // Hard rule: touch only self-created nspace-uitest-m26-* fixtures (assertSandboxed guard); 6 files spread over 3 different year-months.
             await runGroupingScenario(wc: wc, window: window)
 
-            // ── 场景 M29：相对时间纯逻辑（6 桶 keyTitle 落位 + 日期列本年隐年/非本年显年）──────
+            // ── Scenario M29: relative time pure logic (6 bucket keyTitle placement + date column hides the year this year, shows it otherwise) ──────
             runRelativeTimeUnit()
 
-            // ── 场景 I-46：帧持久化键在 UITEST 下隔离，绝不污染用户真实 windowFrame ──────────
+            // ── Scenario I-46: frame persistence key is isolated under UITEST, never polluting the user's real windowFrame ──────────
             record(MainWindowController.frameDefaultsKey == "windowFrame.uitest",
-                   "I-46 UITEST 帧键隔离（写 windowFrame.uitest 不碰产品 windowFrame）")
-            // 同一条铁律扩到侧栏宽：只隔离窗口 frame 不够——I-37 窄窗断言的栏宽
-            // = 511 - sidebarWidth，跟着开发者真实侧栏宽漂，拖到上限 320 时余量被吃光会因环境报红
+                   "I-46 UITEST frame key isolated (writes windowFrame.uitest, leaves the product windowFrame alone)")
+            // The same hard rule extended to sidebar width: isolating the window frame alone is not enough. The column width in the I-37 narrow-window assertion
+            // = 511 - sidebarWidth and drifts with the developer's real sidebar width; dragged to the 320 limit it eats the margin and goes red because of the environment
             record(MainWindowController.sidebarWidthKey == "sidebarWidth.uitest",
-                   "I-46 UITEST 侧栏宽键隔离（写 sidebarWidth.uitest 不碰产品 sidebarWidth）")
+                   "I-46 UITEST sidebar width key isolated (writes sidebarWidth.uitest, leaves the product sidebarWidth alone)")
 
-            // M28/I-47 测试沙箱：frecency 记账 + 会话保存在 UITEST 走隔离临时目录，绝不污染用户真实排序/会话
+            // M28/I-47 test sandbox: under UITEST, frecency accounting and session saves go to an isolated temp directory, never polluting the user's real ranking/session
             record(AppDelegate.supportDirectory.path.contains("nspace-uitest-support"),
-                   "M28/I-47 UITEST 存储隔离（frecency/session 写临时目录不碰用户真实数据）")
+                   "M28/I-47 UITEST storage isolation (frecency/session written to a temp directory, real user data untouched)")
 
-            // ── 场景 I-43：点选区内收敛谓词（纯逻辑确定性；行为层 0.5s→0.16s 已真机插桩实测）─────
+            // ── Scenario I-43: collapse-on-click-inside-selection predicate (pure logic, deterministic; the 0.5s→0.16s behaviour was measured with instrumentation on a real machine) ─────
             let i43a = FocusReportingTableView.shouldPreemptCollapse(clickedRow: 2, modifiers: [], clickCount: 1, selectedCount: 5, rowIsSelected: true)
             let i43cmd = FocusReportingTableView.shouldPreemptCollapse(clickedRow: 2, modifiers: [.command], clickCount: 1, selectedCount: 5, rowIsSelected: true)
             let i43dbl = FocusReportingTableView.shouldPreemptCollapse(clickedRow: 2, modifiers: [], clickCount: 2, selectedCount: 5, rowIsSelected: true)
             let i43out = FocusReportingTableView.shouldPreemptCollapse(clickedRow: 9, modifiers: [], clickCount: 1, selectedCount: 5, rowIsSelected: false)
             let i43single = FocusReportingTableView.shouldPreemptCollapse(clickedRow: 2, modifiers: [], clickCount: 1, selectedCount: 1, rowIsSelected: true)
             record(i43a && !i43cmd && !i43dbl && !i43out && !i43single,
-                   "I-43 点选区内收敛谓词：纯单击多选已选行=抢先收敛，修饰键/双击/选区外/单选=不介入（\(i43a)/\(i43cmd)/\(i43dbl)/\(i43out)/\(i43single)）")
+                   "I-43 click-inside-selection collapse predicate: plain click on a selected row in a multi-selection = collapse early; modifier/double click/outside selection/single selection = no intervention (\(i43a)/\(i43cmd)/\(i43dbl)/\(i43out)/\(i43single))")
 
-            // ── 场景 M28：搜索智能排序（frecency+匹配融合）接管排序 vs 开关关回退到达序 ──────────
+            // ── Scenario M28: smart search ranking (frecency + match blend) takes over sorting vs falling back to arrival order when toggled off ──────────
             runSmartSortScenario()
 
-            // ── 场景 I-47：导航即落盘（会话记住上次目录，非干净退出也不回 home）──────────────────
+            // ── Scenario I-47: navigation persists immediately (the session remembers the last directory; an unclean exit does not return to home) ──────────────────
             await runSessionSaveScenario(delegate: delegate)
 
-            // ── 场景 I-44：第三方"打开文件位置"→ openWindow(selecting:) 真定位选中（列表+图标）──
+            // ── Scenario I-44: third-party "open file location" → openWindow(selecting:) really locates and selects (list + icons) ──
             await runRevealSelectScenario(delegate: delegate)
 
-            // 场景5：聚焦搜索面板开合不崩 + I-19 隐藏文件开关可见性核实（截面板自身）
+            // Scenario 5: spotlight search panel opens and closes without crashing + I-19 hidden-files toggle visibility check (captures the panel itself)
             Self.extraDump = resizeLogs
             wc.showSearchGlobal(nil)
             try? await Task.sleep(for: .milliseconds(400))
-            record(true, "搜索面板打开未崩溃")
+            record(true, "Search panel opened without crashing")
             capture(window, "05-search")
-            // I-19：全窗口扫描找面板（UITEST 下拿不到 keyWindow），核实隐藏开关存在且可见
+            // I-19: scan all windows for the panel (keyWindow is unavailable under UITEST), verify the hidden toggle exists and is visible
             let panelWin = NSApp.windows.first { w in
                 w.isVisible && !(w.windowController is MainWindowController) &&
                 viewTree(w.contentView).contains { ($0 as? NSButton)?.title == L10n.t("search.includeHidden") }
@@ -216,51 +216,51 @@ enum UISelfTest {
                 let hiddenBtn = viewTree(panelWin.contentView).compactMap { $0 as? NSButton }
                     .first { $0.title == L10n.t("search.includeHidden") }
                 record(hiddenBtn?.isHiddenOrHasHiddenAncestor == false,
-                       "全局搜索面板含「包含隐藏文件」开关且可见")
+                       "Global search panel has a visible 'Include Hidden Files' toggle")
                 panelWin.close()
             } else {
-                record(false, "全局搜索面板含「包含隐藏文件」开关且可见")
+                record(false, "Global search panel has a visible 'Include Hidden Files' toggle")
             }
             try? await Task.sleep(for: .milliseconds(200))
 
-            // M24：全局热键注册 + 呼出/隐藏切换真生效（测完恢复原偏好）
+            // M24: global hotkey registers + summon/hide toggle really works (the original preference is restored afterwards)
             let hadHotkey = UserDefaults.standard.string(forKey: GlobalHotkey.prefKey)
             GlobalHotkey.set(mods: [.control, .option, .shift], keyCode: 79, display: "⌃⌥⇧F18")
-            record(GlobalHotkey.apply(), "全局热键注册成功（⌃⌥⇧F18 测试组合）")
-            // 确定性前置：显式激活并夺 key，使首次 toggle 的 NSApp.isActive 分支稳定为"隐藏"
-            // （此断言依赖 app-active 环境态，40+ 场景后的 ambient 状态不可靠——由测试自建前置，非产品 bug）
+            record(GlobalHotkey.apply(), "Global hotkey registered (⌃⌥⇧F18 test combo)")
+            // Deterministic preflight: explicitly activate and take key so that the first toggle's NSApp.isActive branch is reliably "hide"
+            // (this assertion depends on app-active ambient state, unreliable after 40+ scenarios; the test builds its own precondition, not a product bug)
             NSApp.activate()
             window.makeKeyAndOrderFront(nil)
             try? await Task.sleep(for: .milliseconds(300))
-            GlobalHotkey.toggle()   // 前台 → 隐藏
+            GlobalHotkey.toggle()   // frontmost → hide
             try? await Task.sleep(for: .milliseconds(350))
             let hiddenOK = NSApp.isHidden || !NSApp.isActive
-            GlobalHotkey.toggle()   // 后台 → 呼出置顶
+            GlobalHotkey.toggle()   // background → summon to front
             try? await Task.sleep(for: .milliseconds(450))
             let backOK = NSApp.windows.contains { $0.isVisible && $0.windowController is MainWindowController }
-            record(hiddenOK && backOK, "全局热键呼出/隐藏切换真生效（隐藏=\(hiddenOK) 回归=\(backOK)）")
+            record(hiddenOK && backOK, "Global hotkey summon/hide toggle really works (hidden=\(hiddenOK) back=\(backOK))")
             if let hadHotkey { UserDefaults.standard.set(hadHotkey, forKey: GlobalHotkey.prefKey) }
             else { UserDefaults.standard.removeObject(forKey: GlobalHotkey.prefKey) }
             GlobalHotkey.apply()
             window.makeKeyAndOrderFront(nil)
             try? await Task.sleep(for: .milliseconds(200))
 
-            // ── 场景 I-52：外部/浏览器 reveal 落点可配（默认现有窗口新标签，不弹新窗）──────────────
-            // 放在搜索之后（会开关窗口，须让搜索场景先在干净窗口态跑）；自身清理回进入前状态供场景6。
+            // ── Scenario I-52: configurable landing spot for external/browser reveal (default is a new tab in the existing window, no new window) ──────────────
+            // Placed after search (it opens and closes windows, and search must run in a clean window state); it restores the prior state for scenario 6.
             await runExternalOpenTargetScenario(delegate: delegate)
             window.makeKeyAndOrderFront(nil)
             try? await Task.sleep(for: .milliseconds(200))
 
-            // 场景6（I-21）：⌘W 分层关闭 + MRU 回退 + 关最后窗口后可重开
-            // 6a 分层：设置窗为 key 时 closeTopmost 只关设置窗，不动工作区
+            // Scenario 6 (I-21): layered ⌘W close + MRU fallback + reopen after closing the last window
+            // 6a layering: with the settings window key, closeTopmost closes only the settings window and leaves workspaces alone
             SettingsWindowController.shared.showWindow(nil)
             try? await Task.sleep(for: .milliseconds(300))
             let wsCountBefore = wc.workspaces.count
             (NSApp.delegate as? AppDelegate)?.closeTopmost(nil)
             try? await Task.sleep(for: .milliseconds(200))
-            record(SettingsWindowController.shared.window?.isVisible != true, "⌘W 分层：先关顶层设置窗")
-            record(wc.workspaces.count == wsCountBefore, "⌘W 分层：主窗工作区未被误关")
-            // 6b MRU：新建 2/3 号（3 活跃）→ 切回 1 号 → ⌘W 关活动 1 号 → 应回退到 3 号（上一个活跃）
+            record(SettingsWindowController.shared.window?.isVisible != true, "⌘W layering: closes the topmost settings window first")
+            record(wc.workspaces.count == wsCountBefore, "⌘W layering: main window workspace not closed by mistake")
+            // 6b MRU: create workspaces 2 and 3 (3 active) → switch back to 1 → ⌘W closes active 1 → should fall back to 3 (the previously active one)
             window.makeKeyAndOrderFront(nil)
             try? await Task.sleep(for: .milliseconds(200))
             wc.newWorkspaceTab(nil)
@@ -269,16 +269,16 @@ enum UISelfTest {
             (NSApp.delegate as? AppDelegate)?.closeTopmost(nil)
             try? await Task.sleep(for: .milliseconds(200))
             record(wc.workspaces.activeIndex == 1 && wc.workspaces.count == 2,
-                   "⌘W 关闭后 MRU 回退到上一个活跃工作区")
+                   "⌘W close falls back via MRU to the previously active workspace")
             while wc.workspaces.count > 1 { wc.closeWorkspace(at: wc.workspaces.count - 1) }
-            // 6c 重开：关最后窗口 → 模拟 Dock 重新激活必须能开出新窗
+            // 6c reopen: close the last window → a simulated Dock reactivation must open a new window
             window.performClose(nil)
             try? await Task.sleep(for: .milliseconds(300))
             _ = (NSApp.delegate as? AppDelegate)?
                 .applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
             try? await Task.sleep(for: .milliseconds(400))
             let reopened = NSApp.windows.contains { $0.isVisible && $0.windowController is MainWindowController }
-            record(reopened, "关最后窗口后 Dock 重开有窗")
+            record(reopened, "Dock reopen gives a window after the last one was closed")
 
             finish()
         }
@@ -288,23 +288,23 @@ enum UISelfTest {
 
     private static func runInitialLayoutScenario(wc: MainWindowController, window: NSWindow, baseline: NSRect) async {
         let env = ProcessInfo.processInfo.environment
-        // 场景1：视图切换绝不改变窗口尺寸（用户报告 bug 的回归断言）
+        // Scenario 1: view switches must never change the window size (regression assertion for a user-reported bug)
         let pane = wc.grid.activePane
         for (mode, name) in [(PaneViewMode.icons, "icons"), (.columns, "columns"), (.list, "list")] {
             pane.setViewMode(mode)
             try? await Task.sleep(for: .milliseconds(400))
             let same = window.frame.size == baseline.size
-            record(same, "视图切换[\(name)]窗口尺寸不变: \(Int(window.frame.width))x\(Int(window.frame.height))")
+            record(same, "View switch [\(name)] keeps window size: \(Int(window.frame.width))x\(Int(window.frame.height))")
             capture(window, "01-viewmode-\(name)")
-            // I-24b 内容级断言（"铺满"不够，行必须真渲染）：分栏首列行数>0 且表格有可见高度
+            // I-24b content-level assertion ("fills the area" is not enough, rows must really render): first column has >0 rows and the table has visible height
             if mode == .columns {
                 let unit = pane.activeTab.columnVC?.columns.first
                 let rows = unit?.tableView.numberOfRows ?? -1
                 let tf = unit?.tableView.frame ?? .zero
                 let clipW = unit?.tableView.superview?.frame.width ?? 0
                 record(rows > 0 && tf.height > 20 && clipW > 100,
-                       "分栏首列内容真渲染（行数 \(rows)，表格 \(Int(tf.width))x\(Int(tf.height))，视口宽 \(Int(clipW))）")
-                // I-24b 深探针：逐层 frame + 首列自渲染成图（定位内容在哪一层丢失）
+                       "First column content really renders (rows \(rows), table \(Int(tf.width))x\(Int(tf.height)), viewport width \(Int(clipW)))")
+                // I-24b deep probe: per-layer frames + first column self-rendered to an image (to find the layer where content goes missing)
                 if let unit, let colVC = pane.activeTab.columnVC {
                     var f: [String] = []
                     var v: NSView? = unit.tableView
@@ -312,8 +312,8 @@ enum UISelfTest {
                         f.append("\(type(of: cur)) \(Int(cur.frame.origin.x)),\(Int(cur.frame.origin.y)) \(Int(cur.frame.width))x\(Int(cur.frame.height)) hidden=\(cur.isHidden) win=\(cur.window != nil)")
                         v = cur.superview
                     }
-                    Self.extraDump.append("I-24b 层链（table→contentView）:\n" + f.joined(separator: "\n") + "\ncolVC.view.frame=\(colVC.view.frame)")
-                    try? ("I-24b 层链（table→contentView）:\n" + f.joined(separator: "\n")
+                    Self.extraDump.append("I-24b layer chain (table→contentView):\n" + f.joined(separator: "\n") + "\ncolVC.view.frame=\(colVC.view.frame)")
+                    try? ("I-24b layer chain (table→contentView):\n" + f.joined(separator: "\n")
                           + "\ncolVC.view.frame=\(colVC.view.frame)").data(using: .utf8)?
                         .write(to: outDir.appendingPathComponent("i24b-chain.txt"))
                     if let rep = unit.bitmapImageRepForCachingDisplay(in: unit.bounds) {
@@ -325,97 +325,97 @@ enum UISelfTest {
             }
         }
 
-        // 场景2：五种布局遍历，窗口尺寸不变 + 不崩
+        // Scenario 2: iterate the five layouts, window size unchanged + no crash
         for layout in PaneLayout.allCases {
             wc.grid.apply(layout: layout)
             try? await Task.sleep(for: .milliseconds(350))
             let same = window.frame.size == baseline.size
-            record(same, "布局[\(layout)]窗口尺寸不变")
+            record(same, "Layout [\(layout)] keeps window size")
         }
         wc.grid.apply(layout: .dualH)
         capture(window, "02-layout-dualH")
 
-        // 场景3：任务状态窗——空态必须有说明文字，绝非空白
+        // Scenario 3: task status window: the empty state must have explanatory text, never blank
         let progress = ProgressWindowController.shared
         progress.toggleVisible(nil)
         try? await Task.sleep(for: .milliseconds(300))
         let shown = progress.window?.isVisible == true
-        record(shown, "任务窗可打开")
+        record(shown, "Task window can open")
         if let pw = progress.window {
             capture(pw, "03-tasks-empty")
-            // 空态标签可见性经视图树探测
+            // Empty-state label visibility is probed through the view tree
             let hasVisibleText = viewTree(pw.contentView).contains {
                 ($0 as? NSTextField).map { !$0.isHidden && !$0.stringValue.isEmpty } ?? false
             }
-            record(hasVisibleText, "任务窗空态有文字说明（非空白）")
+            record(hasVisibleText, "Task window empty state has text (not blank)")
         }
         progress.toggleVisible(nil)
 
-        // 场景4：暂存架——程序化入架（与拖放同一代码路径），牌堆/计数呈现
+        // Scenario 4: stash shelf: add programmatically (same code path as drag and drop), card pile/count shown
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("nspace-uitest-\(UUID().uuidString).txt")
         try? Data("x".utf8).write(to: tmp)
         wc.sidebar.model.stash?.add([tmp])
         try? await Task.sleep(for: .milliseconds(500))
         let stashCount = wc.sidebar.model.stash?.items.count ?? 0
-        record(stashCount >= 1, "暂存入架成功（\(stashCount) 项）")
+        record(stashCount >= 1, "Added to stash (\(stashCount) items)")
         capture(window, "04-stash")
-        // 收尾清理：本次测试项 + 历轮残留（uitest 前缀或目标已失效的）——绝不污染用户真实暂存
+        // Cleanup: this test's item + leftovers from past runs (uitest prefix or stale target); never pollute the user's real stash
         if let stash = wc.sidebar.model.stash {
             let junk = stash.items.compactMap { item -> UUID? in
-                guard let url = stash.store.resolve(item) else { return item.id }  // 失效项
+                guard let url = stash.store.resolve(item) else { return item.id }  // stale item
                 return url.lastPathComponent.hasPrefix("nspace-uitest-") ? item.id : nil
             }
             stash.remove(ids: junk)
         }
         try? FileManager.default.removeItem(at: tmp)
 
-        // ── 场景 M17：自绘甲板 + 全高侧栏 + 工作区迁移（§5 验收门）──────────
+        // ── Scenario M17: custom-drawn deck + full-height sidebar + workspace migration (§5 acceptance gate) ──────────
         window.contentView?.layoutSubtreeIfNeeded()
 
-        // M17-1：无 NSToolbar（I-10 追踪分隔线体系消亡）
-        record(window.toolbar == nil, "无 NSToolbar（甲板自绘）")
+        // M17-1: no NSToolbar (I-10 tracking-separator system is gone)
+        record(window.toolbar == nil, "No NSToolbar (custom-drawn deck)")
 
-        // M17-2：甲板两行高度 40 / 36
+        // M17-2: deck row heights 40 / 36
         let tabH = wc.deck.tabRow.frame.height
         let toolH = wc.deck.toolbarRow.frame.height
-        record(abs(tabH - TopDeckView.tabRowHeight) < 1.5, "甲板标签行高 40（实得 \(Int(tabH))）")
-        record(abs(toolH - TopDeckView.toolbarRowHeight) < 1.5, "甲板工具条行高 36（实得 \(Int(toolH))）")
+        record(abs(tabH - TopDeckView.tabRowHeight) < 1.5, "Deck tab row height 40 (got \(Int(tabH)))")
+        record(abs(toolH - TopDeckView.toolbarRowHeight) < 1.5, "Deck toolbar row height 36 (got \(Int(toolH)))")
 
-        // M17-3：工作区标签条存在（甲板视图树含 workspaceTabBar）+ 初始单工作区
+        // M17-3: workspace tab bar exists (deck view tree contains workspaceTabBar) + starts with a single workspace
         let hasTabBar = viewTree(window.contentView).contains { $0 === wc.deck.workspaceTabBar }
-        record(hasTabBar, "工作区标签条存在于甲板")
-        record(wc.workspaceCount == 1, "初始单工作区（\(wc.workspaceCount)）")
+        record(hasTabBar, "Workspace tab bar exists in the deck")
+        record(wc.workspaceCount == 1, "Starts with a single workspace (\(wc.workspaceCount))")
 
-        // M22：版本徽章（无更新态）存在于甲板标签条 + 文字为"v{短版本}"（不带 ↑）
+        // M22: version badge (no update state) exists in the deck tab bar + its text is "v{short version}" (no ↑)
         let badge = wc.deck.versionBadge
         let badgeInTree = viewTree(window.contentView).contains { $0 === badge }
-        record(badgeInTree, "版本徽章存在于甲板标签条")
+        record(badgeInTree, "Version badge exists in the deck tab bar")
         let badgeLabel = viewTree(badge).compactMap { ($0 as? NSTextField)?.stringValue }
             .first { $0.hasPrefix("v") } ?? ""
         record(badgeLabel == "v\(AppVersion.shortVersion)" && !badgeLabel.contains("↑"),
-               "版本徽章无更新态文字 v\(AppVersion.shortVersion)（实得「\(badgeLabel)」）")
+               "Version badge has no update-state text v\(AppVersion.shortVersion) (got '\(badgeLabel)')")
         capture(window, "14-version-badge")
 
-        // M17-4：⌘T 新增 / ⌘W 关闭 增删正确
+        // M17-4: ⌘T adds / ⌘W closes correctly
         wc.newWorkspaceTab(nil)
         try? await Task.sleep(for: .milliseconds(250))
         let afterNew = wc.workspaceCount
-        record(afterNew == 2, "⌘T 新建工作区 → 2（实得 \(afterNew)）")
+        record(afterNew == 2, "⌘T new workspace → 2 (got \(afterNew))")
         capture(window, "06-workspaces-2")
         wc.closeActiveWorkspace(nil)
         try? await Task.sleep(for: .milliseconds(250))
         let afterClose = wc.workspaceCount
-        record(afterClose == 1, "⌘W 关闭工作区 → 1（实得 \(afterClose)）")
+        record(afterClose == 1, "⌘W close workspace → 1 (got \(afterClose))")
 
-        // M17-5：分割线全高（sidebarColumn.height == contentView.height）
+        // M17-5: full-height divider (sidebarColumn.height == contentView.height)
         let contentH = window.contentView?.frame.height ?? 0
         let sideH = wc.sidebarColumnFrame.height
         record(abs(sideH - contentH) < 2,
-               "侧栏列全高贯通：列高 \(Int(sideH)) == 内容高 \(Int(contentH))")
+               "Sidebar column spans full height: column \(Int(sideH)) == content \(Int(contentH))")
 
-        // M17-6：侧栏折叠/展开 3 轮，窗口尺寸与右列布局不漂移（I-10 回归）
-        wc.setSidebar(collapsed: false)  // 从确定的展开态起测
+        // M17-6: 3 sidebar collapse/expand rounds, window size and right column layout do not drift (I-10 regression)
+        wc.setSidebar(collapsed: false)  // Start from a known expanded state
         try? await Task.sleep(for: .milliseconds(250))
         window.contentView?.layoutSubtreeIfNeeded()
         let sizeBefore = window.frame.size
@@ -423,30 +423,30 @@ enum UISelfTest {
         var driftFree = true
         var driftDetail = ""
         for i in 0..<3 {
-            wc.setSidebar(collapsed: true)   // 折叠
+            wc.setSidebar(collapsed: true)   // collapse
             try? await Task.sleep(for: .milliseconds(220))
             window.contentView?.layoutSubtreeIfNeeded()
-            wc.setSidebar(collapsed: false)  // 展开回原态
+            wc.setSidebar(collapsed: false)  // expand back to the original state
             try? await Task.sleep(for: .milliseconds(220))
             window.contentView?.layoutSubtreeIfNeeded()
-            if window.frame.size != sizeBefore { driftFree = false; driftDetail += " [轮\(i) 尺寸\(Int(window.frame.width))x\(Int(window.frame.height))]" }
-            if abs(wc.contentColumnFrame.minX - contentXBefore) > 2 { driftFree = false; driftDetail += " [轮\(i) 右列X \(Int(contentXBefore))→\(Int(wc.contentColumnFrame.minX))]" }
+            if window.frame.size != sizeBefore { driftFree = false; driftDetail += " [round \(i) size \(Int(window.frame.width))x\(Int(window.frame.height))]" }
+            if abs(wc.contentColumnFrame.minX - contentXBefore) > 2 { driftFree = false; driftDetail += " [round \(i) right columnX \(Int(contentXBefore))→\(Int(wc.contentColumnFrame.minX))]" }
         }
-        record(driftFree, "折叠/展开 3 轮窗口尺寸与右列布局不漂移\(driftDetail)")
+        record(driftFree, "3 collapse/expand rounds: window size and right column layout do not drift\(driftDetail)")
 
-        // I-22：按钮路径折叠→再点必须真展开（侧栏可见且宽≥160，不是只移分割线）
-        wc.toggleSidebar(nil)   // 折叠（与甲板侧栏钮同一路径 deckToggleSidebar→toggleSidebar）
+        // I-22: collapse via button → clicking again must really expand (sidebar visible with width ≥160, not just a moved divider)
+        wc.toggleSidebar(nil)   // collapse (same path as the deck sidebar button: deckToggleSidebar→toggleSidebar)
         try? await Task.sleep(for: .milliseconds(220))
         window.contentView?.layoutSubtreeIfNeeded()
         let collapsedOK = wc.sidebarWrap.frame.width < 1 || wc.sidebarWrap.isHidden
-        wc.toggleSidebar(nil)   // 再点展开
+        wc.toggleSidebar(nil)   // click again to expand
         try? await Task.sleep(for: .milliseconds(220))
         window.contentView?.layoutSubtreeIfNeeded()
         let reopenedOK = !wc.sidebarWrap.isHidden && wc.sidebarWrap.frame.width >= 160
         record(collapsedOK && reopenedOK,
-               "侧栏按钮折叠后再点可真展开（宽 \(Int(wc.sidebarWrap.frame.width))，hidden=\(wc.sidebarWrap.isHidden)）")
+               "Sidebar button really expands after collapsing (width \(Int(wc.sidebarWrap.frame.width)), hidden=\(wc.sidebarWrap.isHidden))")
 
-        // I-26：全部六列列头排序真生效——走列头点击同一条 sortDescriptors 链路，双向各验
+        // I-26: header sorting really works on all six columns, via the same sortDescriptors chain as a header click, checked in both directions
         let sortListVC = wc.grid.activePane.activeTab.listVC
         for key in SortSpec.Key.allCases {
             sortListVC.tableView.sortDescriptors = [NSSortDescriptor(key: key.rawValue, ascending: false)]
@@ -455,35 +455,35 @@ enum UISelfTest {
             sortListVC.tableView.sortDescriptors = [NSSortDescriptor(key: key.rawValue, ascending: true)]
             try? await Task.sleep(for: .milliseconds(120))
             let ascOK = sortListVC.model.sort.key == key && sortListVC.model.sort.ascending == true
-            record(descOK && ascOK, "列头排序真生效[\(key.rawValue)]（降/升双向）")
+            record(descOK && ascOK, "Column header sort really works [\(key.rawValue)] (descending/ascending)")
         }
         sortListVC.tableView.sortDescriptors = [NSSortDescriptor(key: "name", ascending: true)]
         try? await Task.sleep(for: .milliseconds(150))
 
-        // I-27：目录"打开"一律 App 内导航（QSpace 语义；沙箱夹具，绝不碰真实文件）
+        // I-27: "opening" a directory always navigates in-app (QSpace semantics; sandbox fixture, never touches real files)
         let openSandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent("nspace-uitest-open-\(UUID().uuidString)", isDirectory: true)
-        let openChild = openSandbox.appendingPathComponent("子文件夹", isDirectory: true)
+        let openChild = openSandbox.appendingPathComponent("Überordner", isDirectory: true)
         try? FileManager.default.createDirectory(at: openChild, withIntermediateDirectories: true)
         let openPane = wc.grid.activePane
         openPane.navigate(to: openSandbox)
         try? await Task.sleep(for: .milliseconds(500))
         let openListVC = openPane.activeTab.listVC
-        if let idx = openListVC.model.items.firstIndex(where: { $0.name == "子文件夹" }) {
+        if let idx = openListVC.model.items.firstIndex(where: { $0.name == "Überordner" }) {
             openListVC.tableView.selectRowIndexes([idx], byExtendingSelection: false)
-            openListVC.openSelected(nil)   // 右键"打开"/⌘O 同一路径
+            openListVC.openSelected(nil)   // same path as context "Open" / ⌘O
             try? await Task.sleep(for: .milliseconds(400))
             let landed = openPane.activeTab.browser.current.standardizedFileURL.path
             record(landed == openChild.standardizedFileURL.path,
-                   "目录右键打开=App 内导航（落点 \(landed.hasSuffix("子文件夹") ? "子文件夹" : landed)）")
+                   "Directory context Open = in-app navigation (landed on \(landed.hasSuffix("Überordner") ? "Überordner" : landed))")
         } else {
-            record(false, "目录右键打开=App 内导航（夹具行未找到）")
+            record(false, "Directory context Open = in-app navigation (fixture row not found)")
         }
         openPane.navigate(to: FileManager.default.homeDirectoryForCurrentUser)
         try? await Task.sleep(for: .milliseconds(300))
         try? FileManager.default.removeItem(at: openSandbox)
 
-        // M17-7：暂存架 contentGroup 居中（|中心偏移|≤2pt，I-07 回归）
+        // M17-7: stash shelf contentGroup centered (|center offset| ≤ 2pt, I-07 regression)
         let tmp2 = FileManager.default.temporaryDirectory
             .appendingPathComponent("nspace-uitest-\(UUID().uuidString).txt")
         try? Data("y".utf8).write(to: tmp2)
@@ -491,10 +491,10 @@ enum UISelfTest {
         try? await Task.sleep(for: .milliseconds(450))
         window.contentView?.layoutSubtreeIfNeeded()
         let offset = wc.sidebar.stashShelfView.contentGroupCenterOffsetX
-        record(abs(offset) <= 2, "暂存架 contentGroup 居中（偏移 \(String(format: "%.1f", offset))pt）")
-        // §6.3 B2：常态动作条隐藏（hover 才浮出）+ 浮条为 overlay 不入 Auto Layout 主链
-        record(wc.sidebar.stashShelfView.actionBarHidden, "暂存架常态动作条隐藏（hover-reveal）")
-        record(wc.sidebar.stashShelfView.actionBarIsOverlay, "暂存架浮条为 overlay（不参与主链布局）")
+        record(abs(offset) <= 2, "Stash shelf contentGroup centered (offset \(String(format: "%.1f", offset))pt)")
+        // §6.3 B2: action bar hidden at rest (revealed on hover) + the floating bar is an overlay outside the main Auto Layout chain
+        record(wc.sidebar.stashShelfView.actionBarHidden, "Stash shelf action bar hidden at rest (hover-reveal)")
+        record(wc.sidebar.stashShelfView.actionBarIsOverlay, "Stash shelf floating bar is an overlay (outside main chain layout)")
         if let stash = wc.sidebar.model.stash {
             let junk = stash.items.compactMap { item -> UUID? in
                 guard let url = stash.store.resolve(item) else { return item.id }
@@ -504,8 +504,8 @@ enum UISelfTest {
         }
         try? FileManager.default.removeItem(at: tmp2)
 
-        // 公开素材脱敏通道（I-35）：NSPACE_UITEST_DEMO=演示目录 → 截图前全部窗格导航到演示数据，
-        // 保证 README 等公开截图零真实文件名
+        // Public asset sanitization channel (I-35): NSPACE_UITEST_DEMO=demo directory → navigate all panes to the demo data before screenshots,
+        // so public screenshots such as the README's show no real file names
         if let demo = env["NSPACE_UITEST_DEMO"], !demo.isEmpty {
             let demoURL = URL(fileURLWithPath: demo)
             wc.grid.apply(layout: .dualH)
@@ -514,8 +514,8 @@ enum UISelfTest {
             try? await Task.sleep(for: .milliseconds(600))
         }
 
-        // M17 截图矩阵：单/双/四窗格 + 折叠态 + 深/浅外观（人查无裁切/错位）
-        wc.setSidebar(collapsed: false)  // 全高侧栏可见（展开态）
+        // M17 screenshot matrix: single/dual/quad panes + collapsed state + dark/light appearance (human check for clipping/misalignment)
+        wc.setSidebar(collapsed: false)  // Full-height sidebar visible (expanded state)
         try? await Task.sleep(for: .milliseconds(250))
         for (layout, name) in [(PaneLayout.single, "single"), (.dualH, "dual"), (.quad, "quad")] {
             wc.grid.apply(layout: layout)
@@ -524,13 +524,13 @@ enum UISelfTest {
             capture(window, "10-deck-\(name)")
         }
         wc.grid.apply(layout: .dualH)
-        wc.setSidebar(collapsed: true)  // 折叠态截图（红绿灯让位）
+        wc.setSidebar(collapsed: true)  // Collapsed-state screenshot (traffic lights make way)
         try? await Task.sleep(for: .milliseconds(320))
         window.contentView?.layoutSubtreeIfNeeded()
         capture(window, "11-deck-collapsed")
-        wc.setSidebar(collapsed: false)  // 复原展开
+        wc.setSidebar(collapsed: false)  // Restore expanded
         try? await Task.sleep(for: .milliseconds(250))
-        // 外观矩阵（展开态，甲板材质深/浅）
+        // Appearance matrix (expanded state, deck material dark/light)
         let savedAppearance = NSApp.appearance
         NSApp.appearance = NSAppearance(named: .darkAqua)
         try? await Task.sleep(for: .milliseconds(300))
@@ -542,18 +542,18 @@ enum UISelfTest {
         capture(window, "13-deck-light")
         NSApp.appearance = savedAppearance
 
-        // ── 场景 M21：等宽数字列对齐 + 选中药丸渲染（列表模式）───────────────
+        // ── Scenario M21: monospaced digit column alignment + selection pill rendering (list mode) ───────────────
         wc.grid.apply(layout: .single)
         pane.setViewMode(.list)
         try? await Task.sleep(for: .milliseconds(450))
         window.contentView?.layoutSubtreeIfNeeded()
-        capture(window, "20-list-columns")          // 亲查大小/日期列等宽对齐 + 单位灰阶
+        capture(window, "20-list-columns")          // Human check: size/date columns monospaced and aligned + unit gray levels
         let pillVisible = pane.uiTestSelectFirstItemsAndPillVisible(2)
         try? await Task.sleep(for: .milliseconds(250))
         window.contentView?.layoutSubtreeIfNeeded()
-        record(pillVisible, "列表选中 → 状态栏 accent 药丸可见")
-        capture(window, "21-status-pill")           // 亲查"已选 N 项 · 大小"药丸渲染
-        // 深色下再截一张（药丸底 10% accent 明暗重解析核实）
+        record(pillVisible, "List selection → status bar accent pill visible")
+        capture(window, "21-status-pill")           // Human check: "N selected · size" pill rendering
+        // One more shot in dark mode (verifies the 10% accent pill background re-resolves for light/dark)
         let savedAppr2 = NSApp.appearance
         NSApp.appearance = NSAppearance(named: .darkAqua)
         try? await Task.sleep(for: .milliseconds(300))
@@ -565,15 +565,15 @@ enum UISelfTest {
     private static func runFileOperationsScenario(wc: MainWindowController, window: NSWindow) async {
         let pane = wc.grid.activePane
         let progress = ProgressWindowController.shared
-        // ── 场景 M23：全功能自测矩阵——每条断言验「真实效果」而非「没崩溃」──────────
-        // （用户 2026-08-26 教训：折叠断言只查尺寸不查真可见性）。
-        // 全插在场景5（搜索）之前：主窗必须存活；关窗/重开在最后的场景6。
+        // ── Scenario M23: full-feature self-test matrix: every assertion checks the "real effect", not "did not crash" ──────────
+        // (user lesson 2026-08-26: the collapse assertion checked size only, not real visibility).
+        // All of it sits before scenario 5 (search): the main window must stay alive; closing/reopening windows is in the final scenario 6.
         let fs = FileManager.default
 
-        // M23-1：视图模式切换 → 对应内容视图真在窗口层级里且可见（不是只查窗口尺寸）
+        // M23-1: view mode switch → the matching content view is really in the window hierarchy and visible (not just a window size check)
         wc.grid.apply(layout: .single)
         try? await Task.sleep(for: .milliseconds(300))
-        // 复用场景1 的 pane（pool[0]；布局切换后 activePaneIndex 归 0，仍指同一窗格）
+        // Reuses the pane from scenario 1 (pool[0]; after a layout switch activePaneIndex returns to 0, the same pane)
         for (mode, name) in [(PaneViewMode.list, "list"), (.icons, "icons"), (.columns, "columns")] {
             pane.setViewMode(mode)
             try? await Task.sleep(for: .milliseconds(350))
@@ -586,53 +586,53 @@ enum UISelfTest {
             case .columns: v = tab.columnVC?.view
             }
             let inTree = v.map { view in viewTree(window.contentView).contains { $0 === view } } ?? false
-            // 真可见：不隐藏、且真实铺满内容区（宽高均 >1）——分栏坍缩 220×1/696×1 曾在此被抓（已修）
+            // Really visible: not hidden, and really fills the content area (width and height both >1); the column view collapsing to 220×1/696×1 was caught here (since fixed)
             let visible = (v?.isHiddenOrHasHiddenAncestor == false)
                 && (v?.frame.width ?? 0) > 1 && (v?.frame.height ?? 0) > 1
-            record(inTree && visible, "视图模式[\(name)]对应视图真在层级且可见（\(Int(v?.frame.width ?? 0))x\(Int(v?.frame.height ?? 0))）")
+            record(inTree && visible, "View mode [\(name)] matching view really in hierarchy and visible (\(Int(v?.frame.width ?? 0))x\(Int(v?.frame.height ?? 0)))")
         }
-        // 分栏视图坍缩 bug 修复的人查证据（单栏布局，列视图须铺满右列而非塌成 220×1/696×1）
-        try? await Task.sleep(for: .milliseconds(700))   // 待列异步加载出内容再截图
+        // Human-check evidence for the column view collapse fix (single-pane layout; the column view must fill the right column, not shrink to 220×1/696×1)
+        try? await Task.sleep(for: .milliseconds(700))   // Wait for columns to load their content asynchronously before the screenshot
         window.contentView?.layoutSubtreeIfNeeded()
         capture(window, "23-columns-single")
 
-        // M23-2：布局切换 → 真实呈现对应窗格数（不是只查窗口尺寸）
+        // M23-2: layout switch → really shows the matching pane count (not just a window size check)
         wc.grid.apply(layout: .quad)
         try? await Task.sleep(for: .milliseconds(350))
         window.contentView?.layoutSubtreeIfNeeded()
-        record(wc.grid.visiblePanes.count == 4, "布局 quad 真实呈现 4 窗格（实得 \(wc.grid.visiblePanes.count)）")
+        record(wc.grid.visiblePanes.count == 4, "Layout quad really shows 4 panes (got \(wc.grid.visiblePanes.count))")
         wc.grid.apply(layout: .single)
         try? await Task.sleep(for: .milliseconds(350))
-        record(wc.grid.visiblePanes.count == 1, "布局 single 真实呈现 1 窗格（实得 \(wc.grid.visiblePanes.count)）")
+        record(wc.grid.visiblePanes.count == 1, "Layout single really shows 1 pane (got \(wc.grid.visiblePanes.count))")
 
-        // 沙箱（真实文件系统 fixture；测完清理，绝不污染用户目录）
+        // Sandbox (real file system fixture; cleaned up after the test, never pollutes user directories)
         let sandbox = fs.temporaryDirectory
             .appendingPathComponent("nspace-uitest-m23-\(UUID().uuidString)")
         let child = sandbox.appendingPathComponent("child")
         try? fs.createDirectory(at: child, withIntermediateDirectories: true)
-        let child2 = sandbox.appendingPathComponent("child2")   // I-39：区分"选中驱动"与"历史兜底"
+        let child2 = sandbox.appendingPathComponent("child2")   // I-39: distinguishes "selection-driven" from "history fallback"
         try? fs.createDirectory(at: child2, withIntermediateDirectories: true)
 
-        // M23-3：导航后退/前进/上层 → 路径真的变了（不是只看没崩）
+        // M23-3: navigate back/forward/up → the path really changed (not just "did not crash")
         pane.setViewMode(.list)
         try? await Task.sleep(for: .milliseconds(200))
         pane.navigate(to: sandbox)
         try? await Task.sleep(for: .milliseconds(250))
-        record(samePath(pane.activeTab.browser.current, sandbox), "导航进入沙箱路径生效")
+        record(samePath(pane.activeTab.browser.current, sandbox), "Navigation into sandbox takes effect")
         pane.navigate(to: child)
         try? await Task.sleep(for: .milliseconds(250))
-        record(samePath(pane.activeTab.browser.current, child), "导航进入子目录路径生效")
+        record(samePath(pane.activeTab.browser.current, child), "Navigation into subdirectory takes effect")
         pane.goBack(nil)
         try? await Task.sleep(for: .milliseconds(250))
-        record(samePath(pane.activeTab.browser.current, sandbox), "导航后退路径真变回上级")
+        record(samePath(pane.activeTab.browser.current, sandbox), "Navigation back really returns to parent")
         pane.goForward(nil)
         try? await Task.sleep(for: .milliseconds(250))
-        record(samePath(pane.activeTab.browser.current, child), "导航前进路径真恢复")
+        record(samePath(pane.activeTab.browser.current, child), "Navigation forward really restores the path")
         pane.goUpFolder(nil)
         try? await Task.sleep(for: .milliseconds(250))
-        record(samePath(pane.activeTab.browser.current, sandbox), "导航上层路径真变父级")
+        record(samePath(pane.activeTab.browser.current, sandbox), "Navigation up really goes to parent")
 
-        // I-39：⌘↑ 自动选中来源子目录，⌘↓ 与其互逆（选中驱动优先；无选中回退历史直接子级）
+        // I-39: ⌘↑ auto-selects the child it came from, ⌘↓ is its inverse (selection-driven first; with no selection, falls back to the direct child from history)
         var upSelectsChild = false
         for _ in 0..<10 {
             if pane.activeTab.listVC.selectedURLs.contains(where: { samePath($0, child) }) {
@@ -641,24 +641,24 @@ enum UISelfTest {
             }
             try? await Task.sleep(for: .milliseconds(100))
         }
-        record(upSelectsChild, "I-39 ⌘↑ 上层后自动选中来源子目录")
-        // 反假绿设计：历史里是 child，故意改选 child2——若 ⌘↓ 偷走历史兜底会落 child，
-        // 落 child2 才证明"进入所选"主路径真实生效（收敛终态断言曾在此假绿）
+        record(upSelectsChild, "I-39 ⌘↑ auto-selects the originating child after going up")
+        // Anti-false-green design: history holds child, so we deliberately select child2. If ⌘↓ quietly took the history fallback it would land on child;
+        // landing on child2 proves the "enter selection" main path really works (a converged end-state assertion once went falsely green here)
         pane.activeTab.listVC.select(urls: [child2])
         pane.goDownFolder(nil)
         try? await Task.sleep(for: .milliseconds(250))
         record(samePath(pane.activeTab.browser.current, child2),
-               "I-39 ⌘↓ 进入所选文件夹（选中驱动，非历史兜底）")
+               "I-39 ⌘↓ enters the selected folder (selection-driven, not history fallback)")
         pane.goUpFolder(nil)
         try? await Task.sleep(for: .milliseconds(250))
-        pane.activeTab.listVC.select(urls: [])   // 清选中 → 验"无选中回退历史直接子级"兜底
+        pane.activeTab.listVC.select(urls: [])   // Clear selection → checks the "no selection falls back to direct child from history" path
         pane.goDownFolder(nil)
         try? await Task.sleep(for: .milliseconds(250))
-        record(samePath(pane.activeTab.browser.current, child2), "I-39 ⌘↓ 无选中时回退最近历史直接子级")
-        pane.goUpFolder(nil)   // 复位到沙箱（后续场景假设从此出发）
+        record(samePath(pane.activeTab.browser.current, child2), "I-39 ⌘↓ with no selection falls back to the most recent direct child in history")
+        pane.goUpFolder(nil)   // Back to the sandbox (later scenarios assume they start here)
         try? await Task.sleep(for: .milliseconds(250))
-        // 守卫真值：禁用态 ⌘↓ 泄漏到表视图时必须被吞（原 bug=NSTableView 默认跳选行）——
-        // 直发按键事件给表（绕过菜单），选中与路径都不得变
+        // Guard truth: a disabled ⌘↓ leaking to the table view must be swallowed (the original bug = NSTableView's default jump-select);
+        // send the key event straight to the table (bypassing the menu); neither selection nor path may change
         let guardTable = pane.activeTab.listVC.tableView
         let selBefore = guardTable.selectedRowIndexes
         let pathBefore = pane.activeTab.browser.current
@@ -670,9 +670,9 @@ enum UISelfTest {
         }
         record(guardTable.selectedRowIndexes == selBefore
                && samePath(pane.activeTab.browser.current, pathBefore),
-               "I-39 ⌘↓ 落表视图被吞不跳选（守卫真实生效）")
+               "I-39 ⌘↓ reaching the table view is swallowed without jump-select (guard really works)")
 
-        // M23-5：显示隐藏文件开关 → 真实翻转模型状态
+        // M23-5: show-hidden-files toggle → really flips the model state
         let h0 = pane.activeTab.model.includeHidden
         pane.activeTab.listVC.toggleHiddenFiles(nil)
         try? await Task.sleep(for: .milliseconds(200))
@@ -680,44 +680,44 @@ enum UISelfTest {
         pane.activeTab.listVC.toggleHiddenFiles(nil)
         try? await Task.sleep(for: .milliseconds(150))
         let h2 = pane.activeTab.model.includeHidden
-        record(h1 == !h0 && h2 == h0, "显示隐藏文件开关真实翻转模型状态")
+        record(h1 == !h0 && h2 == h0, "Show-hidden-files toggle really flips model state")
 
-        // M23-7：新建文件夹/制作副本/重命名/移到废纸篓 → 真跑 coordinator/kernel + 断言文件系统结果
-        // 铁律（用户 2026-08-26）：每个 mutating 操作前先过沙箱守卫，守卫失败即跳过（绝不误伤真实文件）
+        // M23-7: new folder/duplicate/rename/move to Trash → really run coordinator/kernel + assert the file system result
+        // Hard rule (user 2026-08-26): pass the sandbox guard before each mutating operation; on guard failure, skip it (never hit real files)
         let folderName = L10n.t("newItem.folder")
         let newFolderURL = sandbox.appendingPathComponent(folderName)
         let gNewFolder = assertSandboxed(sandbox)
-        record(gNewFolder, "沙箱守卫: 新建文件夹目标在自建夹具内")
+        record(gNewFolder, "Sandbox guard: new folder target inside own fixture")
         if gNewFolder { wc.coordinator.newFolder(in: sandbox, revealIn: nil) }
         let created = gNewFolder ? (await pollFS { fs.fileExists(atPath: newFolderURL.path) }) : false
-        record(created, "新建文件夹真实落盘（沙箱出现「\(folderName)」）")
+        record(created, "New folder really written to disk (sandbox contains '\(folderName)')")
 
         let dupSrc = sandbox.appendingPathComponent("dup-src.txt")
         let gDup = assertSandboxed(dupSrc)
-        record(gDup, "沙箱守卫: 制作副本源在自建夹具内")
+        record(gDup, "Sandbox guard: duplicate source inside own fixture")
         if gDup { try? Data("z".utf8).write(to: dupSrc); wc.coordinator.duplicate([dupSrc]) }
         let duped = gDup ? (await pollFS {
             let names = (try? fs.contentsOfDirectory(atPath: sandbox.path)) ?? []
             return names.filter { $0.hasPrefix("dup-src") }.count >= 2
         }) : false
-        record(duped, "制作副本真实落盘（dup-src 出现 ≥2 份）")
+        record(duped, "Duplicate really written to disk (dup-src appears ≥2 times)")
 
         let renamedName = "nspace-uitest-renamed-\(UUID().uuidString.prefix(8))"
         let renamedURL = sandbox.appendingPathComponent(renamedName)
         let gRename = assertSandboxed(newFolderURL) && assertSandboxed(renamedURL)
-        record(gRename, "沙箱守卫: 重命名目标在自建夹具内")
+        record(gRename, "Sandbox guard: rename target inside own fixture")
         if gRename { wc.coordinator.rename(newFolderURL, to: renamedName) { _ in } }
         let renamed = gRename ? (await pollFS {
             !fs.fileExists(atPath: newFolderURL.path) && fs.fileExists(atPath: renamedURL.path)
         }) : false
-        record(renamed, "重命名真实生效（新名存在、旧名消失）")
+        record(renamed, "Rename really takes effect (new name exists, old name gone)")
 
         let gTrash = assertSandboxed(renamedURL)
-        record(gTrash, "沙箱守卫: 移废纸篓目标在自建夹具内")
+        record(gTrash, "Sandbox guard: move-to-Trash target inside own fixture")
         if gTrash { wc.coordinator.moveToTrash([renamedURL]) }
         let trashed = gTrash ? (await pollFS { !fs.fileExists(atPath: renamedURL.path) }) : false
-        record(trashed, "移到废纸篓真实生效（源目录中消失）")
-        // 清理落进用户废纸篓的测试项（唯一名，安全）
+        record(trashed, "Move to Trash really takes effect (gone from source directory)")
+        // Clean up the test item that landed in the user's Trash (unique name, safe)
         let trashDir = fs.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
         if let entries = try? fs.contentsOfDirectory(atPath: trashDir.path) {
             for e in entries where e.hasPrefix(renamedName) {
@@ -725,7 +725,7 @@ enum UISelfTest {
             }
         }
 
-        // M23-8：拷贝路径 → 断言剪贴板内容（走 listVC.copyPath → coordinator.copyPaths 真实链）
+        // M23-8: Copy Path → assert clipboard content (through the real listVC.copyPath → coordinator.copyPaths chain)
         pane.activeTab.model.reload()
         _ = await pollFS { pane.activeTab.model.items.contains { $0.url.lastPathComponent == "dup-src.txt" } }
         window.contentView?.layoutSubtreeIfNeeded()
@@ -736,12 +736,12 @@ enum UISelfTest {
             pane.activeTab.listVC.copyPath(nil)
             try? await Task.sleep(for: .milliseconds(150))
             let clip = NSPasteboard.general.string(forType: .string)
-            record(clip == srcItem.url.path, "拷贝路径 → 剪贴板内容正确")
+            record(clip == srcItem.url.path, "Copy Path → clipboard content correct")
         } else {
-            record(false, "拷贝路径 → 剪贴板内容正确")
+            record(false, "Copy Path → clipboard content correct")
         }
 
-        // M23-9：右键菜单构建 → items 数 + 关键项存在 + enabled 状态诚实随选中态
+        // M23-9: context menu construction → item count + key items present + enabled state honestly follows the selection
         let selection = pane.activeTab.listVC.selectedItems
         let listVC = pane.activeTab.listVC
         let itemMenu = FileContextMenuBuilder.menu(selection: selection, directory: sandbox, target: listVC)
@@ -761,55 +761,55 @@ enum UISelfTest {
             #selector(FileListViewController.openInTerminal(_:)),
         ]
         record(keyActions.allSatisfy { actions.contains($0) },
-               "条目右键菜单含全部关键项（\(itemMenu.items.count) 项）")
-        // 诚实禁用：纯文本选中 → 无「解压」项
+               "Item context menu has all key items (\(itemMenu.items.count) items)")
+        // Honest disabling: plain text selection → no 'Extract' item
         record(!actions.contains(#selector(FileListViewController.extractItems(_:))),
-               "条目右键菜单诚实禁用：非归档选中无「解压」项")
-        // enabled 随选中态：有选中 → 复制项 enabled；清选中 → disabled
+               "Item context menu honestly disabled: non-archive selection has no 'Extract' item")
+        // enabled follows selection: with selection → Copy enabled; selection cleared → disabled
         let copyItem = itemMenu.items.first { $0.action == #selector(FileListViewController.copyItems(_:)) }
         let enabledWithSel = copyItem.map { listVC.validateMenuItem($0) } ?? false
         listVC.select(urls: [])
         try? await Task.sleep(for: .milliseconds(120))
         let disabledNoSel = copyItem.map { listVC.validateMenuItem($0) == false } ?? false
-        record(enabledWithSel && disabledNoSel, "右键「复制」enabled 随选中态正确切换")
-        // 空白区目录菜单
+        record(enabledWithSel && disabledNoSel, "Context 'Copy' enabled state follows selection correctly")
+        // Directory menu for the blank area
         let dirMenu = FileContextMenuBuilder.menu(selection: [], directory: sandbox, target: listVC)
         let dirActions = Set(dirMenu.items.compactMap { $0.action })
-        // v0.19.20 起加了「新建文件」（用户报告：内容铺满时没有空白可右键）→ 5 项变 6 项
+        // Since v0.19.20 "New File" was added (user report: no blank area to right-click when content fills the view) → 5 items became 6
         let dirKey = dirActions.contains(#selector(FileListViewController.newFolderHere(_:)))
             && dirActions.contains(#selector(FileListViewController.newFileHere(_:)))
             && dirActions.contains(#selector(FileListViewController.pasteItems(_:)))
             && dirActions.contains(#selector(FileListViewController.getInfo(_:)))
             && dirActions.contains(#selector(FileListViewController.openInTerminal(_:)))
         record(dirMenu.items.count == 6 && dirKey,
-               "空白区目录菜单项数=6 且含新建文件夹/新建文件/粘贴/简介/终端（实得 \(dirMenu.items.count)）")
+               "Blank-area directory menu has 6 items including new folder/new file/paste/info/terminal (got \(dirMenu.items.count))")
 
-        // M23-10：任务窗手动开关 → 真的可见/隐藏（不是只看没崩）；复用场景3 的 progress
+        // M23-10: task window manual toggle → really visible/hidden (not just "did not crash"); reuses progress from scenario 3
         progress.toggleVisible(nil)
         try? await Task.sleep(for: .milliseconds(250))
-        record(progress.window?.isVisible == true, "任务窗手动开→可见")
+        record(progress.window?.isVisible == true, "Task window manual open → visible")
         progress.toggleVisible(nil)
         try? await Task.sleep(for: .milliseconds(250))
-        record(progress.window?.isVisible != true, "任务窗手动关→隐藏")
+        record(progress.window?.isVisible != true, "Task window manual close → hidden")
 
-        // M23-11：⌘I 信息面板 → 窗口出现又能关
+        // M23-11: ⌘I info panel → window appears and can be closed
         let infoBase = sandbox.lastPathComponent
-        listVC.getInfo(nil)   // 无选中 → 对当前目录（沙箱）
+        listVC.getInfo(nil)   // No selection → targets the current directory (the sandbox)
         try? await Task.sleep(for: .milliseconds(300))
         let infoWin = NSApp.windows.first { w in
             w.isVisible && !(w.windowController is MainWindowController) && w.title.contains(infoBase)
         }
-        record(infoWin != nil, "显示简介面板出现")
+        record(infoWin != nil, "Get Info panel appears")
         if let infoWin {
             infoWin.performClose(nil)
             try? await Task.sleep(for: .milliseconds(250))
-            record(infoWin.isVisible == false, "显示简介面板可关闭")
+            record(infoWin.isVisible == false, "Get Info panel can be closed")
         } else {
-            record(false, "显示简介面板可关闭")
+            record(false, "Get Info panel can be closed")
         }
         window.makeKeyAndOrderFront(nil)
 
-        // M23-12：设置各插件页 makeView → 无约束歧义 + 关键控件存在
+        // M23-12: each settings plugin page makeView → no ambiguous constraints + key controls exist
         for page in SettingsPages.extraPages {
             let v = page.makeView()
             let host = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 460))
@@ -821,27 +821,27 @@ enum UISelfTest {
             let ambiguous = tree.contains { $0.hasAmbiguousLayout }
             let hasControl = tree.contains { $0 is NSButton || $0 is NSPopUpButton || $0 is NSSlider }
             record(!ambiguous && hasControl,
-                   "设置页[\(page.pageTitleKey)] makeView 无约束歧义且含关键控件")
+                   "Settings page [\(page.pageTitleKey)] makeView has no ambiguous constraints and has key controls")
         }
 
-        // M23-13：快捷键注册表默认绑定读取正确（外部化配置真源）
+        // M23-13: shortcut registry default bindings read correctly (externalized config source of truth)
         let dispGlobal = KeyBindings.display("searchGlobal")
         let dispInfo = KeyBindings.display("getInfo")
         record(dispGlobal == "⇧⌘F" && dispInfo == "⌘I",
-               "快捷键注册表默认绑定读取正确（全局搜索⇧⌘F/简介⌘I）")
+               "Shortcut registry default bindings read correctly (global search ⇧⌘F / Get Info ⌘I)")
 
-        // M23-14：侧栏含书签分组且种子书签行呈现（异步播种，短轮询）
+        // M23-14: sidebar has the bookmarks group with seeded bookmark rows (seeded asynchronously, short poll)
         var bmCount = 0
         for _ in 0..<20 {
             if let g = wc.sidebar.model.groups.first(where: { $0.kind == .bookmarks }),
                g.children.count >= 1 { bmCount = g.children.count; break }
             try? await Task.sleep(for: .milliseconds(100))
         }
-        record(bmCount >= 1, "侧栏含书签分组且种子书签行 ≥1（\(bmCount)）")
+        record(bmCount >= 1, "Sidebar has bookmarks group and seeded bookmark rows ≥1 (\(bmCount))")
 
-        // M23-15（I-31）：搜索结果行右键菜单 → items>0 + 含「拷贝路径」+ 执行后剪贴板==该路径（真实效果）
-        // 经真实链注入 onReveal/onStash（wc.showSearchGlobal → SearchPanelController.show）后，
-        // 用真实 fixture URL 构造 SearchHit 并调 menu(for:)——验搜索上下文裁剪后的菜单确有内容与可用拷贝路径。
+        // M23-15 (I-31): search result row context menu → items>0 + has 'Copy Path' + clipboard == the path after running it (real effect)
+        // After onReveal/onStash are injected through the real chain (wc.showSearchGlobal → SearchPanelController.show),
+        // build a SearchHit from a real fixture URL and call menu(for:), verifying the menu trimmed for the search context has content and a working Copy Path.
         wc.showSearchGlobal(nil)
         try? await Task.sleep(for: .milliseconds(200))
         let searchHit = SearchHit(url: sandbox, name: sandbox.lastPathComponent,
@@ -850,24 +850,24 @@ enum UISelfTest {
         let copyPathTitle = L10n.t("menu.copyPath")
         let hasCopyPath = searchMenu.items.contains { $0.title == copyPathTitle }
         record(searchMenu.items.count > 0 && hasCopyPath,
-               "搜索结果右键菜单 items>0 且含「拷贝路径」（\(searchMenu.items.count) 项）")
-        // 定位链 + 暂存架可达 → 对应项存在（FG-1：可达才出）
+               "Search result context menu items>0 and has 'Copy Path' (\(searchMenu.items.count) items)")
+        // Reveal chain + stash shelf reachable → matching items exist (FG-1: show only if reachable)
         record(searchMenu.items.contains { $0.title == L10n.t("search.reveal") }
                && searchMenu.items.contains { $0.title == L10n.t("search.addToStash") }
                && searchMenu.items.contains { $0.title == L10n.t("menu.getInfo") },
-               "搜索结果右键菜单含定位/加入暂存架/显示简介（可达项齐全）")
-        // 真实效果：执行「拷贝路径」→ 剪贴板内容 == 该 URL 路径
+               "Search result context menu has reveal/add to stash/Get Info (all reachable items present)")
+        // Real effect: run 'Copy Path' → clipboard content == the URL path
         if let cp = searchMenu.items.first(where: { $0.title == copyPathTitle }) {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString("SENTINEL-\(UUID().uuidString)", forType: .string)
             _ = cp.target?.perform(cp.action, with: cp)
             try? await Task.sleep(for: .milliseconds(120))
             let clip = NSPasteboard.general.string(forType: .string)
-            record(clip == sandbox.path, "搜索结果右键「拷贝路径」→ 剪贴板内容==该路径")
+            record(clip == sandbox.path, "Search result context 'Copy Path' → clipboard content == that path")
         } else {
-            record(false, "搜索结果右键「拷贝路径」→ 剪贴板内容==该路径")
+            record(false, "Search result context 'Copy Path' → clipboard content == that path")
         }
-        // I-38/I-40：结果流不打断选中 + 局部按根近排序 + 路径列常驻（夹具直驱 appendResults 真链）
+        // I-38/I-40: result stream does not disturb selection + local search ranks nearest-to-root first + path column always shown (fixture drives the real appendResults chain)
         let sp = SearchPanelController.shared
         func fixtureHit(_ rel: String) -> SearchHit {
             let u = URL(fileURLWithPath: sandbox.path + "/" + rel)
@@ -877,18 +877,18 @@ enum UISelfTest {
         sp.uiTestReset(root: sandbox)
         sp.uiTestAppend([fixtureHit("deep/deeper/c.txt"), fixtureHit("a.txt"), fixtureHit("deep/b.txt")])
         let wantOrder = ["a.txt", "deep/b.txt", "deep/deeper/c.txt"].map { sandbox.path + "/" + $0 }
-        record(sp.uiTestResultPaths == wantOrder, "I-40 局部搜索按离根近者优先排序（直接子级最先）")
-        record(sp.uiTestFirstRowPathCellText?.isEmpty == false, "I-40 结果表常驻路径列实渲染父目录路径")
-        sp.uiTestSelectRow(1)                    // 选中 deep/b.txt
-        sp.uiTestAppend([fixtureHit("aa.txt")])  // 新批次插到更前 → 行号位移
-        // 同层字典序 tiebreaker 全序核验（a.txt 先于 aa.txt——比较器反向/被删则此断言必红）
+        record(sp.uiTestResultPaths == wantOrder, "I-40 local search ranks nearest-to-root first (direct children first)")
+        record(sp.uiTestFirstRowPathCellText?.isEmpty == false, "I-40 result table always shows a rendered parent path column")
+        sp.uiTestSelectRow(1)                    // selects deep/b.txt
+        sp.uiTestAppend([fixtureHit("aa.txt")])  // new batch inserts ahead → row numbers shift
+        // Same-level lexicographic tiebreaker, full order check (a.txt before aa.txt; this goes red if the comparator is reversed or removed)
         let wantOrder2 = ["a.txt", "aa.txt", "deep/b.txt", "deep/deeper/c.txt"]
             .map { sandbox.path + "/" + $0 }
-        record(sp.uiTestResultPaths == wantOrder2, "I-40 同层字典序（a.txt 先于 aa.txt，全序核验）")
+        record(sp.uiTestResultPaths == wantOrder2, "I-40 same-level lexicographic order (a.txt before aa.txt, full order check)")
         record(sp.uiTestSelectedPath == sandbox.path + "/deep/b.txt",
-               "I-38 流式新批次到达后选中项不丢不漂（行号位移仍锁同一 URL）")
-        // 符号链接口径：Spotlight 通道回报解析后路径（/var→/private/var）——
-        // 根为未解析表示时命中仍须按深度排序，不得整体沉底（评审实锤的主通道失效缺陷）
+               "I-38 selection neither lost nor drifts when a new streamed batch arrives (row shift, still locked to the same URL)")
+        // Symlink convention: the Spotlight channel reports resolved paths (/var→/private/var);
+        // with an unresolved root, hits must still sort by depth and not all sink to the bottom (a main-channel defect confirmed in review)
         let resolvedBase = sandbox.resolvingSymlinksInPath().path
         if resolvedBase != sandbox.path {
             sp.uiTestAppend([SearchHit(url: URL(fileURLWithPath: resolvedBase + "/deep/rr.txt"),
@@ -897,19 +897,19 @@ enum UISelfTest {
             let rrIndex = sp.uiTestResultPaths.firstIndex { $0.hasSuffix("/deep/rr.txt") }
             record(rrIndex != nil && rrIndex! < sp.uiTestResultPaths.count - 1
                    && sp.uiTestResultPaths.last?.hasSuffix("/deep/deeper/c.txt") == true,
-                   "I-40 解析路径口径命中仍按深度排序（符号链接根不失效）")
+                   "I-40 resolved-path hits still sort by depth (symlink root does not break it)")
         } else {
-            record(true, "I-40 解析路径口径命中仍按深度排序（符号链接根不失效）")   // 本机无符号链接差异：口径天然一致
+            record(true, "I-40 resolved-path hits still sort by depth (symlink root does not break it)")   // no symlink difference on this machine: the conventions naturally agree
         }
-        // 根外命中沉底（.max 兜底分支真值）：sandbox 之外的路径必须排最后
+        // Out-of-root hits sink to the bottom (truth of the .max fallback branch): paths outside the sandbox must sort last
         sp.uiTestAppend([SearchHit(url: URL(fileURLWithPath: fs.temporaryDirectory.path
                                                 + "/nspace-uitest-outside.txt"),
                                    name: "nspace-uitest-outside.txt", isDirectory: false,
                                    size: 1, modified: nil, contentTypeID: nil)])
         record(sp.uiTestResultPaths.last?.hasSuffix("/nspace-uitest-outside.txt") == true,
-               "I-40 根外命中沉底为最后一行")
-        // I-42 卡死回归：大结果集流式累积必须 O(n) 且不卡（旧 `hits+visible` 每批全量重拼=O(n²)→卡死）。
-        // 灌 maxResults 条（分 50/批模拟流），限时完成 + 达上限显示截断提示。
+               "I-40 out-of-root hit sinks to the last row")
+        // I-42 hang regression: streaming accumulation of a large result set must be O(n) and not stall (the old `hits+visible` rebuilt everything per batch = O(n²) → hang).
+        // Feed maxResults hits (in batches of 50 to simulate the stream); must finish within the limit + show the truncation notice at the cap.
         sp.uiTestReset(root: nil)
         let big = SearchLimits.maxResults
         let t0 = Date()
@@ -924,10 +924,10 @@ enum UISelfTest {
         }
         let elapsed = Date().timeIntervalSince(t0)
         record(elapsed < 3.0 && sp.uiTestResultCount == big,
-               "I-42 大结果流式累积 O(n) 不卡（灌 \(big) 条耗时 \(String(format: "%.2f", elapsed))s < 3s）")
-        record(sp.uiTestTruncationVisible, "I-42 达结果上限显示「仅显示前 N 条」截断提示")
+               "I-42 large streamed accumulation is O(n) without stalling (fed \(big) hits in \(String(format: "%.2f", elapsed))s < 3s)")
+        record(sp.uiTestTruncationVisible, "I-42 at the result cap shows the 'first N only' truncation notice")
         sp.uiTestReset(root: nil)
-        // 实景截图：路径列 + 根近排序 + 选中保持（人眼终审用）
+        // Live screenshot: path column + nearest-to-root ranking + selection kept (for final human review)
         if let spWin = NSApp.windows.first(where: { w in
             w.isVisible && !(w.windowController is MainWindowController) &&
             viewTree(w.contentView).contains { ($0 as? NSButton)?.title == L10n.t("search.includeHidden") }
@@ -936,15 +936,15 @@ enum UISelfTest {
         }
         sp.uiTestReset(root: nil)
 
-        // ── I-34：大小列窄宽不折行（单行 + 头部截断，防 22pt 行高装不下 attributed 串）──
+        // ── I-34: size column does not wrap when narrow (single line + head truncation, so an attributed string cannot overflow the 22pt row) ──
         let i34cell = TextCellView(identifier: .init("i34-size"))
         i34cell.configureSize(value: "151.4", unit: "MB", alignment: .right)
         record(i34cell.textField?.usesSingleLineMode == true
                && i34cell.textField?.lineBreakMode == .byTruncatingHead,
-               "I-34 大小列单行不折行（usesSingleLineMode + 头部截断）")
+               "I-34 size column stays on one line (usesSingleLineMode + head truncation)")
 
-        // ── M27 冲突体验：三按钮 + 「应用到此文件夹」checkbox 的按文件夹批量决议 + 自绘面板截图 ──
-        // 夹具跨两个文件夹：folderA 两条冲突、folderB 一条 → checkbox 批量一次只作用一个文件夹。
+        // ── M27 conflict experience: three buttons + per-folder batch resolution via the "apply to this folder" checkbox + custom-drawn panel screenshot ──
+        // Fixture spans two folders: folderA has two conflicts, folderB one → the checkbox batch applies to one folder at a time.
         let folderA = sandbox.appendingPathComponent("conflictA")
         let folderB = sandbox.appendingPathComponent("conflictB")
         try? fs.createDirectory(at: folderA, withIntermediateDirectories: true)
@@ -954,31 +954,31 @@ enum UISelfTest {
         let b1 = folderB.appendingPathComponent("b1.txt")
         for u in [a1, a2, b1] { try? Data("x".utf8).write(to: u) }
         let conflicts = [a1, a2, b1].map { FileConflict(source: $0, existing: $0, bothDirectories: false) }
-        // 勾 checkbox 批量：第一次「替换」只定 folderA 两条，folderB 仍待决（面板须再现一次）
+        // With the checkbox on: the first "Replace" settles only folderA's two, folderB is still pending (the panel must appear once more)
         var m1 = ConflictDecisionMachine(conflicts)
         m1.decideCurrentFolder(.replace)
         let folderAOnly = m1.decisions.count == 2
             && { if case .replace = m1.decisions[a1] { return true }; return false }()
             && { if case .replace = m1.decisions[a2] { return true }; return false }()
             && m1.decisions[b1] == nil && !m1.isComplete
-        record(folderAOnly, "M27 checkbox 批量一次只作用一个文件夹（folderA 2 条已定，folderB 仍待决）")
-        // 面板出现次数 == 文件夹数（3 文件夹 → 3 次；这里 2 文件夹 → 2 次）
+        record(folderAOnly, "M27 checkbox batch applies to one folder at a time (folderA's 2 settled, folderB still pending)")
+        // Panel appearances == number of folders (3 folders → 3 times; here 2 folders → 2 times)
         record(ConflictSheet.uiTestFolderPromptCount(conflicts, batchDecision: .replace) == 2,
-               "M27 逐文件夹批量：面板出现次数==文件夹数（2 文件夹→2 次）")
-        // 未勾 checkbox 只决当前一条
+               "M27 per-folder batch: panel appearances == folder count (2 folders → 2 times)")
+        // Without the checkbox, only the current item is settled
         var m2 = ConflictDecisionMachine(conflicts)
         m2.decideCurrent(.replace)
-        record(m2.decisions.count == 1, "M27 未勾 checkbox 只决议当前一条（逐条推进）")
-        // 取消 → nil（契约：整体放弃）
+        record(m2.decisions.count == 1, "M27 without the checkbox only the current item is settled (one by one)")
+        // Cancel → nil (contract: abandon everything)
         record(ConflictSheet.uiTestResolve(conflicts, actions: [("cancel", nil)]) == nil,
-               "M27 取消 → 决议返回 nil（整体放弃）")
-        // 自绘面板：三按钮右对齐（取消/合并/替换）+ 左下 checkbox；文件冲突「合并」禁用。
-        // headless captureView 出图骨架（控件 cell 需窗口服务才完整渲染，真机预览见 NSPACE_CONFLICT_PREVIEW）。
+               "M27 Cancel → resolution returns nil (abandon everything)")
+        // Custom-drawn panel: three right-aligned buttons (Cancel/Merge/Replace) + checkbox at bottom left; "Merge" disabled for file conflicts.
+        // headless captureView gives a skeleton image (control cells need the window server to render fully; for a real-machine preview see NSPACE_CONFLICT_PREVIEW).
         if let cpanel = ConflictSheet.uiTestPanel(conflicts, host: window) {
             if let cv = cpanel.contentView { captureView(cv, "32-conflict-sheet") }
             let tree = viewTree(cpanel.contentView)
             let btns = tree.compactMap { ($0 as? NSButton)?.title }
-            // v0.19.22 起加「两者保留」（用户报告：只有合并/取消，没有改名共存）→ 三按钮变四按钮
+            // Since v0.19.22 "Keep Both" was added (user report: only Merge/Cancel, no way to keep both under a new name) → three buttons became four
             let hasFour = btns.contains(L10n.t("conflict.cancel"))
                 && btns.contains(L10n.t("conflict.replace")) && btns.contains(L10n.t("conflict.merge"))
                 && btns.contains(L10n.t("conflict.keepBoth"))
@@ -986,21 +986,21 @@ enum UISelfTest {
             let mergeBtn = tree.first { ($0 as? NSButton)?.title == L10n.t("conflict.merge") } as? NSButton
             let keepBtn = tree.first { ($0 as? NSButton)?.title == L10n.t("conflict.keepBoth") } as? NSButton
             record(hasFour && hasCheck,
-                   "M27 面板四按钮(取消/合并/两者保留/替换)+左下「应用到此文件夹」checkbox（自绘真渲染）")
-            // 「两者保留」对**文件冲突**也必须可点（合并只对文件夹，改名共存两者都行）
+                   "M27 panel has four buttons (Cancel/Merge/Keep Both/Replace) + bottom-left 'apply to this folder' checkbox (custom-drawn, really rendered)")
+            // "Keep Both" must also be clickable for **file conflicts** (Merge is folders only; keeping both under a new name works for either)
             record(keepBtn?.isEnabled == true,
-                   "M27 文件冲突「两者保留」可用（可点=\(keepBtn?.isEnabled == true)）")
-            record(mergeBtn?.isEnabled == false, "M27 文件冲突「合并」禁用（仅文件夹可合并，诚实不可点）")
+                   "M27 file conflict 'Keep Both' available (clickable=\(keepBtn?.isEnabled == true))")
+            record(mergeBtn?.isEnabled == false, "M27 file conflict 'Merge' disabled (folders only, honestly unclickable)")
         } else {
-            record(false, "M27 面板四按钮(取消/合并/两者保留/替换)+左下「应用到此文件夹」checkbox（自绘真渲染）")
-            record(false, "M27 文件冲突「两者保留」可用")
-            record(false, "M27 文件冲突「合并」禁用（仅文件夹可合并，诚实不可点）")
+            record(false, "M27 panel has four buttons (Cancel/Merge/Keep Both/Replace) + bottom-left 'apply to this folder' checkbox (custom-drawn, really rendered)")
+            record(false, "M27 file conflict 'Keep Both' available")
+            record(false, "M27 file conflict 'Merge' disabled (folders only, honestly unclickable)")
         }
 
-        window.makeKeyAndOrderFront(nil)   // 主窗夺 key → 面板 resignKey 自动关闭
+        window.makeKeyAndOrderFront(nil)   // Main window takes key → the panel's resignKey closes it automatically
         try? await Task.sleep(for: .milliseconds(200))
 
-        // M23 收尾：复原确定性初态 + 清沙箱（绝不污染用户目录/暂存/书签）
+        // M23 wrap-up: restore the deterministic initial state + clear the sandbox (never pollute user directories/stash/bookmarks)
         listVC.select(urls: [])
         pane.navigate(to: fs.homeDirectoryForCurrentUser)
         pane.setViewMode(.list)
@@ -1011,23 +1011,23 @@ enum UISelfTest {
     }
 
     private static func runPathCompletionScenario(wc: MainWindowController, window: NSWindow) async {
-        // ── I-30：⌘L 进入路径编辑后首键必须【一次生效】——字符落定 + 补全首键即触发（延迟到事务外）──
-        // 根因：controlTextDidChange 内同步 complete(nil) 会被文本变更事务吞掉首键补全 popup
-        // （首键无反应，需第二键才浮出）。修复：complete(nil) 延迟到下一 runloop。
+        // ── I-30: after ⌘L enters path editing, the first key must [take effect at once]: character lands + completion fires on the first key (deferred out of the transaction) ──
+        // Root cause: a synchronous complete(nil) inside controlTextDidChange lets the text change transaction swallow the first key's completion popup
+        // (no response to the first key, the popup only appears on the second). Fix: defer complete(nil) to the next runloop.
         window.makeKeyAndOrderFront(nil)
         wc.grid.apply(layout: .single)
         try? await Task.sleep(for: .milliseconds(250))
         do {
             let dpane = wc.grid.activePane
             let editor = dpane.uiTestPathEditor
-            // 焦点复位到内容区（模拟按 ⌘L 前初态），再走真实 beginPathEditing（净种子便于精确断言）
+            // Reset focus to the content area (simulates the state before pressing ⌘L), then go through the real beginPathEditing (a clean seed allows exact assertions)
             window.makeFirstResponder(dpane.focusTarget)
             try? await Task.sleep(for: .milliseconds(120))
             dpane.uiTestBeginPathEditing(seed: "")
             try? await Task.sleep(for: .milliseconds(20))
             let seed = editor.stringValue
             let fe = editor.currentEditor() as? NSTextView
-            // 首键 '/'：真实 field editor keyDown（interpretKeyEvents→insertText→controlTextDidChange→complete）
+            // First key '/': a real field editor keyDown (interpretKeyEvents→insertText→controlTextDidChange→complete)
             if let ev = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
                     timestamp: ProcessInfo.processInfo.systemUptime,
                     windowNumber: window.windowNumber, context: nil,
@@ -1035,16 +1035,16 @@ enum UISelfTest {
                     isARepeat: false, keyCode: 44), let fe {
                 fe.keyDown(with: ev)
             }
-            try? await Task.sleep(for: .milliseconds(80))   // 等延迟补全跑完
+            try? await Task.sleep(for: .milliseconds(80))   // Wait for the deferred completion to finish
             let afterFirst = editor.stringValue
-            // 真实效果三连：①字符一次落定 ②首键即算出补全候选 ③补全在文本变更事务【之外】触发（修复本体）
+            // Three real effects: ① character lands at once ② first key computes completion candidates ③ completion fires [outside] the text change transaction (the fix itself)
             record(afterFirst == seed + "/",
-                   "I-30 ⌘L 后首键 '/' 字符一次生效（stringValue=「\(afterFirst)」）")
+                   "I-30 ⌘L first key '/' lands at once (stringValue='\(afterFirst)')")
             record(editor.uiTestLastCompletionCount > 0,
-                   "I-30 首键即触发补全候选（数=\(editor.uiTestLastCompletionCount)）")
+                   "I-30 first key triggers completion candidates (count=\(editor.uiTestLastCompletionCount))")
             record(editor.uiTestCompletionWasDeferred,
-                   "I-30 补全在文本变更事务之外触发（首键 popup 不被吞）")
-            dpane.uiTestEndPathEditing()   // 编排收尾：退出编辑态，恢复面包屑（截图不被编辑框遮盖）
+                   "I-30 completion fires outside the text change transaction (first key popup not swallowed)")
+            dpane.uiTestEndPathEditing()   // Orchestrated wrap-up: leave editing, restore the breadcrumb (so the edit field does not cover screenshots)
             try? await Task.sleep(for: .milliseconds(150))
             editor.stringValue = ""
             window.makeFirstResponder(nil)
@@ -1054,10 +1054,10 @@ enum UISelfTest {
 
     private static func runPathEditingScenario(wc: MainWindowController, window: NSWindow) async {
         let fs = FileManager.default
-        // ── I-53：地址栏三连 bug 修复回归（用户 2026-08-31 报告）─────────────────
-        // bug1: ⌘L 呼出后文本未全选（旧=moveToEndOfLine）→ 输入/粘贴追加而非替换
-        // bug2: 粘贴文件路径（.apk 等）Enter 只抖动不跳转；应导航父目录+选中该文件
-        // bug3: 编辑框失焦不复位——删除清空/点击他处后地址栏永远空白
+        // ── I-53: regression for the three address bar bugs (user report 2026-08-31) ─────────────────
+        // bug1: text not selected after ⌘L (old = moveToEndOfLine) → typing/pasting appends instead of replacing
+        // bug2: pasting a file path (.apk etc) and pressing Enter only shakes; it should navigate to the parent and select the file
+        // bug3: the edit field does not reset on blur: after clearing or clicking elsewhere the address bar stays blank forever
         do {
             let dpane = wc.grid.activePane
             let editor = dpane.uiTestPathEditor
@@ -1068,7 +1068,7 @@ enum UISelfTest {
             try? Data("PK".utf8).write(to: i53file)
             defer { try? fs.removeItem(at: i53box) }
             let g53 = assertSandboxed(i53box) && assertSandboxed(i53file)
-            record(g53, "沙箱守卫[I-53]: 地址栏回归夹具在自建临时目录内")
+            record(g53, "Sandbox guard [I-53]: address bar regression fixture inside own temp directory")
             if g53 {
                 func pressEnter() {
                     guard let fe = editor.currentEditor() as? NSTextView,
@@ -1079,7 +1079,7 @@ enum UISelfTest {
                                   isARepeat: false, keyCode: 36) else { return }
                     fe.keyDown(with: ev)
                 }
-                // bug1: ⌘L 全选
+                // bug1: ⌘L selects all
                 window.makeFirstResponder(dpane.focusTarget)
                 try? await Task.sleep(for: .milliseconds(120))
                 dpane.uiTestBeginPathEditing(seed: "/tmp/some/path")
@@ -1087,10 +1087,10 @@ enum UISelfTest {
                 let selRange = (editor.currentEditor() as? NSTextView)?.selectedRange ?? NSRange(location: 0, length: 0)
                 let fullLen = editor.stringValue.count
                 record(selRange.location == 0 && selRange.length == fullLen && fullLen > 0,
-                       "I-53 ⌘L 呼出后地址栏文本全选（选区 0..<\(selRange.length) 全长 \(fullLen)）")
+                       "I-53 ⌘L selects all address bar text (selection 0..<\(selRange.length) full length \(fullLen))")
                 dpane.uiTestEndPathEditing()
                 try? await Task.sleep(for: .milliseconds(100))
-                // bug2a: Enter 文件夹路径 → 导航
+                // bug2a: Enter on a folder path → navigate
                 window.makeFirstResponder(dpane.focusTarget)
                 try? await Task.sleep(for: .milliseconds(120))
                 dpane.uiTestBeginPathEditing(seed: i53box.path)
@@ -1098,9 +1098,9 @@ enum UISelfTest {
                 pressEnter()
                 try? await Task.sleep(for: .milliseconds(300))
                 record(samePath(dpane.uiTestCurrentURL, i53box),
-                       "I-53 Enter 文件夹路径 → 导航到该文件夹（实得 \(dpane.uiTestCurrentURL.lastPathComponent)）")
-                record(!dpane.uiTestIsPathEditing, "I-53 文件夹导航后编辑框已退出（面包屑回显）")
-                // bug2b: Enter 文件路径（.apk）→ 导航父目录并选中该文件
+                       "I-53 Enter on folder path → navigates to that folder (got \(dpane.uiTestCurrentURL.lastPathComponent))")
+                record(!dpane.uiTestIsPathEditing, "I-53 edit field exits after folder navigation (breadcrumb shown again)")
+                // bug2b: Enter on a file path (.apk) → navigate to the parent and select the file
                 window.makeFirstResponder(dpane.focusTarget)
                 try? await Task.sleep(for: .milliseconds(120))
                 dpane.uiTestBeginPathEditing(seed: i53file.path)
@@ -1115,9 +1115,9 @@ enum UISelfTest {
                     }
                 }
                 record(revealOK,
-                       "I-53 Enter 文件路径（.apk）→ 导航父目录并选中该文件（dir=\(samePath(dpane.uiTestCurrentURL, i53box)) sel=\(dpane.activeTab.listVC.selectedURLs.count)）")
-                record(!dpane.uiTestIsPathEditing, "I-53 文件 reveal 后编辑框已退出（面包屑回显）")
-                // bug2c: 不存在路径 → 不跳转
+                       "I-53 Enter on file path (.apk) → navigates to parent and selects the file (dir=\(samePath(dpane.uiTestCurrentURL, i53box)) sel=\(dpane.activeTab.listVC.selectedURLs.count))")
+                record(!dpane.uiTestIsPathEditing, "I-53 edit field exits after file reveal (breadcrumb shown again)")
+                // bug2c: nonexistent path → no navigation
                 let beforeInvalid = dpane.uiTestCurrentURL
                 window.makeFirstResponder(dpane.focusTarget)
                 try? await Task.sleep(for: .milliseconds(120))
@@ -1126,29 +1126,29 @@ enum UISelfTest {
                 pressEnter()
                 try? await Task.sleep(for: .milliseconds(200))
                 record(samePath(dpane.uiTestCurrentURL, beforeInvalid),
-                       "I-53 Enter 不存在路径 → 不跳转（仍在原目录）")
-                // bug3: 清空地址栏失焦 → 编辑框退出，面包屑回显
+                       "I-53 Enter on nonexistent path → no navigation (stays in place)")
+                // bug3: clearing the address bar and blurring → edit field exits, breadcrumb shows again
                 dpane.uiTestBeginPathEditing(seed: "")
                 try? await Task.sleep(for: .milliseconds(30))
                 dpane.uiTestBlurPathEditor()
                 try? await Task.sleep(for: .milliseconds(200))
                 record(!dpane.uiTestIsPathEditing,
-                       "I-53 清空地址栏后失焦 → 编辑框退出，面包屑回显当前路径")
-                // bug3b: 编辑中（删空）触发导航（退回上级/刷新，不经失焦）→ 编辑框仍须退出、面包屑回显。
-                // 用户报"退回上级再重进也不恢复"——这条路径不失焦，只靠失焦复位覆盖不到，须由导航强制收编辑态。
+                       "I-53 clearing address bar then blur → edit field exits, breadcrumb shows current path")
+                // bug3b: navigation triggered while editing (emptied) (going up/refresh, with no blur) → the edit field must still exit and the breadcrumb show again.
+                // User report: "going up and coming back does not restore it either". This path never blurs, so the blur reset misses it; navigation must force editing closed.
                 dpane.navigate(to: i53box)
                 try? await Task.sleep(for: .milliseconds(200))
-                dpane.uiTestBeginPathEditing(seed: "")   // 进编辑并删空
+                dpane.uiTestBeginPathEditing(seed: "")   // Enter editing and empty the field
                 try? await Task.sleep(for: .milliseconds(30))
-                dpane.goUpFolder(nil)                     // 编辑中退回上级（键盘/菜单路径，不失焦）
+                dpane.goUpFolder(nil)                     // Go up while editing (keyboard/menu path, no blur)
                 try? await Task.sleep(for: .milliseconds(250))
                 record(!dpane.uiTestIsPathEditing && samePath(dpane.uiTestCurrentURL, i53box.deletingLastPathComponent()),
-                       "I-53 编辑中退回上级 → 编辑框退出+面包屑回显新目录（editing=\(dpane.uiTestIsPathEditing)）")
+                       "I-53 going up while editing → edit field exits + breadcrumb shows new directory (editing=\(dpane.uiTestIsPathEditing))")
                 if dpane.uiTestIsPathEditing { dpane.uiTestEndPathEditing() }
                 window.makeFirstResponder(dpane.focusTarget)
                 try? await Task.sleep(for: .milliseconds(100))
             }
-            // 卫生：夹具即将删除，别把窗格留在已删目录里污染后续场景
+            // Hygiene: the fixture is about to be deleted, do not leave the pane in a deleted directory to pollute later scenarios
             dpane.navigate(to: fs.homeDirectoryForCurrentUser)
             try? await Task.sleep(for: .milliseconds(150))
         }
@@ -1156,19 +1156,19 @@ enum UISelfTest {
 
     private static func runPathParsingScenario(wc: MainWindowController, window: NSWindow) async {
         let fs = FileManager.default
-        // ── I-54：地址栏路径解析矩阵——剪贴板真实形态 × 目标类型（纯解析层，零时序依赖）────────
-        // 用户报"有时候粘贴文件夹也无法跳转，很奇怪"：不是玄学。旧实现只
-        // trimmingCharacters(in: .whitespaces)（**该字符集不含 \n**）+ expandingTildeInPath，
-        // 于是"尾随换行 / file:// URL / percent 编码 / 成对引号 / 反斜杠转义"这五类真实剪贴板
-        // 形态统统落进 shake 分支——粘同一个文件夹，从 Finder 复制的能跳、从终端复制的不能跳。
-        // 这里直接断言 resolve()：端到端导航跑 26 条既慢又测不到解析层，纯函数断言才盯得住真因。
+        // ── I-54: address bar path resolution matrix: real clipboard shapes × target types (pure parsing layer, no timing dependency) ────────
+        // User report: "sometimes pasting a folder will not navigate, very odd". It is not magic. The old code only did
+        // trimmingCharacters(in: .whitespaces) (**that set excludes \n**) + expandingTildeInPath,
+        // so five real clipboard shapes (trailing newline / file:// URL / percent encoding / paired quotes / backslash escapes)
+        // all fell into the shake branch: the same folder pasted from Finder navigated, pasted from a terminal did not.
+        // Assert resolve() directly here: running 26 end-to-end navigations is slow and cannot see the parsing layer; only pure-function assertions pin down the real cause.
         do {
             let dpane = wc.grid.activePane
             let editor = dpane.uiTestPathEditor
             let box = fs.temporaryDirectory
                 .appendingPathComponent("nspace-uitest-i54-\(UUID().uuidString)", isDirectory: true)
             let folder = box.appendingPathComponent("My Folder", isDirectory: true)
-            let cnFolder = box.appendingPathComponent("中文 目录", isDirectory: true)
+            let cnFolder = box.appendingPathComponent("Résumé Ünï", isDirectory: true)
             let quoteDir = box.appendingPathComponent("weird'quote", isDirectory: true)
             let slashDir = box.appendingPathComponent("back\\slash", isDirectory: true)
             let pkgDir = box.appendingPathComponent("Test.app", isDirectory: true)
@@ -1183,9 +1183,9 @@ enum UISelfTest {
             try? fs.createSymbolicLink(at: linkFile, withDestinationURL: apk)
             defer { if assertSandboxed(box) { try? fs.removeItem(at: box) } }
             let g54 = assertSandboxed(box) && assertSandboxed(apk)
-            record(g54, "沙箱守卫[I-54]: 路径解析矩阵夹具在自建临时目录内")
+            record(g54, "Sandbox guard [I-54]: path resolution matrix fixture inside own temp directory")
             if g54 {
-                // 相对路径用例要拿"当前浏览目录"当基准，先把窗格开到夹具里
+                // Relative path cases use the "current browsing directory" as their base, so open the pane on the fixture first
                 dpane.navigate(to: box)
                 _ = await pollFS { samePath(dpane.uiTestCurrentURL, box) }
 
@@ -1207,39 +1207,39 @@ enum UISelfTest {
                     p.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? p
                 }
 
-                // 维度：剪贴板形态 × 目标类型 × 特殊名字 × 负例
+                // Dimensions: clipboard shape × target type × special names × negative cases
                 let matrix: [(String, String, String)] = [
-                    // ① 形态 × 文件夹
-                    ("plain 目录",         folder.path,                    dirOf(folder)),
-                    ("尾随换行",           folder.path + "\n",             dirOf(folder)),
-                    ("尾随 CRLF",          folder.path + "\r\n",           dirOf(folder)),
-                    ("前后空格",           "  " + folder.path + "  ",      dirOf(folder)),
-                    ("尾随斜杠",           folder.path + "/",              dirOf(folder)),
-                    ("file:// 未编码",     "file://" + folder.path,        dirOf(folder)),
-                    ("file:// percent",    "file://" + pct(folder.path),   dirOf(folder)),
-                    ("双引号包裹",         "\"" + folder.path + "\"",      dirOf(folder)),
-                    ("单引号包裹",         "'" + folder.path + "'",        dirOf(folder)),
-                    ("反斜杠转义空格",     folder.path.replacingOccurrences(of: " ", with: "\\ "), dirOf(folder)),
-                    ("中文目录",           cnFolder.path,                  dirOf(cnFolder)),
-                    ("中文 file:// 编码",  "file://" + pct(cnFolder.path), dirOf(cnFolder)),
-                    ("相对路径",           "My Folder",                    dirOf(folder)),
-                    ("./ 相对",            "./My Folder",                  dirOf(folder)),
-                    ("~ 家目录",           "~",                            dirOf(fs.homeDirectoryForCurrentUser)),
-                    ("根目录",             "/",                            "DIR:/"),
-                    // ② 形态 × 文件（用户点名的 .apk）
-                    ("apk 文件",           apk.path,                       fileOf(apk)),
-                    ("apk 尾随换行",       apk.path + "\n",                fileOf(apk)),
-                    ("apk file:// 编码",   "file://" + pct(apk.path),      fileOf(apk)),
-                    // ③ 目标类型：包按 Finder 语义当文件（选中而非钻进去）、符号链接跟随
-                    (".app 包当文件处理",  pkgDir.path,                    fileOf(pkgDir)),
-                    ("符号链接→目录",      linkDir.path,                   dirOf(folder)),
-                    ("符号链接→文件",      linkFile.path,                  fileOf(apk)),
-                    // ④ 名字里真含特殊字符不被"聪明"解析误伤（靠原样候选排最前保证）
-                    ("名字真含单引号",     quoteDir.path,                  dirOf(quoteDir)),
-                    ("名字真含反斜杠",     slashDir.path,                  dirOf(slashDir)),
-                    // ⑤ 负例
-                    ("不存在的路径",       box.appendingPathComponent("nope-\(UUID().uuidString)").path, "NONE"),
-                    ("纯空白",             "   \n  ",                      "EMPTY"),
+                    // ① shape × folder
+                    ("plain directory",     folder.path,                    dirOf(folder)),
+                    ("trailing newline",    folder.path + "\n",             dirOf(folder)),
+                    ("trailing CRLF",       folder.path + "\r\n",           dirOf(folder)),
+                    ("surrounding spaces",  "  " + folder.path + "  ",      dirOf(folder)),
+                    ("trailing slash",      folder.path + "/",              dirOf(folder)),
+                    ("file:// unencoded",   "file://" + folder.path,        dirOf(folder)),
+                    ("file:// percent",     "file://" + pct(folder.path),   dirOf(folder)),
+                    ("double-quoted",       "\"" + folder.path + "\"",      dirOf(folder)),
+                    ("single-quoted",       "'" + folder.path + "'",        dirOf(folder)),
+                    ("backslash-escaped spaces", folder.path.replacingOccurrences(of: " ", with: "\\ "), dirOf(folder)),
+                    ("non-ASCII directory", cnFolder.path,                  dirOf(cnFolder)),
+                    ("non-ASCII file:// encoded", "file://" + pct(cnFolder.path), dirOf(cnFolder)),
+                    ("relative path",       "My Folder",                    dirOf(folder)),
+                    ("./ relative",         "./My Folder",                  dirOf(folder)),
+                    ("~ home directory",    "~",                            dirOf(fs.homeDirectoryForCurrentUser)),
+                    ("root directory",      "/",                            "DIR:/"),
+                    // ② shape × file (the .apk the user named)
+                    ("apk file",            apk.path,                       fileOf(apk)),
+                    ("apk trailing newline", apk.path + "\n",                fileOf(apk)),
+                    ("apk file:// encoded", "file://" + pct(apk.path),      fileOf(apk)),
+                    // ③ target type: packages count as files per Finder semantics (select, do not descend); symlinks are followed
+                    (".app package treated as a file", pkgDir.path,                    fileOf(pkgDir)),
+                    ("symlink→directory",   linkDir.path,                   dirOf(folder)),
+                    ("symlink→file",        linkFile.path,                  fileOf(apk)),
+                    // ④ names that really contain special characters are not damaged by "smart" parsing (guaranteed by trying the verbatim candidate first)
+                    ("name contains a real single quote", quoteDir.path,                  dirOf(quoteDir)),
+                    ("name contains a real backslash", slashDir.path,                  dirOf(slashDir)),
+                    // ⑤ negative cases
+                    ("nonexistent path",    box.appendingPathComponent("nope-\(UUID().uuidString)").path, "NONE"),
+                    ("whitespace only",     "   \n  ",                      "EMPTY"),
                 ]
                 var bad: [String] = []
                 for (label, input, expect) in matrix {
@@ -1247,12 +1247,12 @@ enum UISelfTest {
                     if got != expect { bad.append("\(label)→\(got)≠\(expect)") }
                 }
                 record(bad.isEmpty,
-                       "I-54 路径解析矩阵 \(matrix.count - bad.count)/\(matrix.count) 通过"
-                       + (bad.isEmpty ? "" : "；失败：\(bad.joined(separator: " | "))"))
+                       "I-54 path resolution matrix \(matrix.count - bad.count)/\(matrix.count) passed"
+                       + (bad.isEmpty ? "" : "; failed: \(bad.joined(separator: " | "))"))
 
-                // ⑥ 端到端：⌘L 全选后"粘贴"须整段替换而非追加。
-                // 不碰 NSPasteboard.general——那是用户真实剪贴板，测试无权污染（沿用沙箱铁律）；
-                // insertText(替换选区) 正是 ⌘V 在全选态下走的同一条 field editor 路径。
+                // ⑥ end to end: after ⌘L selects all, a "paste" must replace everything, not append.
+                // Leave NSPasteboard.general alone: that is the user's real clipboard and a test has no right to pollute it (sandbox hard rule);
+                // insertText(insertText (replacing the selection) is the same field editor path ⌘V takes with everything selected.
                 window.makeFirstResponder(dpane.focusTarget)
                 try? await Task.sleep(for: .milliseconds(120))
                 dpane.uiTestBeginPathEditing(seed: "/some/old/path/that/must/be/replaced")
@@ -1262,9 +1262,9 @@ enum UISelfTest {
                 }
                 try? await Task.sleep(for: .milliseconds(30))
                 record(dpane.uiTestPathEditorText == apk.path,
-                       "I-54 ⌘L 全选后粘贴整段替换（非追加）（得「\(dpane.uiTestPathEditorText)」）")
+                       "I-54 ⌘L select-all then paste replaces everything (no append) (got '\(dpane.uiTestPathEditorText)')")
 
-                // ⑦ 端到端：无效路径 Enter → 不跳转 + 内联红字提示（不弹窗）
+                // ⑦ end to end: Enter on an invalid path → no navigation + inline red hint (no alert)
                 let beforeInvalid = dpane.uiTestCurrentURL
                 dpane.uiTestBeginPathEditing(seed: "/definitely/not/exists/\(UUID().uuidString)")
                 try? await Task.sleep(for: .milliseconds(30))
@@ -1280,33 +1280,33 @@ enum UISelfTest {
                 record(samePath(dpane.uiTestCurrentURL, beforeInvalid)
                          && dpane.uiTestPathHintVisible
                          && dpane.uiTestIsPathEditing,
-                       "I-54 无效路径 → 不跳转 + 内联提示 + 留在输入框可就地改（未跳转=\(samePath(dpane.uiTestCurrentURL, beforeInvalid)) 提示=\(dpane.uiTestPathHintVisible)「\(dpane.uiTestPathHintText)」 仍在编辑=\(dpane.uiTestIsPathEditing)）")
+                       "I-54 invalid path → no navigation + inline hint + stays in the field for in-place edits (not navigated=\(samePath(dpane.uiTestCurrentURL, beforeInvalid)) hint=\(dpane.uiTestPathHintVisible) '\(dpane.uiTestPathHintText)' still editing=\(dpane.uiTestIsPathEditing))")
 
-                // ⑧ 用户点名的第三条路径：删空地址栏后按 ⌘R 刷新 —— 编辑框须退出、面包屑回显。
-                // 刷新既不失焦也不导航，前两条复位路径都盖不到。这里走 sendAction 的**真实响应链**
-                // （而非直调探针）：菜单项挂的是 #selector(FileListViewController.refresh(_:))，
-                // 地址栏持有焦点时链上根本到不了那三个内容 VC，必须由 PaneViewController 同名实现接住。
+                // ⑧ the third path the user named: empty the address bar, then ⌘R refresh: the edit field must exit and the breadcrumb show again.
+                // Refresh neither blurs nor navigates, so neither earlier reset path covers it. This uses the **real responder chain** of sendAction
+                // (not a direct probe call): the menu item is bound to #selector(FileListViewController.refresh(_:)),
+                // and with the address bar focused the chain never reaches those three content VCs, so PaneViewController's same-named method must catch it.
                 dpane.uiTestBeginPathEditing(seed: "")
                 try? await Task.sleep(for: .milliseconds(30))
-                // tryToPerform 直接走本窗口的响应链（从 firstResponder 起），
-                // 避开 NSApp.sendAction 依赖 keyWindow 在无头环境可能为 nil 的干扰
+                // tryToPerform walks this window's responder chain directly (from firstResponder),
+                // avoiding NSApp.sendAction, whose keyWindow dependency may be nil when headless
                 let refreshDelivered = window.tryToPerform(
                     #selector(FileListViewController.refresh(_:)), with: nil)
                 try? await Task.sleep(for: .milliseconds(200))
                 record(refreshDelivered && !dpane.uiTestIsPathEditing,
-                       "I-54 删空地址栏后 ⌘R 刷新 → 菜单动作经响应链送达且编辑框退出（送达=\(refreshDelivered) 仍在编辑=\(dpane.uiTestIsPathEditing)）")
+                       "I-54 emptied address bar then ⌘R refresh → menu action delivered via responder chain and edit field exits (delivered=\(refreshDelivered) still editing=\(dpane.uiTestIsPathEditing))")
 
-                // ⑨ 粘贴「就在当前目录里」的文件：revealFile 会 navigate 到同一个目录，
-                // 若那条路径被当成"目录没变"短路掉，pending 选中就永远落不了地（选中数 0）。
+                // ⑨ pasting a file "right in the current directory": revealFile navigates to the same directory,
+                // and if that path short-circuits as "directory unchanged" the pending selection never lands (0 selected).
                 dpane.setViewMode(.list)
                 dpane.navigate(to: folder)
                 _ = await pollFS { samePath(dpane.uiTestCurrentURL, folder) }
                 dpane.activeTab.listVC.tableView.deselectAll(nil)
                 try? await Task.sleep(for: .milliseconds(120))
                 dpane.uiTestBeginPathEditing(seed: apk.path)
-                // 字段编辑器是**异步**装上去的：原来只 sleep 30ms 就取 currentEditor，
-                // 拿不到时下面整块 keyDown 被静默跳过——路径压根没敲进去，
-                // 断言却只报「选中数=0」，读不出是没敲进去还是没选中。真门三轮抖红一次即此。
+                // The field editor is attached **asynchronously**: the old code slept 30ms before taking currentEditor,
+                // and if it was missing the whole keyDown block below was silently skipped: the path was never typed,
+                // yet the assertion only said "selected=0", so you could not tell "never typed" from "not selected". The one red in three real-gate runs was this.
                 var fieldEditor: NSTextView?
                 for _ in 0..<20 {
                     if let fe = editor.currentEditor() as? NSTextView { fieldEditor = fe; break }
@@ -1321,9 +1321,9 @@ enum UISelfTest {
                     fe.keyDown(with: ev)
                 }
                 var sameDirOK = false
-                // 轮询窗口 1.5s → 4s：选中的落地要等目录**异步**读完再走 pending reveal，
-                // 机器忙时读盘拖长就假红（编辑器就绪=true、选中数=0 那一次即此）。
-                // 窗口长短不改变断言内容，只是不拿机器负载当判据。
+                // Polling window 1.5s → 4s: the selection lands only after the directory finishes reading **asynchronously** and the pending reveal runs;
+                // when the machine is busy the slow read gave a false red (that editor ready=true, selected=0 case).
+                // The window length does not change what is asserted; it just stops treating machine load as a criterion.
                 for _ in 0..<40 {
                     try? await Task.sleep(for: .milliseconds(100))
                     if samePath(dpane.uiTestCurrentURL, folder),
@@ -1332,11 +1332,11 @@ enum UISelfTest {
                     }
                 }
                 record(sameDirOK,
-                       "I-54 粘贴当前目录内的文件 → 原地选中（不因'目录没变'丢掉 pending 选中，选中数=\(dpane.activeTab.listVC.selectedURLs.count) 编辑器就绪=\(fieldEditor != nil)）")
+                       "I-54 pasting a file from the current directory → selected in place (pending selection not dropped for 'directory unchanged', selected=\(dpane.activeTab.listVC.selectedURLs.count) editor ready=\(fieldEditor != nil))")
 
-                // ⑩ 粘贴不弹补全 popup。这是 bug2 的第二个真因：popup 会接管事件循环并吃掉紧随其后的
-                // 那次 Enter（去采纳候选而非导航）。PathCompleter 只列目录——粘文件夹路径必有候选必弹，
-                // 粘 .apk 没候选不弹，正对上用户说的"有时候"。手敲字符仍须照常补全（I-30 契约）。
+                // ⑩ pasting does not pop up completion. This is bug2's second real cause: the popup takes over the event loop and eats the Enter right after it
+                // (accepting a candidate instead of navigating). PathCompleter lists directories only: pasting a folder path always has candidates and pops up,
+                // pasting an .apk has none, matching the user's "sometimes". Typed characters must still complete as usual (I-30 contract).
                 if dpane.uiTestIsPathEditing { dpane.uiTestEndPathEditing() }
                 dpane.navigate(to: box)
                 _ = await pollFS { samePath(dpane.uiTestCurrentURL, box) }
@@ -1346,21 +1346,21 @@ enum UISelfTest {
                 try? await Task.sleep(for: .milliseconds(30))
                 let trigBefore = editor.uiTestCompletionTriggerCount
                 if let fe = editor.currentEditor() as? NSTextView {
-                    fe.insertText(folder.path, replacementRange: fe.selectedRange)   // 模拟 ⌘V
+                    fe.insertText(folder.path, replacementRange: fe.selectedRange)   // simulates ⌘V
                 }
                 try? await Task.sleep(for: .milliseconds(150))
                 let afterPaste = editor.uiTestCompletionTriggerCount
                 if let fe = editor.currentEditor() as? NSTextView {
                     let end = (editor.stringValue as NSString).length
-                    fe.insertText("/", replacementRange: NSRange(location: end, length: 0))  // 手敲一个字符
+                    fe.insertText("/", replacementRange: NSRange(location: end, length: 0))  // Type one character by hand
                 }
                 try? await Task.sleep(for: .milliseconds(180))
                 let afterType = editor.uiTestCompletionTriggerCount
                 record(afterPaste == trigBefore && afterType > afterPaste,
-                       "I-54 粘贴不弹补全(否则 popup 吞掉 Enter)、手敲仍补全（粘贴 \(trigBefore)→\(afterPaste)，敲键 →\(afterType)）")
+                       "I-54 paste does not pop up completion (or the popup eats Enter), typing still completes (paste \(trigBefore)→\(afterPaste), keystroke →\(afterType))")
 
-                // ⑪ 补全候选必须是"填进 charRange 的那一段"。PathComplete 契约返回整条绝对路径，
-                // AppKit 只替换末段词——原样返回则采纳任一候选就拼成 /a/b//a/b/c/，再 Enter 必 shake。
+                // ⑪ completion candidates must be "the part that fills charRange". The PathComplete contract returns a full absolute path,
+                // AppKit replaces only the last word; returned as is, accepting any candidate builds /a/b//a/b/c/ and the next Enter is sure to shake.
                 if let fe = editor.currentEditor() as? NSTextView {
                     let probe = box.path + "/My" as NSString
                     editor.stringValue = probe as String
@@ -1373,13 +1373,13 @@ enum UISelfTest {
                     let assembled = probe.substring(to: partial.location) + (cands.first ?? "")
                     let assembledExists = fs.fileExists(atPath: (assembled as NSString).standardizingPath)
                     record(segments && assembledExists,
-                           "I-54 补全候选是末段而非整条绝对路径（候选=\(cands.first ?? "无") 采纳后拼出=\(((assembled as NSString).lastPathComponent)) 存在=\(assembledExists)）")
+                           "I-54 completion candidates are the last segment, not the whole absolute path (candidate=\(cands.first ?? "none") assembled=\(((assembled as NSString).lastPathComponent)) exists=\(assembledExists))")
                 }
 
                 if dpane.uiTestIsPathEditing { dpane.uiTestEndPathEditing() }
                 window.makeFirstResponder(dpane.focusTarget)
             }
-            // 卫生：夹具即将删除，窗格先撤回家目录
+            // Hygiene: the fixture is about to be deleted, move the pane back to the home directory first
             dpane.navigate(to: fs.homeDirectoryForCurrentUser)
             try? await Task.sleep(for: .milliseconds(150))
         }
@@ -1387,7 +1387,7 @@ enum UISelfTest {
 
     private static func runPathEdgeCasesScenario(wc: MainWindowController, window: NSWindow) async {
         let fs = FileManager.default
-        // ── I-55：地址栏与定位的边界修复（大小写 / 隐藏文件 / pending 作废 / Tab 补全 / 拖放）─────
+        // ── I-55: address bar and reveal edge case fixes (case / hidden files / pending invalidation / Tab completion / drag and drop) ─────
         do {
             let dpane = wc.grid.activePane
             let editor = dpane.uiTestPathEditor
@@ -1405,15 +1405,15 @@ enum UISelfTest {
             try? Data("x".utf8).write(to: hidden)
             defer { if assertSandboxed(box) { try? fs.removeItem(at: box) } }
             let g55 = assertSandboxed(box) && assertSandboxed(target)
-            record(g55, "沙箱守卫[I-55]: 边界修复夹具在自建临时目录内")
+            record(g55, "Sandbox guard [I-55]: edge-case fixture inside own temp directory")
             if g55 {
                 dpane.setViewMode(.list)
                 dpane.navigate(to: box)
                 _ = await pollFS { samePath(dpane.uiTestCurrentURL, box) }
                 let hiddenWas = dpane.uiTestIncludeHidden
 
-                // ① 大小写与盘上不一致的路径仍能定位。APFS/HFS+ 默认大小写不敏感：
-                // fileExists 能过，但定位用的是精确字符串比较 → 跳到父目录却什么都不选中（静默失败）。
+                // ① paths whose case differs from disk still locate. APFS/HFS+ are case-insensitive by default:
+                // fileExists passes, but locating used exact string comparison → it jumps to the parent and selects nothing (silent failure).
                 let wrongCase = mixed.deletingLastPathComponent()
                     .appendingPathComponent("mixedcase").appendingPathComponent("target.TXT")
                 dpane.uiTestBeginPathEditing(seed: wrongCase.path)
@@ -1428,9 +1428,9 @@ enum UISelfTest {
                     }
                 }
                 record(caseOK,
-                       "I-55 大小写与盘上不一致的路径仍能定位选中（选中数=\(dpane.activeTab.listVC.selectedURLs.count)）")
+                       "I-55 path with case differing from disk still locates and selects (selected=\(dpane.activeTab.listVC.selectedURLs.count))")
 
-                // ② 隐藏文件被点名时自动打开"显示隐藏"，否则只跳父目录不选中，用户眼里就是"没反应"
+                // ② a named hidden file automatically turns on "show hidden"; otherwise it only jumps to the parent without selecting, which looks like "nothing happened"
                 dpane.uiTestBeginPathEditing(seed: hidden.path)
                 try? await Task.sleep(for: .milliseconds(30))
                 pressReturn(in: editor, window: window)
@@ -1443,18 +1443,18 @@ enum UISelfTest {
                     }
                 }
                 record(hiddenOK,
-                       "I-55 粘贴隐藏文件路径 → 自动显示隐藏文件并选中（显示隐藏=\(dpane.uiTestIncludeHidden)）")
+                       "I-55 pasting a hidden file path → auto-shows hidden files and selects (show hidden=\(dpane.uiTestIncludeHidden))")
 
-                // ③ 落空的 pending 定位必须就地作废，不能留成日后的"幽灵跳选"定时炸弹
+                // ③ a pending reveal that misses must be cancelled on the spot, not left as a time bomb for a later "ghost jump-select"
                 let ghost = mixed.appendingPathComponent("never-exists-\(UUID().uuidString).txt")
                 dpane.navigate(to: mixed)
                 _ = await pollFS { samePath(dpane.uiTestCurrentURL, mixed) }
                 dpane.reveal(ghost)
                 _ = await pollFS { !dpane.activeTab.listVC.uiTestHasPendingReveal }
                 record(!dpane.activeTab.listVC.uiTestHasPendingReveal,
-                       "I-55 目标目录已载入仍找不到目标 → pending 定位作废（不留幽灵跳选）")
+                       "I-55 target directory loaded but target still missing → pending reveal cancelled (no ghost jump-select)")
 
-                // ④ Tab 在路径框里是补全，不是切走焦点（旧行为：移焦 → 失焦复位 → 输入内容一起蒸发）
+                // ④ Tab in the path field completes, it does not move focus (old behaviour: focus moves → blur reset → typed text evaporates)
                 dpane.navigate(to: box)
                 _ = await pollFS { samePath(dpane.uiTestCurrentURL, box) }
                 let stem = box.appendingPathComponent("CompletionShared-A").path
@@ -1471,16 +1471,16 @@ enum UISelfTest {
                 try? await Task.sleep(for: .milliseconds(150))
                 let tabbed = dpane.uiTestPathEditorText
                 record(dpane.uiTestIsPathEditing && samePath(URL(fileURLWithPath: tabbed), tabA),
-                       "I-55 Tab 补全唯一候选且仍留在输入框（得「\((tabbed as NSString).lastPathComponent)」编辑中=\(dpane.uiTestIsPathEditing)）")
-                // 多候选时补到最长公共前缀（纯函数，确定性）
+                       "I-55 Tab completes the sole candidate and stays in the field (got '\((tabbed as NSString).lastPathComponent)' editing=\(dpane.uiTestIsPathEditing))")
+                // With multiple candidates, complete to the longest common prefix (pure function, deterministic)
                 let lcp = PathEditorField.longestCommonPrefix([tabA.path + "/", tabB.path + "/"])
                 record(lcp == box.path + "/CompletionShared-",
-                       "I-55 多候选 Tab 补到最长公共前缀（得「\((lcp as NSString).lastPathComponent)」）")
+                       "I-55 multi-candidate Tab completes to longest common prefix (got '\((lcp as NSString).lastPathComponent)')")
 
-                // ⑤ 地址栏接受文件投放（Finder 前往面板与各家浏览器地址栏皆支持）。
-                // 走私有 NSPasteboard 驱动真实落地逻辑——绝不碰用户真实剪贴板（沿用沙箱铁律）。
+                // ⑤ the address bar accepts file drops (Finder's Go panel and every browser's address bar do).
+                // Drives the real drop logic through a private NSPasteboard; never touches the user's real clipboard (sandbox hard rule).
                 record(editor.registeredDraggedTypes.contains(.fileURL),
-                       "I-55 地址栏已注册 fileURL 拖放类型")
+                       "I-55 address bar registered the fileURL drag type")
                 let pb = NSPasteboard(name: NSPasteboard.Name("nspace.uitest.i55.\(UUID().uuidString)"))
                 pb.clearContents()
                 pb.writeObjects([target as NSURL])
@@ -1489,27 +1489,27 @@ enum UISelfTest {
                 let dropped = editor.acceptDrop(from: pb)
                 try? await Task.sleep(for: .milliseconds(60))
                 record(dropped && samePath(URL(fileURLWithPath: dpane.uiTestPathEditorText), target),
-                       "I-55 拖文件到地址栏 → 填成其路径（落地=\(dropped) 得「\((dpane.uiTestPathEditorText as NSString).lastPathComponent)」）")
+                       "I-55 dragging a file onto the address bar → fills in its path (dropped=\(dropped) got '\((dpane.uiTestPathEditorText as NSString).lastPathComponent)')")
                 pb.releaseGlobally()
 
-                // ⑥ 补全候选与「charRange 之前那段」对不上时必须不给候选（不弹 popup），
-                // 不能把整条绝对路径丢回去让 AppKit 替换末段——那会拼出 ~/Users/me/ 这种垃圾。
-                // 典型触发：输入 `~`，候选却是展开后的 /Users/xxx/。
-                // 先退出编辑态再探：编辑中 stringValue 与 field editor 的同步时机不确定，
-                // 会让这条断言测的是 AppKit 的同步行为而不是我们的裁剪逻辑。
+                // ⑥ when candidates do not line up with "the part before charRange", give no candidates (no popup),
+                // instead of handing back a full absolute path for AppKit to replace the last segment; that builds garbage like ~/Users/me/.
+                // Typical trigger: typing `~` while the candidate is the expanded /Users/xxx/.
+                // Leave editing before probing: while editing, the sync timing between stringValue and the field editor is undefined,
+                // which would make this assertion test AppKit's sync behaviour rather than our trimming logic.
                 if dpane.uiTestIsPathEditing { dpane.uiTestEndPathEditing() }
                 try? await Task.sleep(for: .milliseconds(80))
                 do {
-                    let probe = NSTextView()   // control(_:textView:...) 不读它，仅满足签名
+                    let probe = NSTextView()   // control(_:textView:...) does not read it, this only satisfies the signature
                     var idx = -1
-                    // 对照组 A（不安全）：head="~" 与候选（展开后的绝对路径）对不上 → 必须一条不给。
-                    // 同时看原始候选数，证明"是被裁掉的"，而不是"本来就没候选"。
+                    // Control group A (unsafe): head="~" does not line up with the candidate (the expanded absolute path) → must return nothing.
+                    // Also check the raw candidate count, proving they "were trimmed" rather than "there were none".
                     editor.stringValue = "~"
                     let unsafeHead = editor.control(editor, textView: probe, completions: [],
                                                     forPartialWordRange: NSRange(location: 1, length: 0),
                                                     indexOfSelectedItem: &idx)
                     let rawForTilde = editor.uiTestLastCompletionCount
-                    // 对照组 B（安全）：head 是候选的真前缀 → 返回末段，拼回去即正确路径，不该被误杀
+                    // Control group B (safe): head is a true prefix of the candidate → returns the last segment, which reassembles the correct path; must not be killed by mistake
                     let stem = (box.path + "/Completion") as NSString
                     let headLen = (box.path + "/" as NSString).length
                     editor.stringValue = stem as String
@@ -1521,12 +1521,12 @@ enum UISelfTest {
                     let assembled = box.path + "/" + (safe.first ?? "")
                     let assembledOK = !safe.isEmpty && fs.fileExists(atPath: assembled)
                     record(unsafeHead.isEmpty && rawForTilde > 0 && assembledOK,
-                           "I-55 补全候选 head 对不上时全裁(原始 \(rawForTilde) 条→0)、对得上时返回末段(\(safe.count) 条，拼出 \((assembled as NSString).lastPathComponent) 存在=\(assembledOK))")
+                           "I-55 completion candidates with mismatched head all trimmed (raw \(rawForTilde)→0), matching head returns last segment (\(safe.count) items, assembled \((assembled as NSString).lastPathComponent) exists=\(assembledOK))")
                 }
 
-                // ⑦ 抖动动画基准点必须取 layer.position.x。AppKit 图层背衬视图 anchorPoint=(0,0)，
-                // layer.position 等于 frame 原点而非中心——按 frame.midX 做基准会让地址栏先"瞬移"
-                // 到自身半宽处再弹回，看起来像整条控件抽风，而不是一次抖动示意。
+                // ⑦ the shake animation must use layer.position.x as its base. For AppKit layer-backed views anchorPoint=(0,0),
+                // so layer.position is the frame origin, not the center; basing on frame.midX makes the address bar first "teleport"
+                // half its width and then bounce back, which looks like the whole control glitching rather than one shake.
                 dpane.uiTestBeginPathEditing(seed: "/definitely/not/exists/\(UUID().uuidString)")
                 try? await Task.sleep(for: .milliseconds(30))
                 pressReturn(in: editor, window: window)
@@ -1536,10 +1536,10 @@ enum UISelfTest {
                 record(!shakeVals.isEmpty
                          && abs((shakeVals.first ?? -999) - baseX) < 0.5
                          && abs(baseX - editor.frame.midX) > 1,
-                       "I-55 抖动以 layer.position.x 为基准（首帧 \(Int(shakeVals.first ?? -1)) ≈ position.x \(Int(baseX))，对照 frame.midX=\(Int(editor.frame.midX))）")
+                       "I-55 shake is based on layer.position.x (first frame \(Int(shakeVals.first ?? -1)) ≈ position.x \(Int(baseX)), compare frame.midX=\(Int(editor.frame.midX)))")
 
-                // ⑧ 分栏模式下粘贴文件路径同样要选中。列链是异步重建的，若某一列还装着上一个
-                // 目录的陈旧内容，旧实现会当场把待选中清空 → 正确内容载入后再也不会选中（静默丢失）。
+                // ⑧ pasting a file path must also select in column mode. The column chain rebuilds asynchronously; if a column still held stale content from the previous
+                // directory, the old code cleared the pending selection on the spot → once the right content loaded, it never selected (silent loss).
                 if dpane.uiTestIsPathEditing { dpane.uiTestEndPathEditing() }
                 dpane.setViewMode(.columns)
                 try? await Task.sleep(for: .milliseconds(300))
@@ -1555,12 +1555,12 @@ enum UISelfTest {
                        sel.contains(where: { samePath($0, target) }) { colOK = true; break }
                 }
                 record(colOK,
-                       "I-55 分栏模式粘贴文件路径也能选中（陈旧列不吞掉待选中，选中数=\(dpane.activeTab.columnVC?.selectedURLs.count ?? -1)）")
+                       "I-55 pasting a file path in column mode also selects (stale column does not swallow pending selection, selected=\(dpane.activeTab.columnVC?.selectedURLs.count ?? -1))")
                 dpane.setViewMode(.list)
                 try? await Task.sleep(for: .milliseconds(200))
 
-                // ⑨ 编辑地址栏时切窗格布局：重建视图层级会把挂在被移除视图上的 firstResponder
-                // 打回窗口本身（不是任何 NSView）→ 键盘从此全哑，用户得先随便点一下才恢复。
+                // ⑨ switching pane layout while editing the address bar: rebuilding the view hierarchy knocks a firstResponder on a removed view
+                // back to the window itself (not any NSView) → the keyboard goes dead until the user clicks something.
                 let layoutWas = wc.grid.layout
                 dpane.uiTestBeginPathEditing(seed: "/tmp")
                 try? await Task.sleep(for: .milliseconds(50))
@@ -1568,23 +1568,23 @@ enum UISelfTest {
                 try? await Task.sleep(for: .milliseconds(350))
                 let frAfter = window.firstResponder
                 record(frAfter is NSView,
-                       "I-56 编辑地址栏时切布局：焦点仍在某个控件上而非掉回窗口（键盘不哑，实得 \(frAfter.map { String(describing: type(of: $0)) } ?? "nil")）")
+                       "I-56 layout switch while editing the address bar: focus stays on a control instead of falling back to the window (keyboard alive, got \(frAfter.map { String(describing: type(of: $0)) } ?? "nil"))")
                 wc.grid.apply(layout: layoutWas)
                 try? await Task.sleep(for: .milliseconds(300))
 
-                // ⑩ 读盘途中切视图模式，待定位目标要搬到新视图。同一趟 runloop 内
-                // navigate + reveal + 切视图：异步读盘必然还没回来，pending 只能挂在旧视图上，
-                // 不搬就永久丢失（且在旧视图里留成日后"幽灵跳选"的定时炸弹）。
+                // ⑩ switching view mode during a disk read: the pending reveal target must move to the new view. Within one runloop
+                // navigate + reveal + view switch: the async read cannot be back yet, so pending can only sit on the old view,
+                // and without moving it is lost forever (and left in the old view as a time bomb for a later "ghost jump-select").
                 dpane.setViewMode(.list)
                 try? await Task.sleep(for: .milliseconds(200))
                 dpane.navigate(to: box)
                 _ = await pollFS { samePath(dpane.uiTestCurrentURL, box) }
                 dpane.navigate(to: mixed)
                 dpane.reveal(target)
-                // 直接断言"转移"这个动作本身：只看最终选中测不出来——选中还能经
-                // restoreSelection / 共享 model 的多播落上去，会把断言变成没牙的假绿灯。
+                // Assert the "transfer" itself directly: the final selection alone cannot detect it, since selection can still land via
+                // restoreSelection or the shared model's multicast, turning the assertion into a toothless false green.
                 let listHadPending = dpane.activeTab.listVC.uiTestHasPendingReveal
-                dpane.setViewMode(.icons)   // 同步调用，中间不 await，读盘不可能已回来
+                dpane.setViewMode(.icons)   // Synchronous, no await in between, so the disk read cannot be back yet
                 let listStillPending = dpane.activeTab.listVC.uiTestHasPendingReveal
                 let iconNowPending = dpane.activeTab.iconVC?.uiTestHasPendingReveal ?? false
                 var carriedOK = false
@@ -1594,12 +1594,12 @@ enum UISelfTest {
                        sel.contains(where: { samePath($0, target) }) { carriedOK = true; break }
                 }
                 record(listHadPending && !listStillPending && iconNowPending && carriedOK,
-                       "I-56 读盘途中切视图模式，待定位目标搬到新视图（旧视图 \(listHadPending)→\(listStillPending)，新视图挂上=\(iconNowPending)，最终选中=\(carriedOK)）")
+                       "I-56 view mode switch during disk read moves the pending reveal target to the new view (old view \(listHadPending)→\(listStillPending), new view holds it=\(iconNowPending), final selection=\(carriedOK))")
                 dpane.setViewMode(.list)
                 try? await Task.sleep(for: .milliseconds(200))
 
                 if dpane.uiTestIsPathEditing { dpane.uiTestEndPathEditing() }
-                // 复原：本场景为定位隐藏文件打开过"显示隐藏"，别把状态漏给后续场景
+                // Restore: this scenario turned on "show hidden" to locate the hidden file; do not leak that state to later scenarios
                 if dpane.uiTestIncludeHidden != hiddenWas { dpane.uiTestSetIncludeHidden(hiddenWas) }
                 window.makeFirstResponder(dpane.focusTarget)
             }
@@ -1610,20 +1610,20 @@ enum UISelfTest {
 
     private static func runPathFocusScenario(wc: MainWindowController, window: NSWindow) async {
         let fs = FileManager.default
-        // ── I-57：窗口失 key 的复位缝 + bug3 断言强度补强 ─────────────────────────
-        // 独立 AppKit 探针实测：窗口 resignKey 时 AppKit **不发** controlTextDidEndEditing
-        //（field editor 仍在、isHidden 仍是 false），失焦复位这条路对它完全无感知。
+        // ── I-57: reset gap when the window loses key + stronger bug3 assertions ─────────────────────────
+        // Measured with a standalone AppKit probe: on window resignKey AppKit **does not send** controlTextDidEndEditing
+        //(the field editor remains, isHidden is still false), so the blur reset path is completely blind to it.
         do {
             let dpane = wc.grid.activePane
-            // (a) 空地址栏必须自收：⌘L → ⌫ 删空 → 开设置窗/⌘F/⌘Tab，回头看不能还是空白输入框
+            // (a) an empty address bar must collapse by itself: ⌘L → ⌫ to empty → open settings/⌘F/⌘Tab, and it must not still be a blank field on return
             dpane.uiTestBeginPathEditing(seed: "")
             try? await Task.sleep(for: .milliseconds(60))
             NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
             try? await Task.sleep(for: .milliseconds(180))
             let emptyCollapsed = !dpane.uiTestIsPathEditing
-            // (b) 有内容一律保留：⌘L → 切去 Finder 复制路径 → 切回来 ⌘V，是 bug2 的头号用例。
-            //     无条件复位会把编辑框关掉、焦点交回文件列表，那记 ⌘V 命中列表的 pasteItems
-            //     变成「往当前目录粘贴文件」——纯浏览动作被升级成写盘操作。
+            // (b) anything typed is always kept: ⌘L → switch to Finder to copy a path → switch back and ⌘V is bug2's top use case.
+            //     An unconditional reset would close the field and return focus to the file list, so that ⌘V hits the list's pasteItems
+            //     and becomes "paste files into the current directory": a pure browsing action escalated into a disk write.
             dpane.uiTestBeginPathEditing(seed: "/tmp/keep-me-while-away")
             try? await Task.sleep(for: .milliseconds(60))
             NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
@@ -1631,19 +1631,19 @@ enum UISelfTest {
             let textKept = dpane.uiTestIsPathEditing
                 && dpane.uiTestPathEditorText == "/tmp/keep-me-while-away"
             record(emptyCollapsed && textKept,
-                   "I-57 窗口失 key：空地址栏自收、有内容一律保留（空收=\(emptyCollapsed) 留存=\(textKept)「\(dpane.uiTestPathEditorText)」）")
+                   "I-57 window loses key: empty address bar collapses, any content is kept (collapsed=\(emptyCollapsed) kept=\(textKept) '\(dpane.uiTestPathEditorText)')")
             dpane.uiTestEndPathEditing()
             try? await Task.sleep(for: .milliseconds(150))
 
-            // (c)「面包屑回显」要验内容 + field editor 真释放。旧断言只验 !isHidden——
-            //    把 breadcrumb.isHidden = false 那行删掉照样绿，是假绿灯。
+            // (c) "breadcrumb shown again" must verify content + the field editor really released. The old assertion checked only !isHidden:
+            //    delete the breadcrumb.isHidden = false line and it stayed green, a false green.
             record(dpane.uiTestBreadcrumbVisible
                      && samePath(dpane.uiTestBreadcrumbURL, dpane.uiTestCurrentURL)
                      && !dpane.uiTestPathEditorHasFocus,
-                   "I-57 退出编辑后面包屑真回显当前目录且 field editor 已释放（面包屑=\(dpane.uiTestBreadcrumbURL.lastPathComponent) 当前=\(dpane.uiTestCurrentURL.lastPathComponent) 仍持焦=\(dpane.uiTestPathEditorHasFocus)）")
+                   "I-57 after editing, breadcrumb really shows the current directory and field editor is released (breadcrumb=\(dpane.uiTestBreadcrumbURL.lastPathComponent) current=\(dpane.uiTestCurrentURL.lastPathComponent) still focused=\(dpane.uiTestPathEditorHasFocus))")
 
-            // (d) ⌘L 的**真实入口**：I-53 调的 uiTestBeginPathEditing 是 beginPathEditing 的
-            //     复制体，菜单绑定 → 响应链 → editPath 这条路一次都没被执行过。这里走真链路。
+            // (d) the **real entry** of ⌘L: the uiTestBeginPathEditing that I-53 calls is a copy of beginPathEditing;
+            //     the menu binding → responder chain → editPath path never ran once. This goes through the real chain.
             window.makeFirstResponder(dpane.focusTarget)
             try? await Task.sleep(for: .milliseconds(150))
             let editPathDelivered = window.tryToPerform(
@@ -1654,14 +1654,14 @@ enum UISelfTest {
             let fullLen = (dpane.uiTestPathEditorText as NSString).length
             record(editPathDelivered && dpane.uiTestIsPathEditing
                      && selRange.location == 0 && selRange.length == fullLen && fullLen > 0,
-                   "I-57 ⌘L 经真实响应链送达且全选（送达=\(editPathDelivered) 选区 0..<\(selRange.length)/全长 \(fullLen)）")
+                   "I-57 ⌘L delivered via the real responder chain and selects all (delivered=\(editPathDelivered) selection 0..<\(selRange.length)/full length \(fullLen))")
             if dpane.uiTestIsPathEditing { dpane.uiTestEndPathEditing() }
             window.makeFirstResponder(dpane.focusTarget)
             try? await Task.sleep(for: .milliseconds(120))
 
-            // (e) 同一目录的不同写法不得重复压进后退栈：URL 原样比时 `/a/b` 与 `/a/b/`、
-            // 含 `..` 的形式都不相等，于是同一个目录被压进历史，用户按 ⌘[ 看起来"原地不动"。
-            // 地址栏粘贴带尾斜杠的路径正是最容易撞上的入口。
+            // (e) different spellings of one directory must not stack up in the back history: compared verbatim, `/a/b`, `/a/b/`
+            // and forms with `..` are all unequal, so one directory enters history repeatedly and ⌘[ seems to "stay in place".
+            // Pasting a path with a trailing slash into the address bar is the easiest way to hit this.
             let home = fs.homeDirectoryForCurrentUser
             dpane.navigate(to: home)
             _ = await pollFS { samePath(dpane.uiTestCurrentURL, home) }
@@ -1671,37 +1671,37 @@ enum UISelfTest {
             try? await Task.sleep(for: .milliseconds(200))
             record(dpane.backHistory.count == backBefore
                      && samePath(dpane.uiTestCurrentURL, home),
-                   "I-57 同一目录的不同写法不重复压后退栈（后退历史 \(backBefore)→\(dpane.backHistory.count)）")
+                   "I-57 different spellings of one directory do not stack in back history (back history \(backBefore)→\(dpane.backHistory.count))")
         }
     }
 
     private static func runSortIndicatorScenario(wc: MainWindowController, window: NSWindow) async {
-        // ── I-58：排序指示器必须跟上 model.sort（用户报"排序状态丢失"）───────────────
-        // 真相：数据流是单向的——只有「点列头 → sortDescriptorsDidChange → model.sort」，
-        // 没有反向。会话恢复/新窗格/重建列之后，内容按 model.sort 排对了，列头箭头却停在
-        // 默认的"名称"上，用户看到的就是"排序丢了"。I-50 只断言写盘、且驱动方式正是点列头
-        // 那条已有的路，结构性地测不到恢复方向——绿灯与用户 bug 并存。
+        // ── I-58: the sort indicator must keep up with model.sort (user report: "sort state lost") ───────────────
+        // The truth: data flow was one-way, only "click header → sortDescriptorsDidChange → model.sort",
+        // with no reverse. After session restore / a new pane / a column rebuild, content was sorted right by model.sort but the header arrow stayed on
+        // the default "Name", so the user saw "the sort was lost". I-50 asserted only the disk write, driven through that existing header-click path,
+        // and structurally could not see the restore direction: a green light coexisting with the user's bug.
         do {
             let dpane = wc.grid.activePane
             dpane.setViewMode(.list)
             try? await Task.sleep(for: .milliseconds(200))
-            // 直接改模型（模拟会话恢复：restore 就是这样写 model.sort 的，不经列头）
+            // Change the model directly (simulates session restore: restore writes model.sort this way, not through the header)
             dpane.uiTestSetSort(key: "dateModified", ascending: false)
             try? await Task.sleep(for: .milliseconds(400))
             let ind = dpane.uiTestSortIndicator
             let mdl = dpane.uiTestModelSort
             record(mdl.key == "dateModified" && mdl.ascending == false
                      && ind?.key == "dateModified" && ind?.ascending == false,
-                   "I-58 模型改排序后列头指示器同步（模型=\(mdl.key)/\(mdl.ascending) 指示器=\(ind?.key ?? "无")/\(ind.map { String($0.ascending) } ?? "-")）")
+                   "I-58 model sort change syncs the column header indicator (model=\(mdl.key)/\(mdl.ascending) indicator=\(ind?.key ?? "none")/\(ind.map { String($0.ascending) } ?? "-"))")
 
-            // 重建可选列（列被移除再加回）之后指示器不得丢
+            // After rebuilding optional columns (removed and added back) the indicator must not be lost
             NotificationCenter.default.post(name: .nspaceColumnsChanged, object: nil)
             try? await Task.sleep(for: .milliseconds(400))
             let ind2 = dpane.uiTestSortIndicator
             record(ind2?.key == "dateModified" && ind2?.ascending == false,
-                   "I-58 重建列后指示器仍在（得 \(ind2?.key ?? "无")/\(ind2.map { String($0.ascending) } ?? "-")）")
+                   "I-58 indicator survives column rebuild (got \(ind2?.key ?? "none")/\(ind2.map { String($0.ascending) } ?? "-"))")
 
-            // 收尾：还原成名称升序，别把排序泄漏给后续场景
+            // Wrap up: restore ascending by name, do not leak the sort to later scenarios
             dpane.uiTestSetSort(key: "name", ascending: true)
             try? await Task.sleep(for: .milliseconds(250))
         }
@@ -1709,10 +1709,10 @@ enum UISelfTest {
 
     private static func runDirectoryCopyPathScenario(wc: MainWindowController, window: NSWindow) async {
         let fs = FileManager.default
-        // ── I-59：点文件夹空白处拷贝路径（用户报"只能复制文件、复制不了当前文件夹"）──────
-        // 双因：① copyPath 只传 selectedURLs，空选中即空数组，coordinator.copyPaths 的
-        // guard !urls.isEmpty 直接吞掉；② validateMenuItem 把 copyPath 归在 hasSelection 组，
-        // 空选中时菜单项被禁用，⌘⇧C 在空白处根本派发不出去。三视图同病，故三视图同验。
+        // ── I-59: copy path from the blank area of a folder (user report: "can only copy files, not the current folder") ──────
+        // Two causes: ① copyPath passes only selectedURLs, an empty array with no selection, and coordinator.copyPaths'
+        // guard !urls.isEmpty swallows it; ② validateMenuItem puts copyPath in the hasSelection group,
+        // so the menu item is disabled with no selection and ⌘⇧C on blank area never dispatches. All three views share this, so all three are checked.
         do {
             let dpane = wc.grid.activePane
             let box = fs.temporaryDirectory
@@ -1721,27 +1721,27 @@ enum UISelfTest {
             try? Data("x".utf8).write(to: box.appendingPathComponent("a.txt"))
             defer { if assertSandboxed(box) { try? fs.removeItem(at: box) } }
             let g59 = assertSandboxed(box)
-            record(g59, "沙箱守卫[I-59]: 拷贝路径夹具在自建临时目录内")
+            record(g59, "Sandbox guard [I-59]: copy-path fixture inside own temp directory")
             if g59 {
-                // 走**私有** pasteboard：既不碰用户真实剪贴板，也不会被机器上别的进程
-                // 中途改写造成假失败（实测撞到过一次——断言读到了别处复制的文本）
+                // Use a **private** pasteboard: it leaves the user's real clipboard alone and cannot be rewritten midway by
+                // another process, causing a false failure (hit once in practice: the assertion read text copied elsewhere)
                 let pb = NSPasteboard(name: NSPasteboard.Name("nspace.uitest.i59.\(UUID().uuidString)"))
                 var results: [String] = []
-                for (mode, name) in [(PaneViewMode.list, "列表"),
-                                     (PaneViewMode.icons, "图标"),
-                                     (PaneViewMode.columns, "分栏")] {
+                for (mode, name) in [(PaneViewMode.list, "list"),
+                                     (PaneViewMode.icons, "icons"),
+                                     (PaneViewMode.columns, "columns")] {
                     dpane.setViewMode(mode)
                     try? await Task.sleep(for: .milliseconds(250))
                     dpane.navigate(to: box)
                     _ = await pollFS { samePath(dpane.uiTestCurrentURL, box) }
-                    // 分栏是异步逐列加载：固定 sleep 会偶发拿到还没就位的旧列
-                    //（实测 1/5 轮拿到上一个目录），必须轮询到本视图的"当前目录"真对齐
+                    // Columns load asynchronously one at a time: a fixed sleep sometimes gets an old column not yet in place
+                    //(measured 1 in 5 runs got the previous directory), so poll until this view's "current directory" really lines up
                     _ = await pollFS(40) { samePath(dpane.uiTestViewCurrentDirectory, box) }
-                    dpane.uiTestClearSelection()              // 模拟点空白处
+                    dpane.uiTestClearSelection()              // simulates clicking blank area
                     try? await Task.sleep(for: .milliseconds(150))
                     pb.clearContents()
                     pb.setString("SENTINEL", forType: .string)
-                    dpane.uiTestCopyPath(to: pb)              // 走各视图真实的 copyPath 落地逻辑
+                    dpane.uiTestCopyPath(to: pb)              // through each view's real copyPath logic
                     try? await Task.sleep(for: .milliseconds(250))
                     let got = pb.string(forType: .string) ?? ""
                     let ok = !got.isEmpty && got != "SENTINEL"
@@ -1749,7 +1749,7 @@ enum UISelfTest {
                     results.append("\(name)=\(ok ? "✓" : "✗(\((got as NSString).lastPathComponent))")")
                 }
                 record(results.allSatisfy { $0.contains("✓") },
-                       "I-59 空选中拷贝路径回落到当前目录（三视图 \(results.joined(separator: " ")))")
+                       "I-59 empty selection copy path falls back to the current directory (three views \(results.joined(separator: " ")))")
                 pb.releaseGlobally()
                 dpane.setViewMode(.list)
                 try? await Task.sleep(for: .milliseconds(200))
@@ -1761,32 +1761,32 @@ enum UISelfTest {
 
     private static func runExternalOpenQueueScenario(wc: MainWindowController, window: NSWindow, delegate: AppDelegate) async {
         let fs = FileManager.default
-        // ── I-60：冷启动时外部打开不得多开一个窗（用户报"浏览器 open in Finder 还是新建窗口"）──
-        // restoreSessionOrDefault 是 async（await 读 session.json），而 application(_:open:)
-        // 由 LaunchServices 同步早到：NSpace 未运行时被"在访达中显示"拉起，请求在**零窗口时刻**
-        // 抵达 → activeMainWindowController() 为 nil → 掉进开新窗分支；随后会话恢复再开自己的窗。
-        // 真机实测修复前 2 窗、修复后 1 窗。此处断言排队机制本身（不真拉冷启动，避免动用户会话）。
+        // ── I-60: an external open during cold start must not open an extra window (user report: "browser open in Finder still creates a new window") ──
+        // restoreSessionOrDefault is async (awaits reading session.json), while application(_:open:)
+        // arrives early and synchronously from LaunchServices: when NSpace is launched by "Show in Finder" while not running, the request arrives at the **zero-window moment**
+        // → activeMainWindowController() is nil → falls into the new-window branch; then session restore opens its own window.
+        // Measured on a real machine: 2 windows before the fix, 1 after. This asserts the queueing mechanism itself (no real cold start, to leave the user's session alone).
         do {
             let box = fs.temporaryDirectory
                 .appendingPathComponent("nspace-uitest-i60-\(UUID().uuidString)", isDirectory: true)
             try? fs.createDirectory(at: box, withIntermediateDirectories: true)
             defer { if assertSandboxed(box) { try? fs.removeItem(at: box) } }
             let g60 = assertSandboxed(box)
-            record(g60, "沙箱守卫[I-60]: 外部打开排队夹具在自建临时目录内")
+            record(g60, "Sandbox guard [I-60]: external open queue fixture inside own temp directory")
             if g60 {
                 func mainWins() -> Int {
                     NSApp.windows.filter { $0.windowController is MainWindowController && $0.isVisible }.count
                 }
                 let before = mainWins()
                 let queuedBefore = delegate.uiTestPendingExternalOpenCount
-                // ① 会话未就绪时投递：必须只排队，一个窗都不许开
+                // ① delivered while the session is not ready: must only queue, opening no window at all
                 delegate.uiTestDeliverExternalOpenWhileNotReady(box)
                 try? await Task.sleep(for: .milliseconds(300))
                 let queuedAfter = delegate.uiTestPendingExternalOpenCount
                 let winsAfterQueue = mainWins()
                 record(queuedAfter == queuedBefore + 1 && winsAfterQueue == before,
-                       "I-60 会话未就绪的外部打开只排队不开窗（队列 \(queuedBefore)→\(queuedAfter)，窗口 \(before)→\(winsAfterQueue)）")
-                // ② 冲刷后落地：队列清空，且仍不开新窗（走"现有窗口新工作区标签"分支）
+                       "I-60 external open before session ready only queues, opens no window (queue \(queuedBefore)→\(queuedAfter), windows \(before)→\(winsAfterQueue))")
+                // ② landing after the flush: queue emptied, and still no new window (takes the "new workspace tab in the existing window" branch)
                 let wsBefore = wc.workspaceCount
                 delegate.uiTestFlushPendingExternalOpens()
                 _ = await pollFS { delegate.uiTestPendingExternalOpenCount == 0 }
@@ -1795,8 +1795,8 @@ enum UISelfTest {
                 let wsAfter = wc.workspaceCount
                 record(delegate.uiTestPendingExternalOpenCount == 0
                          && winsAfterFlush == before && wsAfter == wsBefore + 1,
-                       "I-60 冲刷后落到现有窗口新工作区标签（窗口 \(before)→\(winsAfterFlush)，工作区 \(wsBefore)→\(wsAfter)）")
-                // 收尾：关掉本场景开的工作区
+                       "I-60 after flush lands in a new workspace tab of the existing window (windows \(before)→\(winsAfterFlush), workspaces \(wsBefore)→\(wsAfter))")
+                // Wrap up: close the workspace this scenario opened
                 while wc.workspaceCount > wsBefore { wc.closeActiveWorkspace(nil) }
                 try? await Task.sleep(for: .milliseconds(200))
             }
@@ -1806,10 +1806,10 @@ enum UISelfTest {
     private static func runTrashSelectionScenario(wc: MainWindowController, window: NSWindow) async {
         let fs = FileManager.default
         let pane = wc.grid.activePane
-        // ── 场景 I-32：多选删除(移废纸篓)后选中清空——三视图同验 ─────────────────
-        // 用户报告 bug：多选删除后高亮"跟随"到顶上来的新行（语义应为选中清空）。
-        // 铁律：只动自建 nspace-uitest-i32-* 夹具（assertSandboxed 守卫）；经 coordinator 走真实
-        //       移废纸篓；等终态后断言视图层选中真清空（原始 selectedRowIndexes 空）且状态栏无"已选"药丸。
+        // ── Scenario I-32: selection clears after multi-select delete (move to Trash), checked in all three views ─────────────────
+        // User bug report: after multi-select delete the highlight "followed" to the new row that moved up (selection should clear).
+        // Hard rule: touch only self-created nspace-uitest-i32-* fixtures (assertSandboxed guard); really move to Trash through coordinator;
+        //       at the end state, assert the view-layer selection is truly empty (raw selectedRowIndexes empty) and the status bar has no "selected" pill.
         let i32TrashDir = fs.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
         for (i32Mode, i32Name) in [(PaneViewMode.list, "list"), (.icons, "icons"), (.columns, "columns")] {
             let token = String(UUID().uuidString.prefix(8))
@@ -1824,7 +1824,7 @@ enum UISelfTest {
             pane.setViewMode(i32Mode)
             try? await Task.sleep(for: .milliseconds(250))
             pane.navigate(to: i32box)
-            // 焦点视图可见项数（分栏读焦点列，列/图标读共享 model）
+            // Focused view's visible item count (columns read the focused column, list/icons read the shared model)
             @MainActor func i32VisibleCount() -> Int {
                 i32Mode == .columns ? (pane.activeTab.columnVC?.statusCounts.items ?? 0)
                                     : pane.activeTab.model.items.count
@@ -1832,7 +1832,7 @@ enum UISelfTest {
             _ = await pollFS { i32VisibleCount() >= 3 }
             try? await Task.sleep(for: .milliseconds(200))
 
-            // 选中前两项，走各视图真实选中链；victims 取自"已载入的真实项 URL"（避免 symlink 路径不匹配）
+            // Select the first two items through each view's real selection chain; victims come from "loaded real item URLs" (avoids symlink path mismatches)
             let victims: [URL]
             switch i32Mode {
             case .list, .icons:
@@ -1849,13 +1849,13 @@ enum UISelfTest {
             let selBefore = pane.currentSelectionCount
 
             let gI32 = victims.allSatisfy { assertSandboxed($0) }
-            record(gI32, "沙箱守卫[\(i32Name)]: I-32 移废纸篓目标在自建夹具内")
-            if gI32 { wc.coordinator.moveToTrash(victims) }   // 真实 coordinator → kernel → trash
-            // 等终态：焦点视图只剩 1 项（reloadLists 在 kernel 终态后触发）
+            record(gI32, "Sandbox guard [\(i32Name)]: I-32 move-to-Trash targets inside own fixture")
+            if gI32 { wc.coordinator.moveToTrash(victims) }   // Real coordinator → kernel → trash
+            // Wait for the end state: the focused view has 1 item left (reloadLists fires after the kernel end state)
             let settled = gI32 ? (await pollFS { i32VisibleCount() == 1 }) : false
             try? await Task.sleep(for: .milliseconds(150))
 
-            // 断言：视图层原始选中数=0（不是"漂移"到新行）且状态栏无"已选"药丸
+            // Assert: raw view-layer selection count=0 ("drift" to a new row excluded) and no "selected" pill in the status bar
             let rawSel: Int
             switch i32Mode {
             case .list:    rawSel = pane.activeTab.listVC.tableView.selectedRowIndexes.count
@@ -1864,9 +1864,9 @@ enum UISelfTest {
             }
             let pillVisible = pane.uiTestRefreshAndSelectionPillVisible()
             record(selBefore == 2 && settled && rawSel == 0 && !pillVisible,
-                   "多选删除后选中清空[\(i32Name)]（删前选\(selBefore)、终态余1=\(settled)、删后选\(rawSel)、药丸=\(pillVisible)）")
+                   "Selection clears after multi-select delete [\(i32Name)] (selected before \(selBefore), 1 left at end=\(settled), selected after \(rawSel), pill=\(pillVisible))")
 
-            // 清理：夹具目录 + 落入废纸篓的唯一名测试件（token 唯一，安全）
+            // Cleanup: fixture directory + uniquely named test items that landed in the Trash (token is unique, safe)
             switch i32Mode {
             case .list:    pane.activeTab.listVC.select(urls: [])
             case .icons:   pane.activeTab.iconVC?.select(urls: [])
@@ -1890,21 +1890,21 @@ enum UISelfTest {
     private static func runBreadcrumbFitScenario(wc: MainWindowController, window: NSWindow) async {
         let fs = FileManager.default
         let pane = wc.grid.activePane
-        // ── 场景 I-37：面包屑地址栏宽度自适应——深层级/长名不溢出 + 中间折叠全层级永远可达 ──
-        // 用户原话「尽可能保证地址栏可以展示全部层级」。沙箱建 8 层深、每层 40 字符的目录链，
-        // 导航到最深层后断言：①内容真实不溢出 ②「…」折叠段存在且菜单项数==被折叠层级数
-        // ③程序化触发折叠菜单项 → 窗格路径真跳到该层级 ④可见末段 toolTip==完整名。
-        // 铁律：只动自建 nspace-uitest-i37-* 夹具（assertSandboxed 守卫）；测完清理。
+        // ── Scenario I-37: breadcrumb address bar fits its width: deep paths/long names do not overflow + middle collapse keeps all levels reachable ──
+        // User's words: "show every level in the address bar whenever possible". The sandbox builds an 8-level chain of 40-character names;
+        // after navigating to the deepest level, assert: ① content really does not overflow ② the '…' collapse segment exists and its menu item count == collapsed levels
+        // ③ programmatically firing a collapse menu item → pane path really jumps to that level ④ visible last segment toolTip == full name.
+        // Hard rule: touch only self-created nspace-uitest-i37-* fixtures (assertSandboxed guard); clean up afterwards.
         wc.grid.apply(layout: .single)
         pane.setViewMode(.list)
         try? await Task.sleep(for: .milliseconds(200))
         window.contentView?.layoutSubtreeIfNeeded()
         do {
             let token = String(UUID().uuidString.prefix(8))
-            // 每层名恰 40 字符（唯一可辨识前缀 + 「长」补齐）
+            // Each level's name is exactly 40 characters (unique identifiable prefix + padding with "Ü")
             @MainActor func longName(_ i: Int) -> String {
                 let prefix = "nspace-uitest-i37-\(token)-L\(i)-"
-                return prefix + String(repeating: "长", count: max(0, 40 - prefix.count))
+                return prefix + String(repeating: "Ü", count: max(0, 40 - prefix.count))
             }
             let base = fs.temporaryDirectory
                 .appendingPathComponent("nspace-uitest-i37-\(token)", isDirectory: true)
@@ -1913,7 +1913,7 @@ enum UISelfTest {
             try? fs.createDirectory(at: deep, withIntermediateDirectories: true)
 
             let gI37 = assertSandboxed(deep)
-            record(gI37, "沙箱守卫: I-37 深层链在自建夹具内")
+            record(gI37, "Sandbox guard: I-37 deep chain inside own fixture")
 
             let bc = pane.uiTestBreadcrumb
             pane.navigate(to: deep)
@@ -1921,46 +1921,46 @@ enum UISelfTest {
             window.contentView?.layoutSubtreeIfNeeded()
             bc.layoutSubtreeIfNeeded()
 
-            // ① 不溢出：内容右缘 ≤ 容器宽 + 2（真实测排布，不是"没崩"）
+            // ① no overflow: content right edge ≤ container width + 2 (really measures layout, not "did not crash")
             let containerW = bc.bounds.width
             let contentR = bc.uiTestContentRight
             record(contentR <= containerW + 2,
-                   "I-37 面包屑不溢出（内容右缘 \(Int(contentR)) ≤ 容器 \(Int(containerW))+2）")
+                   "I-37 breadcrumb does not overflow (content right edge \(Int(contentR)) ≤ container \(Int(containerW))+2)")
             capture(window, "30-breadcrumb-deep")
 
-            // ② 「…」折叠段存在且菜单项数 == 被折叠层级数
+            // ② the '…' collapse segment exists and menu item count == collapsed levels
             let hasEllipsis = bc.uiTestHasEllipsis
             let collapsed = bc.uiTestCollapsedURLs
             let menu = bc.uiTestEllipsisMenu()
             let menuCount = menu?.items.count ?? -1
             record(hasEllipsis && menu != nil && collapsed.count > 0 && menuCount == collapsed.count,
-                   "I-37 「…」折叠段存在且菜单项数==折叠层级数（折叠 \(collapsed.count)，菜单 \(menuCount)）")
+                   "I-37 '…' collapse segment exists and menu item count == collapsed levels (collapsed \(collapsed.count), menu \(menuCount))")
 
-            // ③ 程序化触发折叠菜单中间项 → 窗格路径真跳到该层级
+            // ③ programmatically fire the middle collapse menu item → pane path really jumps to that level
             if let menu, !menu.items.isEmpty,
                let mid = Optional(menu.items[menu.items.count / 2]),
                let targetURL = mid.representedObject as? URL {
                 _ = mid.target?.perform(mid.action, with: mid)
                 try? await Task.sleep(for: .milliseconds(350))
                 record(samePath(pane.activeTab.browser.current, targetURL),
-                       "I-37 点折叠菜单项 → 窗格真跳到该层级（\(targetURL.lastPathComponent.prefix(16))…）")
+                       "I-37 clicking a collapse menu item → pane really jumps to that level (\(targetURL.lastPathComponent.prefix(16))…)")
             } else {
-                record(false, "I-37 点折叠菜单项 → 窗格真跳到该层级")
+                record(false, "I-37 clicking a collapse menu item → pane really jumps to that level")
             }
 
-            // 回到最深层，验 ④ 与窄窗格态
+            // Back to the deepest level, to check ④ and the narrow pane state
             pane.navigate(to: deep)
             try? await Task.sleep(for: .milliseconds(350))
             window.contentView?.layoutSubtreeIfNeeded()
             bc.layoutSubtreeIfNeeded()
 
-            // ④ 可见末段 toolTip == 完整名（40 字符全名）
+            // ④ visible last segment toolTip == full name (the 40-character full name)
             let tip = bc.uiTestLastSegmentToolTip
             let full = bc.uiTestLastSegmentFullName
             record(tip != nil && full != nil && tip == full && (full?.count ?? 0) == 40,
-                   "I-37 可见末段 toolTip==完整名（长度 \(full?.count ?? -1)）")
+                   "I-37 visible last segment toolTip == full name (length \(full?.count ?? -1))")
 
-            // 窄窗格态：缩窄窗口再截一张，逐级折叠后仍真实不溢出
+            // Narrow pane state: shrink the window, take another shot; after level-by-level collapsing it still really does not overflow
             let savedFrame = window.frame
             window.setFrame(NSRect(x: savedFrame.origin.x, y: savedFrame.origin.y,
                                    width: 520, height: savedFrame.height), display: true)
@@ -1970,23 +1970,23 @@ enum UISelfTest {
             let narrowW = bc.bounds.width
             let narrowR = bc.uiTestContentRight
             record(narrowR <= narrowW + 2,
-                   "I-37 窄窗格仍不溢出（内容右缘 \(Int(narrowR)) ≤ 容器 \(Int(narrowW))+2）")
+                   "I-37 narrow pane still does not overflow (content right edge \(Int(narrowR)) ≤ container \(Int(narrowW))+2)")
             capture(window, "30b-breadcrumb-narrow")
             window.setFrame(savedFrame, display: true)
             try? await Task.sleep(for: .milliseconds(250))
 
-            // 清理夹具（token 唯一，安全）
+            // Clean up the fixture (token is unique, safe)
             pane.navigate(to: fs.homeDirectoryForCurrentUser)
             try? await Task.sleep(for: .milliseconds(200))
             try? fs.removeItem(at: base)
         }
     }
 
-    /// 场景 I-65：五条用户报告——⌘V 把剪贴板内容粘成新文件、单击已选中项触发重命名、
-    /// 列表底部恒留可右键的空白、新建文件有快捷键。全部验"真实效果"。
-    /// 场景 I-67：⌘C / ⌘X 之后选中框不许消失（用户报告）。
-    /// 根因是 `redraw()` 用 `tableView.reloadData()`——它会清空选中，而"重绘"语义里
-    /// 行根本没变、选中就不该变。剪切也一样：它只把行灰显，没有删掉任何东西。
+    /// Scenario I-65: five user reports: ⌘V pastes clipboard content as a new file, clicking a selected item renames it,
+    /// the list bottom always keeps right-clickable blank space, new file has a shortcut. All check the "real effect".
+    /// Scenario I-67: the selection must not vanish after ⌘C / ⌘X (user report).
+    /// Root cause: `redraw()` used `tableView.reloadData()`, which clears the selection, while in "redraw" semantics
+    /// the rows did not change, so neither should the selection. Same for cut: it only grays rows and deletes nothing.
     private static func runSelectionSurvivesClipboardScenario(wc: MainWindowController,
                                                               window: NSWindow) async {
         let fs = FileManager.default
@@ -1996,7 +1996,7 @@ enum UISelfTest {
             .appendingPathComponent("nspace-uitest-i67-\(tok)", isDirectory: true)
         try? fs.createDirectory(at: box, withIntermediateDirectories: true)
         for i in 1...4 { try? Data("x".utf8).write(to: box.appendingPathComponent("f\(i).txt")) }
-        record(assertSandboxed(box), "沙箱守卫[I-67]: 剪贴板选中夹具在自建临时目录内")
+        record(assertSandboxed(box), "Sandbox guard [I-67]: clipboard selection fixture inside own temp directory")
         guard assertSandboxed(box) else { return }
         defer { try? fs.removeItem(at: box) }
 
@@ -2006,20 +2006,20 @@ enum UISelfTest {
         window.contentView?.layoutSubtreeIfNeeded()
 
         let listVC = pane.activeTab.listVC
-        // 选两项（多选更能暴露问题：reloadData 会把它们一起清掉）
+        // Select two items (multi-select exposes the problem better: reloadData clears them together)
         let victims = Array(pane.activeTab.model.items.prefix(2)).map(\.url)
         listVC.uiTestSelect(urls: victims)
         try? await Task.sleep(for: .milliseconds(150))
         let before = Set(listVC.selectedURLs.map(\.lastPathComponent))
         let rawBefore = listVC.uiTestRawSelectionCount
 
-        // ⌘C 走**真实** coordinator.copy（它内部会 redrawLists）
+        // ⌘C goes through the **real** coordinator.copy (which calls redrawLists internally)
         wc.coordinator.copy(victims)
         try? await Task.sleep(for: .milliseconds(300))
         let afterCopy = Set(listVC.selectedURLs.map(\.lastPathComponent))
         let rawAfterCopy = listVC.uiTestRawSelectionCount
 
-        // ⌘X 同样不许清选中（剪切只灰显，没删东西）
+        // ⌘X must not clear the selection either (cut only grays, nothing is deleted)
         wc.coordinator.cut(victims)
         try? await Task.sleep(for: .milliseconds(300))
         let afterCut = Set(listVC.selectedURLs.map(\.lastPathComponent))
@@ -2028,15 +2028,15 @@ enum UISelfTest {
         record(before.count == 2 && rawBefore == 2
                && afterCopy == before && rawAfterCopy == 2
                && afterCut == before && rawAfterCut == 2,
-               "I-67 复制/剪切后选中不丢（选中 \(before.count)→复制后 \(afterCopy.count)→剪切后 \(afterCut.count)；视图层 \(rawBefore)→\(rawAfterCopy)→\(rawAfterCut)）")
+               "I-67 selection survives copy/cut (selected \(before.count)→after copy \(afterCopy.count)→after cut \(afterCut.count); view layer \(rawBefore)→\(rawAfterCopy)→\(rawAfterCut))")
 
         pane.navigate(to: fs.homeDirectoryForCurrentUser)
         try? await Task.sleep(for: .milliseconds(200))
     }
 
-    /// 场景 I-68：侧栏点一次就该跳（用户报告：点「下载」没反应，得先点别的再点回来）。
-    /// 两个独立缺陷：① 高亮根本不跟随窗格，一直指着"上次点了谁"；
-    /// ② 没有点击驱动的路径，点已选中行 selection 不变 → selectionDidChange 不触发。
+    /// Scenario I-68: the sidebar should navigate on one click (user report: clicking "Downloads" did nothing until clicking something else and back).
+    /// Two independent defects: ① the highlight did not follow the pane at all, it just pointed at "what was last clicked";
+    /// ② there was no click-driven path: clicking the selected row leaves selection unchanged → selectionDidChange does not fire.
     private static func runSidebarNavigationScenario(wc: MainWindowController,
                                                      window: NSWindow) async {
         let fs = FileManager.default
@@ -2049,11 +2049,11 @@ enum UISelfTest {
         let rowDownloads = sidebar.uiTestRow(for: downloads)
         let rowDocs = sidebar.uiTestRow(for: docs)
         guard rowDownloads >= 0, rowDocs >= 0 else {
-            record(false, "I-68 侧栏点一次就跳（侧栏里找不到 下载/文稿 两项，无法验）")
+            record(false, "I-68 sidebar navigates on one click (Downloads/Documents rows not found in the sidebar, cannot verify)")
             return
         }
 
-        // ① 先点「下载」进去，再用**非侧栏**的方式换目录（模拟用面包屑/双击走开）
+        // ① click "Downloads" first, then change directory by a **non-sidebar** route (simulates walking away by breadcrumb/double-click)
         pane.uiTestEndPathEditing()
         sidebar.uiTestClickRow(rowDownloads)
         let arrived = await pollFS { pane.uiTestCurrentURL.standardizedFileURL.path
@@ -2063,44 +2063,44 @@ enum UISelfTest {
                             == home.standardizedFileURL.path }
         try? await Task.sleep(for: .milliseconds(200))
 
-        // ② 高亮必须跟着窗格走：现在在 home（不是书签项）→ 不许还高亮着「下载」撒谎
+        // ② the highlight must follow the pane: we are in home now (not a bookmark item) → "Downloads" must not stay highlighted and lie
         let staleHighlight = sidebar.uiTestSelectedURL?.standardizedFileURL.path
         record(arrived && staleHighlight != downloads.standardizedFileURL.path,
-               "I-68 换目录后侧栏高亮不再指着旧位置（到达下载=\(arrived) 当前高亮=\(staleHighlight ?? "无")）")
+               "I-68 after a directory change the sidebar highlight no longer points at the old location (reached Downloads=\(arrived) current highlight=\(staleHighlight ?? "none"))")
 
-        // ③ 点「文稿」→ 进文稿；再**原地点同一行**（此时它已被选中）→ 仍须跳转。
-        //   这一步是用户报告的正题：旧版第二次点无反应。
+        // ③ click "Documents" → enter Documents; then **click the same row again** (now already selected) → must still navigate.
+        //   This step is the subject of the user report: in the old version the second click did nothing.
         sidebar.uiTestClickRow(rowDocs)
         let toDocs = await pollFS { pane.uiTestCurrentURL.standardizedFileURL.path
                                      == docs.standardizedFileURL.path }
-        pane.navigate(to: home)              // 再次用非侧栏方式走开
+        pane.navigate(to: home)              // Walk away again by a non-sidebar route
         _ = await pollFS { pane.uiTestCurrentURL.standardizedFileURL.path
                             == home.standardizedFileURL.path }
         try? await Task.sleep(for: .milliseconds(200))
-        // 强制把高亮摆回「文稿」，复现"点已选中行"这一状态
+        // Force the highlight back to "Documents" to reproduce the "click the selected row" state
         sidebar.syncSelection(to: docs)
         try? await Task.sleep(for: .milliseconds(120))
         let highlightedBefore = sidebar.uiTestSelectedURL?.standardizedFileURL.path
-        sidebar.uiTestClickRow(rowDocs)      // 点的是**已经高亮**的那一行
+        sidebar.uiTestClickRow(rowDocs)      // This clicks the row that is **already highlighted**
         let backToDocs = await pollFS { pane.uiTestCurrentURL.standardizedFileURL.path
                                          == docs.standardizedFileURL.path }
         record(toDocs && highlightedBefore == docs.standardizedFileURL.path && backToDocs,
-               "I-68 点已高亮的侧栏行仍然跳转（首次进入=\(toDocs) 点前已高亮=\(highlightedBefore == docs.standardizedFileURL.path) 再点后到达=\(backToDocs)）")
+               "I-68 clicking the already highlighted sidebar row still navigates (first entry=\(toDocs) highlighted before click=\(highlightedBefore == docs.standardizedFileURL.path) arrived after re-click=\(backToDocs))")
 
-        // ④ 高亮真的跟随：进到书签项时必须高亮到它
+        // ④ the highlight really follows: entering a bookmark item must highlight it
         record(sidebar.uiTestSelectedURL?.standardizedFileURL.path == docs.standardizedFileURL.path
                && sidebar.uiTestClickWiredToOutline,
-               "I-68 停在书签目录时侧栏高亮指向它（高亮=\(sidebar.uiTestSelectedURL?.lastPathComponent ?? "无") 点击已接线=\(sidebar.uiTestClickWiredToOutline)）")
+               "I-68 sidebar highlight points to the bookmark directory while there (highlight=\(sidebar.uiTestSelectedURL?.lastPathComponent ?? "none") click wired=\(sidebar.uiTestClickWiredToOutline))")
 
         pane.navigate(to: home)
         try? await Task.sleep(for: .milliseconds(200))
     }
 
-    /// 按快捷键进：① 在**真实已装配的主菜单**里找出这个键等价物绑到的菜单项（验「绑定表 → 菜单项」），
-    /// ② 把它的 action 沿**被测窗口**的响应链派发（验「菜单项 → 响应链 → 行为」）。
-    /// 不用 NSApp.sendEvent / performKeyEquivalent：那条路沿 **key 窗口**找目标，而自测跑在
-    /// 用户正在使用的机器上，App 常常不是活动应用、key 窗口为 nil——实测「键被接住=true 但
-    /// 被测窗口纹丝不动」。`tryToPerform` 与既有 I-57 同一口径，不依赖激活状态。
+    /// Enter through the shortcut: ① find the menu item bound to this key equivalent in the **real assembled main menu** (verifies "binding table → menu item"),
+    /// ② dispatch its action along the responder chain of the **window under test** (verifies "menu item → responder chain → behaviour").
+    /// Not NSApp.sendEvent / performKeyEquivalent: that route targets via the **key window**, while the self-test runs on
+    /// a machine the user is using, where the app is often inactive and the key window nil; measured "key handled=true but
+    /// the window under test did not budge". `tryToPerform` matches the existing I-57 convention and does not depend on activation.
     private static func pressMenuShortcut(_ key: String, mods: NSEvent.ModifierFlags,
                                           window: NSWindow) -> (found: Bool, delivered: Bool) {
         guard let item = menuItem(for: key, mods: mods), let action = item.action else {
@@ -2110,9 +2110,9 @@ enum UISelfTest {
         return (true, window.tryToPerform(action, with: item))
     }
 
-    /// 在已装配的主菜单里按键等价物找菜单项，**只查不执行**。
-    /// 退役证明要的就是这个：pressMenuShortcut 会把找到的 action 真派发出去，
-    /// 而"这个键还绑着什么"恰恰是未知的——真跑一下等于在自测里执行一个我们并不想执行的命令。
+    /// Find a menu item by key equivalent in the assembled main menu, **lookup only, no execution**.
+    /// This is what the retirement proof needs: pressMenuShortcut really dispatches the action it finds,
+    /// and "what is this key still bound to" is exactly the unknown; running it would execute a command in the self-test that we never meant to run.
     private static func menuItem(for key: String, mods: NSEvent.ModifierFlags) -> NSMenuItem? {
         func find(_ menu: NSMenu) -> NSMenuItem? {
             for item in menu.items {
@@ -2127,21 +2127,21 @@ enum UISelfTest {
         return find(main)
     }
 
-    /// 场景 I-70/71/72（用户报告三条，且我上一轮修在了错误的键上——这次每条都从用户按的那个键进）：
-    /// I-70 ⌘T 新工作区必须复制当前工作区（布局 + 每个窗格的 排序/隐藏/视图模式），不回落全局默认；
-    /// I-71 ⌥⌘T / ⌥⌘W 已随窗格内多标签退役，钉住菜单里不再有它们；
-    /// I-72 工作区标签条点文字要能切换、整行高度可点（NSTextField 吞 mouseDown 是根因）。
+    /// Scenario I-70/71/72 (three user reports, and my previous round fixed the wrong key; this time each enters from the key the user pressed):
+    /// I-70 ⌘T new workspace must copy the current workspace (layout + each pane's sort/hidden/view mode), not fall back to global defaults;
+    /// I-71 ⌥⌘T / ⌥⌘W retired with in-pane tabs; pins that they are no longer in the menu;
+    /// I-72 clicking text in the workspace tab bar must switch, and the full row height must be clickable (root cause: NSTextField swallowing mouseDown).
     private static func runWorkspaceTabScenario(wc: MainWindowController, window: NSWindow) async {
         let fs = FileManager.default
         let tok = String(UUID().uuidString.prefix(8))
         let box = fs.temporaryDirectory.appendingPathComponent("nspace-uitest-i70-\(tok)", isDirectory: true)
         try? fs.createDirectory(at: box, withIntermediateDirectories: true)
         for i in 1...3 { try? Data("x".utf8).write(to: box.appendingPathComponent("w\(i).txt")) }
-        record(assertSandboxed(box), "沙箱守卫[I-70]: 工作区夹具在自建临时目录内")
+        record(assertSandboxed(box), "Sandbox guard [I-70]: workspace fixture inside own temp directory")
         guard assertSandboxed(box) else { return }
         defer { try? fs.removeItem(at: box) }
 
-        // 用双栏让"每个窗格都继承"有意义
+        // Dual panes, so "every pane inherits" means something
         wc.grid.apply(layout: .dualH)
         try? await Task.sleep(for: .milliseconds(250))
         let p0 = wc.grid.visiblePanes[0], p1 = wc.grid.visiblePanes[1]
@@ -2150,14 +2150,14 @@ enum UISelfTest {
             p.navigate(to: box)
         }
         _ = await pollFS { p0.activeTab.model.items.count == 3 && p1.activeTab.model.items.count == 3 }
-        // 两个窗格设成**不同**的非默认排序：单靠一个"全局默认"抄不出这两组值
+        // Give the two panes **different** non-default sorts: one "global default" alone cannot produce both
         let hiddenDefault = Preferences.showHiddenByDefault
         p0.uiTestSetSort(key: "dateModified", ascending: false); p0.uiTestSetIncludeHidden(!hiddenDefault)
         p1.uiTestSetSort(key: "size", ascending: true)
         wc.grid.setActivePane(0)
         try? await Task.sleep(for: .milliseconds(200))
 
-        // ── I-70：⌘T 走真实菜单键等价物 ──
+        // ── I-70: ⌘T through the real menu key equivalent ──
         let wsBefore = wc.workspaces.count
         let press = pressMenuShortcut("t", mods: [.command], window: window)
         _ = await pollFS { wc.workspaces.count == wsBefore + 1 }
@@ -2170,46 +2170,46 @@ enum UISelfTest {
             && n0?.activeTab.model.includeHidden == !hiddenDefault
             && s1?.key == "size" && s1?.ascending == true
         record(press.found && press.delivered && wc.workspaces.count == wsBefore + 1 && layoutKept && inherited,
-               "I-70 ⌘T 新工作区复制当前工作区（菜单有⌘T项=\(press.found) 经响应链送达=\(press.delivered) 工作区 \(wsBefore)→\(wc.workspaces.count) 布局保持双栏=\(layoutKept) 左 \(s0.map { "\($0.key)/\($0.ascending ? "asc" : "desc")" } ?? "nil") 隐藏=\(n0?.activeTab.model.includeHidden ?? false)(默认 \(hiddenDefault)) 右 \(s1.map { "\($0.key)/\($0.ascending ? "asc" : "desc")" } ?? "nil")）")
+               "I-70 ⌘T new workspace copies the current workspace (menu has ⌘T item=\(press.found) delivered via responder chain=\(press.delivered) workspaces \(wsBefore)→\(wc.workspaces.count) dual layout kept=\(layoutKept) left \(s0.map { "\($0.key)/\($0.ascending ? "asc" : "desc")" } ?? "nil") hidden=\(n0?.activeTab.model.includeHidden ?? false)(default \(hiddenDefault)) right \(s1.map { "\($0.key)/\($0.ascending ? "asc" : "desc")" } ?? "nil"))")
 
-        // ── I-72：工作区标签条——点文字能切、整行高度可点 ──
+        // ── I-72: workspace tab bar: clicking text switches, full row height clickable ──
         let bar = wc.deck.workspaceTabBar
         window.contentView?.layoutSubtreeIfNeeded(); bar.layoutSubtreeIfNeeded()
         let activeWS = wc.workspaces.activeIndex
-        let targetWS = activeWS == 0 ? 1 : 0          // 点一个**非活动**的工作区
+        let targetWS = activeWS == 0 ? 1 : 0          // Click an **inactive** workspace
         if let f = bar.uiTestItemFrame(targetWS) {
-            let onText = NSPoint(x: f.midX, y: f.midY)                // 文字正中（旧版被 NSTextField 吞掉）
-            let onEdge = NSPoint(x: f.midX, y: 1)                      // 行顶缘（旧版是死区 → 拖窗口）
+            let onText = NSPoint(x: f.midX, y: f.midY)                // Dead center of the text (swallowed by NSTextField in the old version)
+            let onEdge = NSPoint(x: f.midX, y: 1)                      // Row top edge (a dead zone in the old version → dragged the window)
             let hitText = bar.uiTestHitsItem(targetWS, at: onText)
             let hitEdge = bar.uiTestHitsItem(targetWS, at: onEdge)
-            // 门槛：命中解析到胶囊 + 把 mouseDown 投给解析出的视图真切换 + 接受第一下。
-            // 窗口级真实派发只作诊断：它多经一层 App 激活门，用户正用着机器时随机吃掉第一下（真门 3 轮 1 绿 2 红）。
+            // Bar: hit resolves to the pod + delivering mouseDown to the resolved view really switches + accepts the first click.
+            // Real window-level dispatch is diagnostic only: it passes one more app activation gate, which randomly eats the first click while the user is on the machine (real gate: 1 green, 2 red in 3 runs).
             let hitType = bar.uiTestClickResolved(at: onText, in: window)
             try? await Task.sleep(for: .milliseconds(350))
             let switched = wc.workspaces.activeIndex == targetWS
             let firstMouse = bar.uiTestItemAcceptsFirstMouse(targetWS)
-            // 诊断：窗口级派发能不能把它切回去
+            // Diagnostic: can window-level dispatch switch it back
             bar.uiTestClick(at: NSPoint(x: (bar.uiTestItemFrame(activeWS)?.midX ?? 0), y: f.midY), in: window)
             try? await Task.sleep(for: .milliseconds(350))
             let windowDispatchSwitchedBack = wc.workspaces.activeIndex == activeWS
-            if !windowDispatchSwitchedBack { wc.switchWorkspace(to: activeWS) }   // 诊断不影响后续状态
+            if !windowDispatchSwitchedBack { wc.switchWorkspace(to: activeWS) }   // The diagnostic must not affect later state
             record(hitText && hitEdge && switched && firstMouse,
-                   "I-72 工作区标签条点文字即切换且整行可点（文字处命中=\(hitText) 行顶缘命中=\(hitEdge) 命中视图=\(hitType) 点后活动 \(activeWS)→\(targetWS)=\(switched) 接受第一下=\(firstMouse)｜诊断 窗口级派发切回=\(windowDispatchSwitchedBack)）")
+                   "I-72 workspace tab bar switches on text click and the full row is clickable (hit on text=\(hitText) hit on row top=\(hitEdge) hit view=\(hitType) active after click \(activeWS)→\(targetWS)=\(switched) accepts first click=\(firstMouse) | diagnostic: window-level dispatch switched back=\(windowDispatchSwitchedBack))")
         } else {
-            record(false, "I-72 工作区标签条点文字即切换且整行可点（取不到第 \(targetWS) 个胶囊）")
+            record(false, "I-72 workspace tab bar switches on text click and the full row is clickable (cannot get pod \(targetWS))")
         }
 
-        // ── I-71：⌥⌘T / ⌥⌘W 已随窗格内多标签一起退役 ──
-        // 只删旧断言不留证据的话，哪天这两个键被重新接上也没人会知道。这条钉住"菜单里真的没有了"：
-        // pressMenuShortcut 的 found 直接查**已装配的主菜单**里有没有绑这个键等价物的项。
-        // 只查不执行：这两个键现在绑的是"什么都没有"，可要是哪天被绑上别的命令，
-        // 真派发一次就等于在自测里执行一个我们并不想执行的动作。
+        // ── I-71: ⌥⌘T / ⌥⌘W retired along with in-pane tabs ──
+        // Deleting the old assertion without leaving evidence means nobody would notice if these keys were rewired. This pins "really gone from the menu":
+        // pressMenuShortcut the found of pressMenuShortcut checks directly whether the **assembled main menu** has an item bound to this key equivalent.
+        // Lookup only: these two keys bind to nothing now, but if another command is ever bound to them,
+        // really dispatching would run an action in the self-test that we do not want to run.
         let paneTabItem = menuItem(for: "t", mods: [.command, .option])
         let paneCloseItem = menuItem(for: "w", mods: [.command, .option])
         record(paneTabItem == nil && paneCloseItem == nil,
-               "I-71 窗格内多标签已退役：⌥⌘T/⌥⌘W 不再绑任何菜单项（⌥⌘T 命中=\(paneTabItem?.title ?? "无") ⌥⌘W 命中=\(paneCloseItem?.title ?? "无")）")
+               "I-71 in-pane tabs retired: ⌥⌘T/⌥⌘W no longer bind any menu item (⌥⌘T hit=\(paneTabItem?.title ?? "none") ⌥⌘W hit=\(paneCloseItem?.title ?? "none"))")
 
-        // 收尾：关掉新建的工作区，还原布局
+        // Wrap up: close the new workspace, restore the layout
         while wc.workspaces.count > wsBefore { wc.closeWorkspace(at: wc.workspaces.count - 1) }
         try? await Task.sleep(for: .milliseconds(200))
         wc.grid.apply(layout: .single)
@@ -2227,12 +2227,12 @@ enum UISelfTest {
         let box = fs.temporaryDirectory
             .appendingPathComponent("nspace-uitest-i65-\(tok)", isDirectory: true)
         try? fs.createDirectory(at: box, withIntermediateDirectories: true)
-        record(assertSandboxed(box), "沙箱守卫[I-65]: 粘贴/重命名夹具在自建临时目录内")
+        record(assertSandboxed(box), "Sandbox guard [I-65]: paste/rename fixture inside own temp directory")
         guard assertSandboxed(box) else { return }
         defer { try? fs.removeItem(at: box) }
 
-        // ① 剪贴板推导：图片优先于文本。浏览器复制图片时剪贴板里**同时**有 PNG 和一段 HTML
-        //   文本，文本优先会让用户得到一个 .txt 而不是图片——顺序即优先级，必须钉住。
+        // ① clipboard derivation: image before text. When a browser copies an image, the clipboard holds **both** a PNG and some HTML
+        //   text; preferring text would give the user a .txt instead of the image. The order is the priority, and it must stay pinned.
         let pbImg = NSPasteboard(name: NSPasteboard.Name("nspace.uitest.i65a.\(tok)"))
         pbImg.clearContents()
         pbImg.setString("<img src=...>", forType: .string)
@@ -2254,9 +2254,9 @@ enum UISelfTest {
                && txtPayload?.name.hasSuffix(".txt") == true
                && txtPayload?.data == Data("hello".utf8)
                && emptyPayload == nil,
-               "I-65 剪贴板推导：图片优先于文本、空内容不成文件（图=\(imgPayload?.name ?? "nil") 文=\(txtPayload?.name ?? "nil") 空=\(emptyPayload == nil ? "nil" : "非nil")）")
+               "I-65 clipboard derivation: image before text, empty content makes no file (image=\(imgPayload?.name ?? "nil") text=\(txtPayload?.name ?? "nil") empty=\(emptyPayload == nil ? "nil" : "non-nil"))")
 
-        // ② ⌘V 真落地成新文件（走 coordinator 真实链路 → 内核 → LocalOps 写盘）
+        // ② ⌘V really lands as a new file (real coordinator chain → kernel → LocalOps write)
         pane.uiTestEndPathEditing()
         pane.navigate(to: box)
         _ = await pollFS { pane.uiTestViewCurrentDirectory.standardizedFileURL.path
@@ -2268,10 +2268,10 @@ enum UISelfTest {
         let name = ((try? fs.contentsOfDirectory(atPath: box.path)) ?? []).first { $0.hasSuffix(".txt") }
         let body = name.flatMap { try? Data(contentsOf: box.appendingPathComponent($0)) }
         record(landed && body == Data("hello".utf8),
-               "I-65 ⌘V 把剪贴板内容粘成新文件（落地=\(landed) 名=\(name ?? "nil") 内容一致=\(body == Data("hello".utf8))）")
+               "I-65 ⌘V pastes clipboard content as a new file (landed=\(landed) name=\(name ?? "nil") content matches=\(body == Data("hello".utf8)))")
         pbImg.releaseGlobally(); pbTxt.releaseGlobally(); pbEmpty.releaseGlobally()
 
-        // ③ 单击重命名谓词（纯函数，确定性）：多选归 I-43 的收敛，不抢同一手势
+        // ③ click-to-rename predicate (pure function, deterministic): multi-selection belongs to I-43's collapse, the two do not compete for one gesture
         let renameSingle = FocusReportingTableView.shouldScheduleRename(
             clickedRow: 3, modifiers: [], clickCount: 1,
             selectedCount: 1, rowIsSelected: true, isGroupRow: false)
@@ -2292,10 +2292,10 @@ enum UISelfTest {
             selectedCount: 1, rowIsSelected: true, isGroupRow: true)
         record(renameSingle && !renameUnselected && !renameMulti
                && !renameDouble && !renameModified && !renameGroup,
-               "I-65 单击重命名谓词：仅「单选+点已选中行+无修饰+单击」为真（已选=\(renameSingle) 未选=\(renameUnselected) 多选=\(renameMulti) 双击=\(renameDouble) 带修饰=\(renameModified) 组头=\(renameGroup)）")
+               "I-65 click-to-rename predicate: true only for 'single selection + click on selected row + no modifier + single click' (selected=\(renameSingle) unselected=\(renameUnselected) multi=\(renameMulti) double=\(renameDouble) modified=\(renameModified) group header=\(renameGroup))")
 
-        // ④ 底部恒留可右键的空白区（内容铺满时也有地方点）。
-        //   走真实 scrollView 的 contentInsets 与真实注入的回调，不复刻常量、不直调 buildMenu。
+        // ④ the bottom always keeps a right-clickable blank area (somewhere to click even when content fills the view).
+        //   Uses the real scrollView's contentInsets and the really injected callback, with no copied constants and no direct buildMenu calls.
         window.contentView?.layoutSubtreeIfNeeded()
         let tailOK = FileListViewController.blankTailHeight >= 24
         let insetOK = pane.uiTestListBottomInset == FileListViewController.blankTailHeight
@@ -2304,37 +2304,37 @@ enum UISelfTest {
             $0.action == #selector(FileListViewController.newFileHere(_:))
         } ?? false
         record(tailOK && insetOK && blankHasNewFile,
-               "I-65 列表底部留白可右键出新建菜单（留白 \(Int(FileListViewController.blankTailHeight))pt inset=\(Int(pane.uiTestListBottomInset)) 菜单含新建文件=\(blankHasNewFile)）")
+               "I-65 list bottom blank area right-clicks to the New menu (blank \(Int(FileListViewController.blankTailHeight))pt inset=\(Int(pane.uiTestListBottomInset)) menu has New File=\(blankHasNewFile))")
 
-        // ⑤ 新建文件有快捷键，且不和新建文件夹撞
+        // ⑤ new file has a shortcut that does not collide with new folder
         let nf = KeyBindings.display("newFile")
         let nd = KeyBindings.display("newFolder")
-        // 未绑定时 display 返回破折号「—」**不是空串**：第一版写 !nf.isEmpty，
-        // 把 newFile 的默认绑定抽掉照样绿（假绿，反证时抓到）。要判的是"真的有键"。
+        // Unbound display returns an em dash "—", **not an empty string**: the first version wrote !nf.isEmpty,
+        // which stayed green with newFile's default binding removed (false green, caught by a counter-test). What matters is "really has a key".
         let bound = KeyBindings.binding("newFile")
         record(!bound.key.isEmpty && nf != "—" && nf != nd,
-               "I-65 新建文件有快捷键且不与新建文件夹冲突（新建文件=\(nf) 新建文件夹=\(nd) 真有键=\(!bound.key.isEmpty)）")
+               "I-65 New File has a shortcut with no New Folder conflict (New File=\(nf) New Folder=\(nd) really has key=\(!bound.key.isEmpty))")
 
         pane.navigate(to: fs.homeDirectoryForCurrentUser)
         try? await Task.sleep(for: .milliseconds(200))
     }
 
-    /// 场景 I-66：设置窗顶部的设置项搜索——用户要"所有配置都能搜索并跳转到对应配置项"。
-    /// 索引是从**已装配的视图树**现取的，所以断言也打在真实索引与真实跳转上。
+    /// Scenario I-66: settings search at the top of the settings window: the user wants "every setting searchable and able to jump to its item".
+    /// The index is read live from the **assembled view tree**, so the assertions hit the real index and the real jump.
     private static func runSettingsSearchScenario(window: NSWindow) async {
         let sc = SettingsWindowController.shared
         sc.showWindow(nil)
         try? await Task.sleep(for: .milliseconds(400))
         sc.window?.contentView?.layoutSubtreeIfNeeded()
 
-        // ① 索引真的建起来了，而且覆盖到多个页签（只覆盖一页 = 遍历没走全）
+        // ① the index was really built, and covers multiple tabs (one page only = the traversal fell short)
         let idxCount = sc.uiTestSearchIndexCount
         let texts = sc.uiTestSearchIndexTexts
         record(idxCount >= 20 && !texts.isEmpty,
-               "I-66 设置项索引从真实视图树建起（\(idxCount) 项）")
+               "I-66 settings index built from the real view tree (\(idxCount) items)")
 
-        // ② 拿索引里**真实存在**的一条去搜（不写死某个中文词——文案改了这条就该红，
-        //    但不该因为我猜错了词而红）
+        // ② search for an entry that **really exists** in the index (no hardcoded word: this should go red when copy changes,
+        //    but not because I guessed the word wrong)
         let sample = texts.first { $0.count >= 2 && $0.count <= 12 } ?? texts.first ?? ""
         let probe = String(sample.prefix(3))
         sc.applySearch(probe)
@@ -2342,11 +2342,11 @@ enum UISelfTest {
         let hitCount = sc.uiTestSearchResultCount
         let listShown = sc.uiTestSearchResultsVisible
         record(!probe.isEmpty && hitCount > 0 && listShown,
-               "I-66 输入即出结果（搜「\(probe)」得 \(hitCount) 条，结果区可见=\(listShown)）")
+               "I-66 results appear on input (searching '\(probe)' got \(hitCount), results visible=\(listShown))")
 
-        // ③ 点结果 → 真的切到那一页（跳转是这条需求的核心，不能只"搜得到"）
+        // ③ clicking a result → really switches to that page (the jump is the core of this feature, "findable" alone is not enough)
         let wantTab = sc.uiTestSearchResultTabIndex(0)
-        // 先故意切到别的页，否则"本来就在那一页"会让断言真空通过
+        // First switch to another page on purpose, or "already on that page" would pass the assertion vacuously
         sc.uiTestSelectTab(wantTab == 0 ? 1 : 0)
         try? await Task.sleep(for: .milliseconds(150))
         let before = sc.uiTestSelectedTabIndex
@@ -2354,13 +2354,13 @@ enum UISelfTest {
         try? await Task.sleep(for: .milliseconds(250))
         let after = sc.uiTestSelectedTabIndex
         record(jumped && wantTab >= 0 && before != wantTab && after == wantTab,
-               "I-66 点结果跳到对应页签（点前 \(before) → 点后 \(after)，目标 \(wantTab)）")
+               "I-66 clicking a result jumps to its tab (before \(before) → after \(after), target \(wantTab))")
 
-        // ④ 清空搜索 → 结果区收起（否则它会一直占着设置窗顶部）
+        // ④ clear search → results area collapses (otherwise it keeps occupying the top of the settings window)
         sc.applySearch("")
         try? await Task.sleep(for: .milliseconds(150))
         record(sc.uiTestSearchResultCount == 0 && !sc.uiTestSearchResultsVisible,
-               "I-66 清空搜索后结果区收起（条数 \(sc.uiTestSearchResultCount) 可见=\(sc.uiTestSearchResultsVisible)）")
+               "I-66 results area collapses after clearing search (count \(sc.uiTestSearchResultCount) visible=\(sc.uiTestSearchResultsVisible))")
 
         sc.window?.close()
         window.makeKeyAndOrderFront(nil)
@@ -2370,11 +2370,11 @@ enum UISelfTest {
     private static func runTrashNavigationScenario(wc: MainWindowController, window: NSWindow) async {
         let fs = FileManager.default
         let pane = wc.grid.activePane
-        // 用户原话「nspace 缺少废纸篓功能，点击废纸篓还是会跳到 finder，……右上角有 icon 的
-        // 废纸篓按钮，点击之后可以直接跳转到废纸篓」。
-        // 改前：那个垃圾桶钮 action 是 moveToTrash 且 `isEnabled = hasSelection`，
-        // 空选中时长期灰着 → 用户认为"没有这个功能"；应用内**没有任何**通往废纸篓的路径。
-        // 铁律：只动自建 nspace-uitest-i62-* 夹具；落进真实废纸篓的测试项按 token 清干净。
+        // User's words: "nspace lacks a Trash feature, clicking Trash still jumps to Finder; ...the Trash button with the icon at the top right
+        // should jump straight to the Trash when clicked".
+        // Before: that trash button's action was moveToTrash with `isEnabled = hasSelection`,
+        // grayed out with no selection → the user concluded "this feature does not exist"; the app had **no path at all** to the Trash.
+        // Hard rule: touch only self-created nspace-uitest-i62-* fixtures; test items landing in the real Trash are cleaned up by token.
         do {
             let token = String(UUID().uuidString.prefix(8))
             let box = fs.temporaryDirectory
@@ -2384,24 +2384,24 @@ enum UISelfTest {
             try? fs.createDirectory(at: box, withIntermediateDirectories: true)
             try? Data("x".utf8).write(to: victim)
             let g62 = assertSandboxed(victim)
-            record(g62, "沙箱守卫[I-62]: 废纸篓夹具在自建临时目录内")
+            record(g62, "Sandbox guard [I-62]: Trash fixture inside own temp directory")
 
             if g62 {
                 pane.uiTestEndPathEditing()
                 pane.navigate(to: box)
                 _ = await pollFS { pane.uiTestViewCurrentDirectory.standardizedFileURL.path
                                     == box.standardizedFileURL.path }
-                // ① 空选中时垃圾桶钮必须可用（改前恒灰——用户看到的"缺功能"就是这个）
+                // ① the trash button must be usable with no selection (always gray before; that was the "missing feature" the user saw)
                 pane.uiTestClearSelection()
                 wc.deck.validateActions(hasSelection: false)
                 try? await Task.sleep(for: .milliseconds(120))
                 let enabledNoSel = wc.deck.uiTestTrashButtonEnabled
                 record(enabledNoSel,
-                       "I-62 空选中时甲板垃圾桶钮仍可用（可用=\(enabledNoSel)）")
+                       "I-62 deck trash button usable with empty selection (usable=\(enabledNoSel))")
 
-                // ② 拖文件到垃圾桶钮 → 真移到废纸篓。
-                //   放在"点击导航"之前是刻意的：这样下面数废纸篓项数时，篓里必有我们
-                //   自己造的那一项，断言不再依赖"用户真实废纸篓非空"（清空废纸篓的机器上会必红）。
+                // ② dragging a file onto the trash button → really moved to Trash.
+                //   Placed before "click to navigate" on purpose: when counting Trash items below, it surely holds the item
+                //   we made, so the assertion no longer depends on "the user's real Trash is not empty" (it would always be red on a machine with an empty Trash).
                 let dragRegistered = wc.deck.uiTestTrashAcceptsFileURLDrags
                 let pb = NSPasteboard(name: NSPasteboard.Name("nspace.uitest.i62.\(UUID().uuidString)"))
                 pb.clearContents()
@@ -2412,25 +2412,25 @@ enum UISelfTest {
                     ((try? fs.contentsOfDirectory(atPath: TrashLocation.userTrash.path)) ?? [])
                         .contains { $0.hasPrefix("nspace-uitest-i62-\(token)") }
                 }
-                // dragRegistered 不可省：注入接缝只验落地逻辑，验不出 AppKit 会不会
-                // 把拖拽送到这个钮（要 registerForDraggedTypes 过）
+                // dragRegistered cannot be dropped: the injection seam verifies only the drop logic, not whether AppKit
+                // will deliver the drag to this button (that needs registerForDraggedTypes)
                 record(accepted && gone && inTrash && dragRegistered,
-                       "I-62 拖到垃圾桶钮 → 真移到废纸篓（受理=\(accepted) 源消失=\(gone) 废纸篓有=\(inTrash) 已注册fileURL拖放=\(dragRegistered)）")
+                       "I-62 drag onto trash button → really moved to Trash (accepted=\(accepted) source gone=\(gone) in Trash=\(inTrash) fileURL drag registered=\(dragRegistered))")
                 pb.releaseGlobally()
 
-                // ③ 点击 → 在**应用内**导航到 ~/.Trash（走钮真实 action → 甲板出口 → 窗格）
+                // ③ click → navigate to ~/.Trash **inside the app** (through the button's real action → deck exit → pane)
                 wc.deck.uiTestClickTrash()
                 let arrived = await pollFS {
                     TrashLocation.isTrash(pane.uiTestCurrentURL)
                 }
                 record(arrived && TrashLocation.isTrash(pane.uiTestBreadcrumbURL),
-                       "I-62 点垃圾桶钮 → 应用内跳到废纸篓（落点=\(pane.uiTestCurrentURL.lastPathComponent) 面包屑=\(pane.uiTestBreadcrumbURL.lastPathComponent)）")
+                       "I-62 clicking trash button → navigates to Trash in-app (landed=\(pane.uiTestCurrentURL.lastPathComponent) breadcrumb=\(pane.uiTestBreadcrumbURL.lastPathComponent))")
 
-                // ③ 废纸篓内容真被列出（~/.Trash 自身带 hidden 标志，
-                //    别只验"导航到了"——那样列表空白照样绿）
-                // 盘上口径必须**跟着模型当前的** includeHidden 走，不能假定它是 false：
-                // 前面的场景（I-55 等）会把"显示隐藏文件"打开且不一定复原，
-                // 写死 .skipsHiddenFiles 会拿 15 去比模型的 17（首次写这条时就是这么红的）。
+                // ③ Trash contents are really listed (~/.Trash itself carries the hidden flag,
+                //    so do not just check "navigated there"; a blank list would still pass)
+                // The on-disk convention must **follow the model's current** includeHidden, not assume false:
+                // earlier scenarios (I-55 etc) turn on "show hidden files" and may not restore it;
+                // a hardcoded .skipsHiddenFiles compared 15 with the model's 17 (exactly how this went red when first written).
                 @MainActor func trashCountOnDisk() -> Int {
                     let opts: FileManager.DirectoryEnumerationOptions =
                         pane.activeTab.model.includeHidden ? [] : [.skipsHiddenFiles]
@@ -2438,8 +2438,8 @@ enum UISelfTest {
                         at: TrashLocation.userTrash, includingPropertiesForKeys: nil,
                         options: opts))?.count ?? -1
                 }
-                // 必须等模型真的换到废纸篓再采样：`count >= 0` 那种恒真的等待等于没等，
-                // 会采到上一个目录的旧计数（首次写这条时就采到了 box 的 1 项）。
+                // Wait until the model has really switched to the Trash before sampling: an always-true wait like `count >= 0` is no wait,
+                // and samples the previous directory's stale count (when first written it sampled box's 1 item).
                 let listed = await pollFS {
                     TrashLocation.isTrash(pane.uiTestViewCurrentDirectory)
                         && pane.activeTab.model.items.count == trashCountOnDisk()
@@ -2447,19 +2447,19 @@ enum UISelfTest {
                 let trashItemCount = pane.activeTab.model.items.count
                 let onDisk = trashCountOnDisk()
                 record(listed && trashItemCount == onDisk && onDisk > 0,
-                       "I-62 废纸篓内容真被列出（列表 \(trashItemCount) 项 == 盘上 \(onDisk) 项，隐藏=\(pane.activeTab.model.includeHidden)）")
+                       "I-62 Trash contents really listed (list \(trashItemCount) items == disk \(onDisk) items, hidden=\(pane.activeTab.model.includeHidden))")
 
-                // ⑤ Go 菜单有「废纸篓」项且接在 goTrash 上（甲板之外的第二条路，不止一个入口）
+                // ⑤ the Go menu has a "Trash" item wired to goTrash (a second route besides the deck, not just one entry point)
                 let goHit = MainMenu.uiTestMenuItem(for: #selector(PaneViewController.goTrash(_:)))
-                // 不止"树里某处有 goTrash"：必须在「前往」菜单下、标题对、且真的可点
+                // More than "goTrash exists somewhere in the tree": it must be under the Go menu, with the right title, and really clickable
                 let inGoMenu = goHit?.ownerTitle == L10n.t("menu.go")
                 let usable = goHit.map { $0.item.isEnabled || $0.item.target == nil } ?? false
                 record(goHit != nil && goHit?.item.title == L10n.t("menu.goTrash") && inGoMenu && usable,
-                       "I-62 前往菜单含「废纸篓」项并接 goTrash（标题=\(goHit?.item.title ?? "nil") 所属=\(goHit?.ownerTitle ?? "nil") 可用=\(usable)）")
+                       "I-62 Go menu has a 'Trash' item wired to goTrash (title=\(goHit?.item.title ?? "nil") owner=\(goHit?.ownerTitle ?? "nil") usable=\(usable))")
 
-                // ⑥ 跨窗拖放的路由接缝：按窗口反查控制器。
-                //   跨窗拖到别的窗的甲板上时，撤销与吐司必须归**来源窗**，
-                //   否则 ⌘Z 在来源窗按不动、吐司弹在可能被挡住的窗上。
+                // ⑥ routing seam for cross-window drops: look up the controller by window.
+                //   When dragging across to another window's deck, undo and the toast must belong to the **source window**,
+                //   or ⌘Z does nothing in the source window and the toast shows on a window that may be covered.
                 let del = NSApp.delegate as? AppDelegate
                 let ownFound = del?.mainWindowController(for: window) === wc
                 let strangerWin = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
@@ -2467,9 +2467,9 @@ enum UISelfTest {
                 let strangerNil = del?.mainWindowController(for: strangerWin) == nil
                 let nilIsNil = del?.mainWindowController(for: nil) == nil
                 record(ownFound && strangerNil && nilIsNil,
-                       "I-62 按窗口反查控制器（自身命中=\(ownFound) 陌生窗为空=\(strangerNil) nil为空=\(nilIsNil)）")
+                       "I-62 controller lookup by window (own hit=\(ownFound) stranger window empty=\(strangerNil) nil empty=\(nilIsNil))")
 
-                // 清理：把落进真实废纸篓的测试项按 token 删净（唯一名，安全）
+                // Cleanup: delete test items in the real Trash by token (unique names, safe)
                 if let entries = try? fs.contentsOfDirectory(atPath: TrashLocation.userTrash.path) {
                     for e in entries where e.hasPrefix("nspace-uitest-i62-\(token)") {
                         try? fs.removeItem(at: TrashLocation.userTrash.appendingPathComponent(e))
@@ -2485,23 +2485,23 @@ enum UISelfTest {
     private static func runTrashOperationsScenario(wc: MainWindowController, window: NSWindow) async {
         let fs = FileManager.default
         let pane = wc.grid.activePane
-        // ── 场景 I-63：清空废纸篓（不可逆）+ 放回原处 ────────────────────────
-        // 用户明示要这两个功能。清空走新胶囊 Eraser（`.delete` + 围栏根），
-        // 放回原处走新胶囊 TrashLedger（macOS 的 put-back 元数据在 Finder 私有库里读不到，
-        // 实测唯一 xattr 是空的 com.apple.provenance、Finder 自己的 AppleScript 也拿不到）。
-        // 铁律：**清空那半只在自建临时夹具上验**，一次都不碰用户真实废纸篓；
-        //       放回那半必须经真实废纸篓（那才是真目标），但只动自建 token 项且必须放回成功。
+        // ── Scenario I-63: Empty Trash (irreversible) + Put Back ────────────────────────
+        // The user explicitly asked for both. Emptying goes through the new Eraser pod (`.delete` + fence root),
+        // Put Back through the new TrashLedger pod (macOS put-back metadata lives in a private Finder library and cannot be read:
+        // measured, the only xattr is an empty com.apple.provenance, and Finder's own AppleScript cannot get it either).
+        // Hard rule: **the emptying half is verified only on a self-made temp fixture**, never touching the user's real Trash;
+        //       the Put Back half must go through the real Trash (the true target), but touches only own token items and must put them back.
         do {
             let tok = String(UUID().uuidString.prefix(8))
 
-            // ① 保留甲板右键入口，主入口另由 I-64 验证。
+            // ① keep the deck context menu entry; the main entry is verified separately in I-64.
             let cm = wc.deck.uiTestTrashContextMenu()
             let hasEmpty = cm?.items.contains { $0.title == L10n.t("menu.emptyTrash") } ?? false
             let wired = cm?.items.first?.action != nil && cm?.items.first?.target != nil
             record(cm?.items.count == 1 && hasEmpty && wired,
-                   "I-63 垃圾桶钮右键菜单含「清空废纸篓」（\(cm?.items.count ?? -1) 项 命中=\(hasEmpty) 已接线=\(wired)）")
+                   "I-63 trash button context menu has 'Empty Trash' (\(cm?.items.count ?? -1) items hit=\(hasEmpty) wired=\(wired))")
 
-            // ② 清空的干活那半：在**自建临时夹具**上跑，绝不碰真实废纸篓
+            // ② the working half of emptying: run on a **self-made temp fixture**, never touch the real Trash
             let fakeTrash = fs.temporaryDirectory
                 .appendingPathComponent("nspace-uitest-i63-\(tok)-trash", isDirectory: true)
             try? fs.createDirectory(at: fakeTrash.appendingPathComponent("dir"),
@@ -2509,39 +2509,39 @@ enum UISelfTest {
             try? Data("a".utf8).write(to: fakeTrash.appendingPathComponent("a.txt"))
             try? Data("b".utf8).write(to: fakeTrash.appendingPathComponent(".hidden-b"))
             try? Data("c".utf8).write(to: fakeTrash.appendingPathComponent("dir/c.txt"))
-            record(assertSandboxed(fakeTrash), "沙箱守卫[I-63]: 清空夹具在自建临时目录内")
+            record(assertSandboxed(fakeTrash), "Sandbox guard [I-63]: empty fixture inside own temp directory")
             let victims = (try? fs.contentsOfDirectory(at: fakeTrash,
                                                        includingPropertiesForKeys: nil,
                                                        options: [])) ?? []
             let victimCount = victims.count
             if assertSandboxed(fakeTrash), victimCount == 3 {
-                // 回车行为在临时围栏上验，绝不向真实废纸篓确认框发送回车。
+                // Return key behaviour is verified on a temp fence; never send Return to a real Trash confirmation.
                 wc.coordinator.emptyTrash(at: fakeTrash, in: window)
-                // 抢回前台再等：`isKeyWindow` 要求整个 App 处于活动状态，
-                // 别的 App（或并发跑起来的另一个 NSpace 实例）抢了焦点就永远等不到
-                // ——真门 6 轮里红过 2 次。
+                // Take the foreground back before waiting: `isKeyWindow` requires the whole app to be active;
+                // if another app (or a concurrently running NSpace instance) grabs focus it never arrives
+                // (red 2 of 6 real-gate runs).
                 NSApp.activate(ignoringOtherApps: true)
                 window.makeKeyAndOrderFront(nil)
-                // 门槛钉在**弹框真的出现**上（确定性）；`isKeyWindow` 只作诊断输出。
-                // 这条断言要证的是「回车不能把文件删掉」，那件事不依赖 sheet 是不是 key。
+                // Pin the bar on **the alert really appearing** (deterministic); `isKeyWindow` is diagnostic output only.
+                // This assertion must prove "Return cannot delete the files", which does not depend on whether the sheet is key.
                 let sheetReady = await pollFS { window.attachedSheet != nil }
-                // 等激活真的落地（activate 是异步的）；落不了地就不指望回车能投进去
+                // Wait for activation to really land (activate is async); if it does not, do not expect Return to get through
                 let appActive = await pollFS { NSApp.isActive && window.attachedSheet?.isKeyWindow == true }
-                // **确定性门槛**：保证"回车删不掉"的机制是键位本身，不需要 key window 就能验。
-                // 回车能否真的投进去取决于 App 是不是活动应用（别的 App 抢焦时 NSApp.sendEvent
-                // 送不到），把它当门槛就会随环境抖——真门 6 轮红 2 次、加了 activate 之后
-                // 3 轮又红 2 次，实测如此。
+                // **Deterministic bar**: the guarantee that "Return cannot delete" is the key binding itself, which can be checked without a key window.
+                // Whether Return really gets through depends on the app being active (when another app holds focus NSApp.sendEvent
+                // does not reach it); making that the bar would flake with the environment: real gate red 2 of 6, then after adding activate
+                // red 2 of 3 more, as measured.
                 //
-                // 读法必须是**按钮自己的 keyEquivalent**，不能读 window.defaultButtonCell：
-                // 后者是绘制期旧 API，设了它并不会把 "\r" 搬到取消按钮上。曾经绿过是因为
-                // sheet 当时是 key 窗口、AppKit 顺手同步了一次；App 非活动时同步不发生，
-                // 于是回车仍绑在「清空」上——真门三轮稳定复现，那是真缺陷不是假红。
+                // It must read **the button's own keyEquivalent**, not window.defaultButtonCell:
+                // the latter is an old draw-time API, and setting it does not move "\r" to the Cancel button. It once passed because
+                // the sheet was key and AppKit happened to sync; with the app inactive no sync occurs,
+                // so Return stayed bound to "Empty": reproduced steadily over three real-gate runs, a true defect and not a false red.
                 let sheetButtons = viewTree(window.attachedSheet?.contentView).compactMap { $0 as? NSButton }
                 let confirmKey = sheetButtons.first { $0.title == L10n.t("alert.emptyTrash.confirm") }?
                     .keyEquivalent
                 let cancelKey = sheetButtons.first { $0.title == L10n.t("common.cancel") }?.keyEquivalent
-                // 「清空」身上没有回车 且 Esc 落在「取消」上。前者是安全不变量本体；
-                // 后者钉住出口仍在——否则把两个键都摘光也能满足前者，弹框就只剩点按钮能关。
+                // "Empty" holds no Return and Esc sits on "Cancel". The former is the safety invariant itself;
+                // the latter pins that an exit remains; otherwise removing both keys would satisfy the former and only clicking could close the alert.
                 let enterHarmless = confirmKey != nil && confirmKey != "\r" && cancelKey == "\u{1b}"
                 var returnSent = false
                 if let sheet = window.attachedSheet,
@@ -2555,10 +2555,10 @@ enum UISelfTest {
                 }
                 let returnClosed = await pollFS { window.attachedSheet == nil }
                 let returnKeptFiles = victims.allSatisfy { fs.fileExists(atPath: $0.path) }
-                // 门槛 = 弹框真出现 + 回车不绑在「清空」上（Esc 出口仍在）+ 文件一个没少；
-                // 「回车已投进去并关掉弹框」不再要求——键位改成 Esc 取消后回车本就无响应
+                // Bar = the alert really appears + Return not bound to "Empty" (Esc exit still there) + no file missing;
+                // "Return was delivered and closed the alert" is no longer required: with Esc as cancel, Return has no effect at all
                 record(sheetReady && enterHarmless && returnKeptFiles,
-                       "I-63 清倒确认回车不触发清空（弹框出现=\(sheetReady) 回车无害=\(enterHarmless) 三项仍在=\(returnKeptFiles)｜诊断 App活动=\(appActive) 发出回车=\(returnSent) 已关闭=\(returnClosed) 清空键=\(confirmKey?.isEmpty == true ? "空" : (confirmKey ?? "?")) 取消键=Esc:\(cancelKey == "\u{1b}")）")
+                       "I-63 Return on the empty confirmation does not trigger emptying (alert shown=\(sheetReady) Return harmless=\(enterHarmless) three items remain=\(returnKeptFiles) | diagnostic: app active=\(appActive) Return sent=\(returnSent) closed=\(returnClosed) empty key=\(confirmKey?.isEmpty == true ? "none" : (confirmKey ?? "?")) cancel key=Esc:\(cancelKey == "\u{1b}"))")
                 if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .abort) }
 
                 wc.coordinator.emptyTrash(at: fakeTrash, in: window)
@@ -2574,16 +2574,16 @@ enum UISelfTest {
                 let emptied = await pollFS {
                     ((try? fs.contentsOfDirectory(atPath: fakeTrash.path)) ?? []).isEmpty
                 }
-                // 围栏根自身必须还在（清空的是内容，不是那个目录）
+                // The fence root itself must remain (emptying clears content, not the directory)
                 let fenceAlive = fs.fileExists(atPath: fakeTrash.path)
                 record(confirmed && emptied && fenceAlive,
-                       "I-63 清空废纸篓真删内容且保留篓本身（真点确认=\(confirmed) 清空=\(emptied) 篓仍在=\(fenceAlive) 原 \(victimCount) 项含点文件）")
+                       "I-63 Empty Trash really deletes content and keeps the Trash itself (really clicked confirm=\(confirmed) emptied=\(emptied) Trash remains=\(fenceAlive) originally \(victimCount) items including a dotfile)")
             } else {
-                record(false, "I-63 清空废纸篓真删内容且保留篓本身（夹具不合预期 \(victimCount) 项）")
+                record(false, "I-63 Empty Trash really deletes content and keeps the Trash itself (fixture unexpected, \(victimCount) items)")
             }
             try? fs.removeItem(at: fakeTrash)
 
-            // ③ 放回原处闭环：真实删一个自建项 → 台账记账 → 放回 → 回到原位
+            // ③ Put Back round trip: really delete a self-made item → ledger records it → put back → returns to its original location
             let pbBox = fs.temporaryDirectory
                 .appendingPathComponent("nspace-uitest-i63-\(tok)-pb", isDirectory: true)
             let pbFile = pbBox.appendingPathComponent("nspace-uitest-i63-\(tok)-pb.txt")
@@ -2592,7 +2592,7 @@ enum UISelfTest {
             if assertSandboxed(pbFile) {
                 wc.coordinator.moveToTrash([pbFile])
                 let gone = await pollFS { !fs.fileExists(atPath: pbFile.path) }
-                // 台账里必须有记录（否则"放回原处"就是空话）
+                // The ledger must have a record (otherwise "Put Back" is an empty promise)
                 var recorded: URL?
                 var menuDispatched = false
                 if let led = wc.coordinator.trashLedger {
@@ -2635,11 +2635,11 @@ enum UISelfTest {
                 let content = (try? Data(contentsOf: pbFile)) == Data("putback".utf8)
                 record(gone && recorded?.standardizedFileURL.path == pbFile.standardizedFileURL.path
                        && menuDispatched && back && content,
-                       "I-63 放回原处闭环（删除=\(gone) 台账有记录=\(recorded != nil) 真点条目菜单=\(menuDispatched) 回到原位=\(back) 内容一致=\(content)）")
+                       "I-63 Put Back round trip (deleted=\(gone) ledger has record=\(recorded != nil) really clicked item menu=\(menuDispatched) returned to original location=\(back) content matches=\(content))")
             } else {
-                record(false, "I-63 放回原处闭环（沙箱守卫未过）")
+                record(false, "I-63 Put Back round trip (sandbox guard failed)")
             }
-            // 收尾：把可能残留在真实废纸篓里的 token 项删净
+            // Wrap up: delete any token items left in the real Trash
             if let entries = try? fs.contentsOfDirectory(atPath: TrashLocation.userTrash.path) {
                 for e in entries where e.contains("nspace-uitest-i63-\(tok)") {
                     try? fs.removeItem(at: TrashLocation.userTrash.appendingPathComponent(e))
@@ -2647,18 +2647,18 @@ enum UISelfTest {
             }
             if assertSandboxed(pbBox) { try? fs.removeItem(at: pbBox) }
 
-            // ④ 诚实性：没有台账记录的项拿不到原始位置（别的应用删的项不许假装能放回）
+            // ④ honesty: items with no ledger record have no original location (items deleted by other apps must not pretend they can go back)
             if let led = wc.coordinator.trashLedger {
                 let stranger = TrashLocation.userTrash
                     .appendingPathComponent("nspace-uitest-i63-\(tok)-stranger.txt")
                 let noOrigin = await led.origin(of: stranger) == nil
                 record(noOrigin,
-                       "I-63 无台账记录的项不许假装能放回（原始位置=\(noOrigin ? "nil" : "非nil")）")
+                       "I-63 items with no ledger record must not pretend they can be put back (original location=\(noOrigin ? "nil" : "non-nil"))")
             } else {
-                record(false, "I-63 无台账记录的项不许假装能放回（台账未注入）")
+                record(false, "I-63 items with no ledger record must not pretend they can be put back (ledger not injected)")
             }
 
-            // ⑤ 菜单按位置切换：废纸篓里出「放回原处」不出「移到废纸篓」，篓外反之
+            // ⑤ the menu switches by location: in the Trash it offers "Put Back" and not "Move to Trash", outside the reverse
             let lvc = pane.activeTab.listVC
             let inTrashMenu = FileContextMenuBuilder.menu(
                 selection: [], directory: TrashLocation.userTrash, target: lvc)
@@ -2685,7 +2685,7 @@ enum UISelfTest {
             record(a1.contains(putBackSel) && !a1.contains(trashSel)
                    && a2.contains(trashSel) && !a2.contains(putBackSel)
                    && inTrashMenu.items.count == 6,
-                   "I-63 条目菜单按位置切换放回/移入（篓内 放回=\(a1.contains(putBackSel)) 移入=\(a1.contains(trashSel))；篓外 移入=\(a2.contains(trashSel)) 放回=\(a2.contains(putBackSel))；空白菜单仍 \(inTrashMenu.items.count) 项）")
+                   "I-63 item menu switches between Put Back and Move to Trash by location (in Trash putBack=\(a1.contains(putBackSel)) moveIn=\(a1.contains(trashSel)); outside moveIn=\(a2.contains(trashSel)) putBack=\(a2.contains(putBackSel)); blank menu still \(inTrashMenu.items.count) items)")
         }
     }
 
@@ -2699,10 +2699,10 @@ enum UISelfTest {
         let trashed = TrashLocation.userTrash.appendingPathComponent(folder.lastPathComponent)
         let payload = Data("I-64 keep this fixture".utf8)
         guard assertSandboxed(folder), !fs.fileExists(atPath: trashed.path) else {
-            record(false, "沙箱守卫[I-64]: 子目录夹具不可用")
+            record(false, "Sandbox guard [I-64]: subfolder fixture unavailable")
             return
         }
-        // 自建子目录，不能依赖用户废纸篓碰巧有目录；真实清倒只点取消。
+        // Make our own subfolder rather than rely on the user's Trash happening to have one; the real empty is only ever cancelled.
         defer {
             try? fs.removeItem(at: box)
             if fs.fileExists(atPath: trashed.path) { try? fs.removeItem(at: trashed) }
@@ -2711,13 +2711,13 @@ enum UISelfTest {
             try fs.createDirectory(at: folder, withIntermediateDirectories: true)
             try payload.write(to: folder.appendingPathComponent("keep.txt"))
         } catch {
-            record(false, "I-64 创建子目录夹具失败：\(error)")
+            record(false, "I-64 failed to create subfolder fixture: \(error)")
             return
         }
         wc.coordinator.moveToTrash([folder])
         let fixtureTrashed = await pollFS { fs.fileExists(atPath: trashed.appendingPathComponent("keep.txt").path) }
         guard fixtureTrashed else {
-            record(false, "I-64 子目录夹具未进入废纸篓")
+            record(false, "I-64 subfolder fixture did not reach the Trash")
             return
         }
 
@@ -2737,7 +2737,7 @@ enum UISelfTest {
         let titleOK = pane.uiTestEmptyTrashButtonTitle == L10n.t("trash.empty.button")
         capture(window, "31-trash-empty-button")
         record(hiddenOutside && zeroWidth && shownInTrash && hasWidth && titleOK,
-               "I-64 「清倒」钮只在废纸篓出现（篓外隐藏=\(hiddenOutside) 宽归零=\(zeroWidth) 篓内显示=\(shownInTrash) 宽 \(Int(pane.uiTestEmptyTrashButtonWidth))）")
+               "I-64 'Empty' button appears only in the Trash (hidden outside=\(hiddenOutside) zero width=\(zeroWidth) shown inside=\(shownInTrash) width \(Int(pane.uiTestEmptyTrashButtonWidth)))")
 
         let before = Set((try? fs.contentsOfDirectory(atPath: TrashLocation.userTrash.path)) ?? [])
         let clicked = pane.uiTestClickEmptyTrashButton()
@@ -2746,13 +2746,13 @@ enum UISelfTest {
         let buttons = viewTree(sheet?.contentView).compactMap { $0 as? NSButton }
         let cancel = buttons.first { $0.title == L10n.t("common.cancel") }
         let confirm = buttons.first { $0.title == L10n.t("alert.emptyTrash.confirm") }
-        // 判据是**按钮自己的 keyEquivalent**，不是 sheet.defaultButtonCell：
-        // 后者是绘制期旧 API，只在 sheet 成为 key 窗口时才被 AppKit 同步，
-        // App 非活动时读到的是陈旧值——而「回车不清空」这件事必须无条件成立。
-        // 「取消」占第一按钮位后 AppKit 按标题给了它 Escape，回车于是不绑任何按钮（实测）。
+        // The criterion is **the button's own keyEquivalent**, not sheet.defaultButtonCell:
+        // the latter is an old draw-time API that AppKit syncs only when the sheet becomes key,
+        // App so with the app inactive it reads stale, while "Return does not empty" must hold unconditionally.
+        // With "Cancel" in the first button slot AppKit gives it Escape by title, so Return binds no button (measured).
         let enterHarmless = confirm?.keyEquivalent != "\r" && cancel?.keyEquivalent == "\u{1b}"
         record(presented && enterHarmless && confirm?.hasDestructiveAction == true,
-               "I-64 真点「清倒」打开本窗确认，回车不触发清空（弹框=\(presented) 回车无害=\(enterHarmless) 清空键=\(confirm?.keyEquivalent.isEmpty == true ? "空" : "有") 取消键=Esc:\(cancel?.keyEquivalent == "\u{1b}")）")
+               "I-64 really clicking 'Empty' opens the in-window confirmation, Return does not trigger emptying (alert=\(presented) Return harmless=\(enterHarmless) empty key=\(confirm?.keyEquivalent.isEmpty == true ? "none" : "set") cancel key=Esc:\(cancel?.keyEquivalent == "\u{1b}"))")
         if let sheet { capture(sheet, "31b-trash-confirmation") }
 
         let cancelled = cancel != nil
@@ -2762,7 +2762,7 @@ enum UISelfTest {
         let after = Set((try? fs.contentsOfDirectory(atPath: TrashLocation.userTrash.path)) ?? [])
         let kept = (try? Data(contentsOf: trashed.appendingPathComponent("keep.txt"))) == payload
         record(cancelled && dismissed && before == after && kept,
-               "I-64 取消清倒不删除任何项目（真点取消=\(cancelled) 已关闭=\(dismissed) 项目未变=\(before == after) 夹具内容未变=\(kept)）")
+               "I-64 cancelling Empty deletes nothing (really clicked Cancel=\(cancelled) closed=\(dismissed) items unchanged=\(before == after) fixture content unchanged=\(kept))")
 
         pane.beginPathEditing()
         let hiddenWhileEditing = !pane.uiTestEmptyTrashButtonVisible && pane.uiTestEmptyTrashButtonWidth == 0
@@ -2770,19 +2770,19 @@ enum UISelfTest {
         window.contentView?.layoutSubtreeIfNeeded()
         let backAfterEditing = pane.uiTestEmptyTrashButtonVisible
         record(hiddenWhileEditing && backAfterEditing,
-               "I-64 编辑地址时「清倒」钮收起、退出编辑后回来（编辑中隐藏=\(hiddenWhileEditing) 退出后显示=\(backAfterEditing)）")
+               "I-64 'Empty' button hides while editing the address and returns after (hidden while editing=\(hiddenWhileEditing) shown after=\(backAfterEditing))")
 
         pane.navigate(to: trashed)
         _ = await pollFS { samePath(pane.uiTestCurrentURL, trashed) }
         let hiddenInSubfolder = !pane.uiTestEmptyTrashButtonVisible && !pane.uiTestClickEmptyTrashButton()
         record(hiddenInSubfolder,
-               "I-64 废纸篓子文件夹里不显示「清倒」（自建子目录隐藏且不可点=\(hiddenInSubfolder)）")
+               "I-64 Trash subfolder does not show 'Empty' (own subfolder hidden and unclickable=\(hiddenInSubfolder))")
         pane.navigate(to: home)
         _ = await pollFS { samePath(pane.uiTestCurrentURL, home) }
         wc.coordinator.putBack([trashed])
         let restored = await pollFS { fs.fileExists(atPath: folder.appendingPathComponent("keep.txt").path) }
         record(restored && !fs.fileExists(atPath: trashed.path),
-               "I-64 子目录夹具放回原处（放回=\(restored) 废纸篓无残留=\(!fs.fileExists(atPath: trashed.path))）")
+               "I-64 subfolder fixture put back (put back=\(restored) nothing left in Trash=\(!fs.fileExists(atPath: trashed.path)))")
         if let ledger = wc.coordinator.trashLedger {
             await ledger.forget([trashed])
         }
@@ -2791,13 +2791,13 @@ enum UISelfTest {
     private static func runBreadcrumbHitScenario(wc: MainWindowController, window: NSWindow) async {
         let fs = FileManager.default
         let pane = wc.grid.activePane
-        // ── 场景 I-61：面包屑段命中盒占满地址栏全高 + 段名左右留余量 ──────────────
-        // 用户原话「上方地址栏比如要点击到对应文件夹的正中心才会跳转，偏离一点都无法跳转，
-        // 而是（进入）输入模式」。根因：place() 把 frame 高度收成 intrinsicContentSize.height
-        // 再垂直居中，段 14pt / chevron 6.5pt 躺在 20pt 的栏里，上下都是死区，
-        // 点进死区就穿透到 BreadcrumbBar.mouseDown → onBeginEditing。
-        // 断言必须打在**命中区**（走 AppKit 自己派发 mouseDown 用的 NSView.hitTest），
-        // 只验 frame 的断言把 place() 改回矮盒照样能算对数，验不出「点不到」。
+        // ── Scenario I-61: breadcrumb segment hit boxes fill the address bar's full height + hit margin around segment names ──────────────
+        // User's words: "in the address bar you must click the dead center of a folder for it to navigate, a little off and it does not,
+        // it goes into typing mode instead". Root cause: place() shrank the frame height to intrinsicContentSize.height
+        // and centered vertically; the 14pt segment / 6.5pt chevron sit in a 20pt bar with dead zones above and below,
+        // and a click there falls through to BreadcrumbBar.mouseDown → onBeginEditing.
+        // The assertion must hit the **hit area** (through NSView.hitTest, which AppKit itself uses to dispatch mouseDown);
+        // a frame-only assertion still computes fine if place() reverts to short boxes and cannot catch "cannot be clicked".
         do {
             let token = String(UUID().uuidString.prefix(8))
             let base = fs.temporaryDirectory
@@ -2805,7 +2805,7 @@ enum UISelfTest {
             let deep = base.appendingPathComponent("alpha", isDirectory: true)
                 .appendingPathComponent("beta", isDirectory: true)
             try? fs.createDirectory(at: deep, withIntermediateDirectories: true)
-            record(assertSandboxed(deep), "沙箱守卫[I-61]: 命中盒夹具在自建临时目录内")
+            record(assertSandboxed(deep), "Sandbox guard [I-61]: hit box fixture inside own temp directory")
 
             let bc = pane.uiTestBreadcrumb
             pane.uiTestEndPathEditing()
@@ -2817,43 +2817,43 @@ enum UISelfTest {
             let h = bc.bounds.height
             let vis = bc.uiTestVisibleSegments
 
-            // ① 段命中盒占满全高：栏顶栏底两个极端 y 都必须命中段按钮本身
+            // ① segment hit box fills the full height: both extreme y values at bar top and bottom must hit the segment button itself
             if let last = vis.last {
                 let f = last.frame
                 let kLow = bc.uiTestHitKind(at: NSPoint(x: f.midX, y: 1))
                 let kHigh = bc.uiTestHitKind(at: NSPoint(x: f.midX, y: h - 1))
-                // 反空断言：没铺过版/零高的栏一律不许通过
+                // Anti-vacuous assertion: a bar never laid out or of zero height must not pass
                 record(kLow == .segment && kHigh == .segment
                        && vis.count >= 2 && h >= 16
                        && f.minY == 0 && f.height == h,
-                       "I-61 段命中盒占满地址栏全高（y=1 命中=\(kLow.rawValue) y=\(Int(h) - 1) 命中=\(kHigh.rawValue) 段frame=\(f) 条高=\(h)）")
+                       "I-61 segment hit box fills address bar height (y=1 hit=\(kLow.rawValue) y=\(Int(h) - 1) hit=\(kHigh.rawValue) segment frame=\(f) bar height=\(h))")
             } else {
-                record(false, "I-61 段命中盒占满地址栏全高（无可见段）")
+                record(false, "I-61 segment hit box fills address bar height (no visible segment)")
             }
 
-            // ② chevron 命中盒占满全高：它紧贴每个文件夹名右侧，是最大的一块穿透区（13.5/20）
+            // ② chevron hit box fills the full height: it hugs the right of every folder name and is the biggest fall-through area (13.5/20)
             if let cf = bc.uiTestVisibleChevronFrames.last {
                 let kLow = bc.uiTestHitKind(at: NSPoint(x: cf.midX, y: 1))
                 let kHigh = bc.uiTestHitKind(at: NSPoint(x: cf.midX, y: h - 1))
                 record(kLow == .chevron && kHigh == .chevron && cf.minY == 0 && cf.height == h,
-                       "I-61 箭头命中盒占满地址栏全高（y=1 命中=\(kLow.rawValue) y=\(Int(h) - 1) 命中=\(kHigh.rawValue) 箭头frame=\(cf)）")
+                       "I-61 chevron hit box fills address bar height (y=1 hit=\(kLow.rawValue) y=\(Int(h) - 1) hit=\(kHigh.rawValue) chevron frame=\(cf))")
             } else {
-                record(false, "I-61 箭头命中盒占满地址栏全高（无可见箭头）")
+                record(false, "I-61 chevron hit box fills address bar height (no visible chevron)")
             }
 
-            // ③ 段名左右留命中余量：不止验宽度算对，还要验余量里**真的**命中这一段
-            //   （余量之内、字形之外的那个 x，改前落在前一个 chevron 上）
+            // ③ hit margin around segment names: beyond the width math, verify the margin **really** hits this segment
+            //   (the x inside the margin but outside the glyphs used to land on the previous chevron)
             if let last = vis.last, let gw = bc.uiTestLastSegmentGlyphWidth {
                 let f = last.frame
                 let padPoint = NSPoint(x: f.midX - gw / 2 - 2, y: h / 2)
                 let kPad = bc.uiTestHitKind(at: padPoint)
                 record(f.width == BreadcrumbBar.segmentHitWidth(glyphWidth: gw) && kPad == .segment,
-                       "I-61 段名左右留命中余量（命中宽 \(f.width) == 字形 \(gw) + \(BreadcrumbBar.uiTestSegHitPadTotal)，余量内命中=\(kPad.rawValue)）")
+                       "I-61 segment name keeps hit margin (hit width \(f.width) == glyphs \(gw) + \(BreadcrumbBar.uiTestSegHitPadTotal), hit inside margin=\(kPad.rawValue))")
             } else {
-                record(false, "I-61 段名左右留命中余量（取不到段或字形宽）")
+                record(false, "I-61 segment name keeps hit margin (cannot get segment or glyph width)")
             }
 
-            // ④ 闭环：在**过去是死区**的 y=1 上命中并真的导航（而不是掉进输入模式）
+            // ④ round trip: hit at y=1, **formerly a dead zone**, and really navigate (rather than fall into typing mode)
             if vis.count >= 2 {
                 let parent = vis[vis.count - 2]
                 let editingBefore = pane.uiTestIsPathEditing
@@ -2862,16 +2862,16 @@ enum UISelfTest {
                 let landed = pane.uiTestCurrentURL.standardizedFileURL.path
                 let want = parent.url.standardizedFileURL.path
                 record(fired != nil && landed == want && !editingBefore && !pane.uiTestIsPathEditing,
-                       "I-61 全高命中点触发导航（非编辑模式）（y=1 命中段=\(fired?.lastPathComponent ?? "nil") 落点=\(pane.uiTestCurrentURL.lastPathComponent) 编辑中=\(pane.uiTestIsPathEditing)）")
+                       "I-61 full-height hit point triggers navigation (not edit mode) (y=1 hit segment=\(fired?.lastPathComponent ?? "nil") landed=\(pane.uiTestCurrentURL.lastPathComponent) editing=\(pane.uiTestIsPathEditing))")
                 pane.navigate(to: deep)
                 try? await Task.sleep(for: .milliseconds(300))
                 window.contentView?.layoutSubtreeIfNeeded()
                 bc.layoutSubtreeIfNeeded()
             } else {
-                record(false, "I-61 全高命中点触发导航（非编辑模式）（可见段不足 2）")
+                record(false, "I-61 full-height hit point triggers navigation (not edit mode) (fewer than 2 visible segments)")
             }
 
-            // ⑤ 「点空白进编辑」不能被这次修复吃掉：内容右缘之右仍是空白，且真能进编辑
+            // ⑤ "click blank to edit" must survive this fix: right of the content edge is still blank, and it really enters editing
             let blank = NSPoint(x: bc.bounds.width - 4, y: h / 2)
             let kBlank = bc.uiTestHitKind(at: blank)
             let rightOK = bc.uiTestContentRight <= bc.bounds.width - 8
@@ -2886,16 +2886,16 @@ enum UISelfTest {
             try? await Task.sleep(for: .milliseconds(200))
             let entered = pane.uiTestIsPathEditing
             record(kBlank == .bar && rightOK && entered,
-                   "I-61 内容右缘之右仍是空白点击进编辑（右缘 \(Int(bc.uiTestContentRight)) 条宽 \(Int(bc.bounds.width)) 命中=\(kBlank.rawValue) 进编辑=\(entered)）")
+                   "I-61 right of the content edge is still blank and click enters editing (right edge \(Int(bc.uiTestContentRight)) bar width \(Int(bc.bounds.width)) hit=\(kBlank.rawValue) entered editing=\(entered))")
             pane.uiTestEndPathEditing()
 
-            // ⑥ 折叠分支的「装得下底线」：把栏压到连 root+「…」+末段这个种子都装不下的宽度，
-            //   内容右缘仍不许越过栏宽，且所有被折叠的层级仍在「…」菜单里可达。
-            //   段宽 +2×segHitPadX 把这个阈值抬高了，旧代码在此宽度下会直接溢出。
+            // ⑥ the collapse branch's "must fit" floor: squeeze the bar below the width of even the root + '…' + last segment seed;
+            //   the content right edge still must not pass the bar width, and all collapsed levels stay reachable in the '…' menu.
+            //   Segment width +2×segHitPadX raised this threshold; the old code would overflow outright at this width.
             let savedW = bc.frame.width
-            // 48pt：种子成本实测 104pt（根段 16 + 箭头 16 + 「…」20 + 末段 36 + 箭头 16），
-            // 可用宽只有 48-16=32，必然走到底线分支。
-            // 第一版用了 120 → 种子恰好装得下，撤掉底线照样绿（假绿，已修正）。
+            // 48pt: the seed cost measures 104pt (root segment 16 + chevron 16 + '…' 20 + last segment 36 + chevron 16),
+            // available width is only 48-16=32, which must reach the floor branch.
+            // The first version used 120 → the seed just fit and removing the floor stayed green (false green, fixed).
             bc.setFrameSize(NSSize(width: 48, height: bc.frame.height))
             bc.layout()
             let narrowRight = bc.uiTestContentRight
@@ -2904,25 +2904,25 @@ enum UISelfTest {
             let menuCount = bc.uiTestEllipsisMenu()?.items.count ?? -1
             record(narrowW == 48 && narrowRight <= narrowW
                    && collapsedCount > 0 && menuCount == collapsedCount,
-                   "I-61 极窄栏仍不溢出且层级全可达（内容右缘 \(Int(narrowRight)) ≤ 栏宽 \(Int(narrowW))，折叠 \(collapsedCount) 菜单 \(menuCount)）")
+                   "I-61 very narrow bar still does not overflow and all levels are reachable (content right edge \(Int(narrowRight)) ≤ bar width \(Int(narrowW)), collapsed \(collapsedCount) menu \(menuCount))")
             bc.setFrameSize(NSSize(width: savedW, height: bc.frame.height))
             bc.layout()
 
-            // ⑦ 每级总宽必须与改前一致：段的水平命中余量是从 chevron 槽里让出来的
-            //   （16→8），不是加在每级上。否则折叠阈值每级右移 8pt，同宽度下少显一层路径
-            //   （审查实测 dualH 600 窗、侧栏折叠、4 层路径：改前全展示、+8 后退化成折叠）。
+            // ⑦ total width per level must match the pre-change value: the segment's horizontal hit margin was taken from the chevron slot
+            //   (16→8), not added per level. Otherwise the collapse threshold shifts right 8pt per level and one fewer path level shows at the same width
+            //   (review measured dualH 600 window, sidebar collapsed, 4-level path: fully shown before, collapsed after +8).
             if let last = vis.last, let cf2 = bc.uiTestVisibleChevronFrames.last,
                let gw2 = bc.uiTestLastSegmentGlyphWidth {
                 let levelW = last.frame.width + cf2.width
                 record(levelW == gw2 + 16 && cf2.width == 8,
-                       "I-61 每级总宽与改前一致（段 \(last.frame.width) + 箭头 \(cf2.width) == 字形 \(gw2) + 16）")
+                       "I-61 total width per level matches the pre-change value (segment \(last.frame.width) + chevron \(cf2.width) == glyphs \(gw2) + 16)")
             } else {
-                record(false, "I-61 每级总宽与改前一致（取不到段/箭头/字形宽）")
+                record(false, "I-61 total width per level matches the pre-change value (cannot get segment/chevron/glyph width)")
             }
 
-            // ⑧ 点非活动窗格的地址栏要**激活该窗格**：旧版只导航不激活，
-            //   窗口标题 / 甲板动作钮校验 / 状态栏全停在旧窗格上（列表视图早就经
-            //   onInteract 报了活，只有地址栏漏了）。
+            // ⑧ clicking an inactive pane's address bar must **activate that pane**: the old version navigated without activating,
+            //   leaving the window title / deck action button validation / status bar on the old pane (the list view has long reported activity via
+            //   onInteract calls; only the address bar missed it).
             wc.grid.apply(layout: .dualH)
             try? await Task.sleep(for: .milliseconds(300))
             window.contentView?.layoutSubtreeIfNeeded()
@@ -2941,14 +2941,14 @@ enum UISelfTest {
                 }
                 try? await Task.sleep(for: .milliseconds(300))
                 record(before == 1 && fired != nil && wc.grid.activePaneIndex == 0,
-                       "I-61 点非活动窗格地址栏 → 该窗格被激活（点前活动 \(before) 点后 \(wc.grid.activePaneIndex) 命中段=\(fired?.lastPathComponent ?? "nil")）")
+                       "I-61 clicking an inactive pane's address bar → that pane activates (active before \(before) after \(wc.grid.activePaneIndex) hit segment=\(fired?.lastPathComponent ?? "nil"))")
             } else {
-                record(false, "I-61 点非活动窗格地址栏 → 该窗格被激活（双栏未生效）")
+                record(false, "I-61 clicking an inactive pane's address bar → that pane activates (dual layout not applied)")
             }
             wc.grid.apply(layout: .single)
             try? await Task.sleep(for: .milliseconds(250))
 
-            // 清理（token 唯一，安全）
+            // Cleanup (token is unique, safe)
             pane.navigate(to: fs.homeDirectoryForCurrentUser)
             try? await Task.sleep(for: .milliseconds(200))
             try? fs.removeItem(at: base)
@@ -2956,7 +2956,7 @@ enum UISelfTest {
         window.makeKeyAndOrderFront(nil)
     }
 
-    // MARK: M26 分组场景（列表「年/月」分组 + 折叠 + 组过滤 + 跨排序选中保持 + 开关）
+    // MARK: M26 grouping scenario (list "year/month" grouping + collapse + group filter + selection kept across sorts + toggle)
 
     private static func runGroupingScenario(wc: MainWindowController, window: NSWindow) async {
         let fs = FileManager.default
@@ -2964,13 +2964,13 @@ enum UISelfTest {
         let token = String(UUID().uuidString.prefix(8))
         let box = fs.temporaryDirectory
             .appendingPathComponent("nspace-uitest-m26-\(token)", isDirectory: true)
-        // M29 相对分桶：注入固定时钟 now=2026-06-17 12:00，夹具落在 3 个不同相对桶（各 2 文件，共 6）——
-        // 往年(2025-05-10) / 本月更早(2026-06-02) / 今天(2026-06-17)。今天/昨天/周/月/年判定全经 nowProvider
-        // （见 FileGrouping），故与真实系统时钟无关、确定性可断言。
+        // M29 relative buckets: inject a fixed clock now=2026-06-17 12:00, fixtures land in 3 different relative buckets (2 files each, 6 in total):
+        // prior years (2025-05-10) / earlier this month (2026-06-02) / today (2026-06-17). Today/yesterday/week/month/year checks all go through nowProvider
+        // (see FileGrouping), so this is independent of the real system clock and deterministically assertable.
         let fixedNow = cal.date(from: DateComponents(year: 2026, month: 6, day: 17, hour: 12))!
         let priorNowProvider = FileGrouping.nowProvider
         FileGrouping.nowProvider = { fixedNow }
-        // 升序排序后组序 = [往年, 本月, 今天]
+        // After ascending sort, group order = [prior years, this month, today]
         let bucketDates: [Date] = [
             cal.date(from: DateComponents(year: 2025, month: 5, day: 10, hour: 9))!,   // g5-2025
             cal.date(from: DateComponents(year: 2026, month: 6, day: 2, hour: 9))!,     // g3-month
@@ -2989,9 +2989,9 @@ enum UISelfTest {
             }
         }
         let gSandbox = created.allSatisfy { assertSandboxed($0) }
-        record(gSandbox, "沙箱守卫[m26]: 分组夹具 6 文件在自建夹具内")
+        record(gSandbox, "Sandbox guard [m26]: grouping fixture of 6 files inside own fixture")
 
-        // 前置：分组开、日期排序
+        // Preconditions: grouping on, date sort
         let hadGrouping = Preferences.listGrouping
         Preferences.listGrouping = true
         let pane = wc.grid.activePane
@@ -3000,12 +3000,12 @@ enum UISelfTest {
         pane.navigate(to: box)
         _ = await pollFS { pane.activeTab.model.items.count == 6 }
         let listVC = pane.activeTab.listVC
-        // 按修改日期升序排序（走列头同一 sortDescriptors 链路）
+        // Sort ascending by modification date (same sortDescriptors chain as the column header)
         listVC.tableView.sortDescriptors = [NSSortDescriptor(key: "dateModified", ascending: true)]
         _ = await pollFS { listVC.uiTestGroupHeaderCount == 3 }
         try? await Task.sleep(for: .milliseconds(200))
 
-        // ① 组头行数==3 且标题为相对桶（往年/本月/今天）、各组项数正确
+        // ① header row count == 3, titles are the relative buckets (prior years/this month/today), per-group item counts correct
         let groups = listVC.uiTestGroups
         let headerCount = listVC.uiTestGroupHeaderCount
         let expectTitles = [
@@ -3016,28 +3016,28 @@ enum UISelfTest {
         let titlesOK = groups.map(\.title) == expectTitles
         let countsOK = groups.map(\.count) == [2, 2, 2]
         record(headerCount == 3 && titlesOK && countsOK && listVC.uiTestItemRowCount == 6,
-               "M26 分组组头数==3 相对桶标题正确各组2项（头\(headerCount) 标题\(groups.map(\.title)) 期望\(expectTitles) 项数\(groups.map(\.count))）")
+               "M26 group header count == 3, relative bucket titles correct, 2 items per group (headers \(headerCount) titles \(groups.map(\.title)) expected \(expectTitles) items \(groups.map(\.count)))")
         capture(window, "31-grouping")
 
-        // ② 组头是**印在背景条上的标题**，不是可伸缩控件（用户要求：像 QSpace）。
-        //   验真实效果：点组头不改变任何行（不折叠、也不把选中跳到下一行），组头本身也不可选。
+        // ② a group header is **a title printed on a background bar**, not a collapsible control (user request: like QSpace).
+        //   Verify the real effect: clicking a header changes no row (no collapse, no selection jump to the next row), and the header itself cannot be selected.
         let firstKey = listVC.uiTestGroupKeys.first ?? ""
         let rowsBefore = listVC.uiTestRowCount
         let itemsBefore = listVC.uiTestItemRowCount
         listVC.uiTestSelectFirstItem()
         try? await Task.sleep(for: .milliseconds(120))
         let groupSelBefore = listVC.selectedURLs.map { $0.lastPathComponent }
-        listVC.uiTestClickGroupRowRaw(0)        // 走表视图真实 mouseDown 分支
+        listVC.uiTestClickGroupRowRaw(0)        // Goes through the table view's real mouseDown branch
         try? await Task.sleep(for: .milliseconds(200))
         let groupSelAfter = listVC.selectedURLs.map { $0.lastPathComponent }
         record(listVC.uiTestRowCount == rowsBefore && listVC.uiTestItemRowCount == itemsBefore
                && listVC.uiTestGroupHeaderCount == 3 && groupSelBefore == groupSelAfter && !groupSelBefore.isEmpty
                && listVC.uiTestGroupHeaderIsBackgroundBar,
-               "M26 组头是背景条不可折叠（行数 \(rowsBefore)→\(listVC.uiTestRowCount) 项行 \(itemsBefore)→\(listVC.uiTestItemRowCount) 选中 \(groupSelBefore)→\(groupSelAfter) 有底色=\(listVC.uiTestGroupHeaderIsBackgroundBar)）")
+               "M26 group header is a background bar, not collapsible (rows \(rowsBefore)→\(listVC.uiTestRowCount) item rows \(itemsBefore)→\(listVC.uiTestItemRowCount) selection \(groupSelBefore)→\(groupSelAfter) has background=\(listVC.uiTestGroupHeaderIsBackgroundBar))")
         capture(window, "31b-group-bar")
         let expandedBack = listVC.uiTestItemRowCount == 6
 
-        // ③ 仅显示此组 → 表中仅剩该组行且过滤提示可见；显示全部还原
+        // ③ show only this group → the table keeps only that group's rows and the filter hint is visible; show all restores
         listVC.applyGroupFilter(key: firstKey)
         try? await Task.sleep(for: .milliseconds(200))
         let onlyOK = listVC.uiTestGroupHeaderCount == 1 && listVC.uiTestItemRowCount == 2
@@ -3047,10 +3047,10 @@ enum UISelfTest {
         try? await Task.sleep(for: .milliseconds(200))
         let restoredOK = listVC.uiTestGroupHeaderCount == 3 && !listVC.uiTestFilterPillVisible
         record(expandedBack && onlyOK && restoredOK,
-               "M26 仅显示此组表仅剩该组+药丸可见，显示全部还原（展开回\(expandedBack) 仅剩\(onlyOK) 还原\(restoredOK)）")
+               "M26 show-only-this-group leaves that group + pill visible, show all restores (expanded back \(expandedBack) only \(onlyOK) restored \(restoredOK))")
 
-        // ④ 选中某项后跨组重排序 → 选中按 URL 仍在（I-32 语义）
-        // victim 取自「已载入的真实项 URL」（避免 /var⟷/private/var symlink 路径不匹配——同 I-32 铁律）
+        // ④ select an item, then re-sort across groups → selection stays by URL (I-32 semantics)
+        // victim comes from "loaded real item URLs" (avoids the /var⟷/private/var symlink path mismatch; same hard rule as I-32)
         let victim = listVC.model.items.count == 6 ? listVC.model.items[2].url : (created.count > 2 ? created[2] : box)
         listVC.select(urls: [victim])
         try? await Task.sleep(for: .milliseconds(150))
@@ -3060,21 +3060,21 @@ enum UISelfTest {
         try? await Task.sleep(for: .milliseconds(200))
         let selAfter = listVC.selectedURLs
         record(selBefore == [victim] && selAfter == [victim],
-               "M26 跨组重排序后选中按 URL 仍在（前\(selBefore.map(\.lastPathComponent)) 后\(selAfter.map(\.lastPathComponent))）")
+               "M26 selection stays by URL after cross-group re-sort (before \(selBefore.map(\.lastPathComponent)) after \(selAfter.map(\.lastPathComponent)))")
 
-        // ④b 图标视图分组（M26 v2）：同夹具切图标视图，section=组、折叠、过滤、选中跨 rebuild 保持
+        // ④b icon view grouping (M26 v2): same fixture in icon view, section = group, collapse, filter, selection kept across rebuild
         pane.setViewMode(.icons)
         try? await Task.sleep(for: .milliseconds(300))
         if let iconVC = pane.activeTab.iconVC {
             _ = await pollFS { iconVC.uiTestSectionCount == 3 }
             let iTitles = iconVC.uiTestGroupTitles
             record(iconVC.uiTestSectionCount == 3 && Set(iTitles) == Set(expectTitles),
-                   "M26v2 图标视图分组 section==3 相对桶标题正确（\(iTitles)）")
+                   "M26v2 icon view grouping section==3 relative bucket titles correct (\(iTitles))")
             capture(window, "31d-icon-grouping")
-            // 图标视图同样：组头是背景条，不折叠（不留"一半可折一半不可折"的分裂状态）
+            // Same for icon view: the group header is a background bar and does not collapse (no half-collapsible split state)
             record(iconVC.uiTestSectionCount == 3 && iconVC.uiTestGroupHeaderIsBackgroundBar
                    && !iconVC.uiTestGroupHeaderIsClickable,
-                   "M26v2 图标视图组头是背景条不可折叠（section=\(iconVC.uiTestSectionCount) 有底色=\(iconVC.uiTestGroupHeaderIsBackgroundBar) 可点=\(iconVC.uiTestGroupHeaderIsClickable)）")
+                   "M26v2 icon view group header is a background bar, not collapsible (section=\(iconVC.uiTestSectionCount) has background=\(iconVC.uiTestGroupHeaderIsBackgroundBar) clickable=\(iconVC.uiTestGroupHeaderIsClickable))")
             iconVC.uiTestFilterFirstGroup()
             try? await Task.sleep(for: .milliseconds(200))
             let iFilterOK = iconVC.uiTestSectionCount == 1 && iconVC.uiTestFilterPillVisible
@@ -3082,33 +3082,33 @@ enum UISelfTest {
             try? await Task.sleep(for: .milliseconds(200))
             let iRestore = iconVC.uiTestSectionCount == 3 && !iconVC.uiTestFilterPillVisible
             record(iFilterOK && iRestore,
-                   "M26v2 图标视图仅显示此组+药丸，显示全部还原（仅剩\(iFilterOK) 还原\(iRestore)）")
-            // 选中按 URL 跨 rebuild 保持（分组映射不丢选中，I-32 语义在图标视图成立）
+                   "M26v2 icon view show-only-this-group + pill, show all restores (only \(iFilterOK) restored \(iRestore))")
+            // Selection stays by URL across rebuild (grouping map does not drop selection, I-32 semantics hold in icon view)
             let ivictim = iconVC.model.items.count == 6 ? iconVC.model.items[0].url : box
             iconVC.select(urls: [ivictim])
             try? await Task.sleep(for: .milliseconds(150))
             let iSelBefore = iconVC.selectedURLs
-            iconVC.uiTestClearFilter()   // 触发一次 rebuild+reload
+            iconVC.uiTestClearFilter()   // Triggers one rebuild+reload
             try? await Task.sleep(for: .milliseconds(150))
             record(iSelBefore == [ivictim] && iconVC.selectedURLs == [ivictim],
-                   "M26v2 图标视图选中按 URL 跨 rebuild 保持")
+                   "M26v2 icon view selection stays by URL across rebuild")
         } else {
-            record(false, "M26v2 图标视图分组 section==3 相对桶标题正确")
-            record(false, "M26v2 图标视图折叠首组")
-            record(false, "M26v2 图标视图仅显示此组+药丸，显示全部还原")
-            record(false, "M26v2 图标视图选中按 URL 跨 rebuild 保持")
+            record(false, "M26v2 icon view grouping section==3 relative bucket titles correct")
+            record(false, "M26v2 icon view collapses first group")
+            record(false, "M26v2 icon view show-only-this-group + pill, show all restores")
+            record(false, "M26v2 icon view selection stays by URL across rebuild")
         }
-        pane.setViewMode(.list)   // 切回列表供 ⑤ 断言
+        pane.setViewMode(.list)   // Back to list for the ⑤ assertion
         try? await Task.sleep(for: .milliseconds(250))
 
-        // ⑤ 关闭分组 → 组头行数==0 恢复单线
+        // ⑤ turn grouping off → header count == 0, back to a single flat list
         Preferences.listGrouping = false
         NotificationCenter.default.post(name: .nspaceGroupingChanged, object: nil)
         try? await Task.sleep(for: .milliseconds(250))
         record(listVC.uiTestGroupHeaderCount == 0 && listVC.uiTestRowCount == 6 && !listVC.uiTestGroupingActive,
-               "M26 关闭分组组头数==0 恢复单线（头\(listVC.uiTestGroupHeaderCount) 行\(listVC.uiTestRowCount)）")
+               "M26 grouping off: header count == 0, back to flat list (headers \(listVC.uiTestGroupHeaderCount) rows \(listVC.uiTestRowCount))")
 
-        // 收尾：恢复偏好/排序/时钟、清夹具
+        // Wrap up: restore preference/sort/clock, clear the fixture
         Preferences.listGrouping = hadGrouping
         FileGrouping.nowProvider = priorNowProvider
         NotificationCenter.default.post(name: .nspaceGroupingChanged, object: nil)
@@ -3120,12 +3120,12 @@ enum UISelfTest {
         window.makeKeyAndOrderFront(nil)
     }
 
-    /// M29 相对时间纯逻辑：固定时钟 now=2026-06-17 下 6 桶 keyTitle 落位 + 日期列相对格式
-    /// （今天/昨天带前缀、本年隐年份、仅非本年显年份）。纯函数确定性验证，不碰文件系统/UI。
+    /// M29 relative time pure logic: with fixed clock now=2026-06-17, 6 bucket keyTitle placement + date column relative format
+    /// (today/yesterday prefixed, year hidden this year, shown only for other years). Deterministic pure-function check, no file system or UI.
     private static func runRelativeTimeUnit() {
         let cal = Calendar.current
         guard let now = cal.date(from: DateComponents(year: 2026, month: 6, day: 17, hour: 12)) else {
-            record(false, "M29 相对分桶 6 桶 keyTitle 落位正确"); record(false, "M29 日期列本年隐年份/非本年显年份"); return
+            record(false, "M29 relative buckets: 6 bucket keyTitle placement correct"); record(false, "M29 date column hides year this year, shows it otherwise"); return
         }
         let prior = FileGrouping.nowProvider
         FileGrouping.nowProvider = { now }
@@ -3139,34 +3139,34 @@ enum UISelfTest {
                      name: "x", isDirectory: false, isPackage: false, isSymlink: false,
                      isHidden: false, size: 0, modified: dt, created: dt, added: dt, contentTypeID: nil)
         }
-        // 6 桶：今天/昨天/本周/本月更早/今年更早/往年
+        // 6 buckets: today/yesterday/this week/earlier this month/earlier this year/prior years
         let cases: [(Date, String)] = [
-            (date(2026, 6, 17), "g0-today"),        // 同日
+            (date(2026, 6, 17), "g0-today"),        // same day
             (date(2026, 6, 16), "g1-yesterday"),    // now-1d
-            (date(2026, 6, 15), "g2-week"),         // 同周非今昨（周一/二/三同周，跨 locale 稳）
-            (date(2026, 6, 2),  "g3-month"),        // 同月非本周
-            (date(2026, 2, 10), "g4-year-earlier"), // 同年非本月
-            (date(2025, 5, 10), "g5-2025"),         // 往年按年
+            (date(2026, 6, 15), "g2-week"),         // same week, not today or yesterday (Mon/Tue/Wed in one week, stable across locales)
+            (date(2026, 6, 2),  "g3-month"),        // same month, not this week
+            (date(2026, 2, 10), "g4-year-earlier"), // same year, not this month
+            (date(2025, 5, 10), "g5-2025"),         // prior years, by year
         ]
         let keys = cases.map { FileGrouping.keyTitle(for: item($0.0), key: .dateModified).key }
         let expected = cases.map { $0.1 }
-        record(keys == expected, "M29 相对分桶 6 桶 keyTitle 落位正确（得\(keys) 期望\(expected)）")
+        record(keys == expected, "M29 relative buckets: 6 bucket keyTitle placement correct (got \(keys) expected \(expected))")
 
-        // 日期列相对格式（Formatters.relativeDate，now 显式注入）
+        // Date column relative format (Formatters.relativeDate, now injected explicitly)
         let today = Formatters.relativeDate(date(2026, 6, 17), now: now)
         let yst = Formatters.relativeDate(date(2026, 6, 16), now: now)
-        let thisYear = Formatters.relativeDate(date(2026, 2, 10), now: now)   // 本年 → 不含 "2026"
-        let otherYear = Formatters.relativeDate(date(2025, 5, 10), now: now)  // 往年 → 含 "2025"
+        let thisYear = Formatters.relativeDate(date(2026, 2, 10), now: now)   // This year → no "2026"
+        let otherYear = Formatters.relativeDate(date(2025, 5, 10), now: now)  // Prior year → has "2025"
         let todayOK = today.hasPrefix(L10n.t("date.today"))
         let ystOK = yst.hasPrefix(L10n.t("date.yesterday"))
-        let thisYearNoYear = !thisYear.contains("2026")     // 本年隐年份（用户点名核心）
-        let otherYearHasYear = otherYear.contains("2025")   // 非本年显年份
+        let thisYearNoYear = !thisYear.contains("2026")     // Year hidden this year (the core the user named)
+        let otherYearHasYear = otherYear.contains("2025")   // Year shown for other years
         record(todayOK && ystOK && thisYearNoYear && otherYearHasYear,
-               "M29 日期列本年隐年份/非本年显年份（今\(today) 昨\(yst) 本年\(thisYear) 往年\(otherYear)）")
+               "M29 date column hides year this year, shows it otherwise (today \(today) yesterday \(yst) this year \(thisYear) prior \(otherYear))")
 
-        // I-49：foldersFirst 打乱首次出现顺序时，组仍按相对时间新近排（今天最新→最前）。
-        // 模拟 items=[文件夹段 desc][文件段 desc]：文件夹落在昨天/本周，文件落在今天——旧"首次出现"逻辑会把
-        // 只含文件的"今天"桶挤到文件夹建立的桶序之后（用户报"今天在最底下"）。新逻辑按 recencyRank 排，今天最前。
+        // I-49: when foldersFirst scrambles first-appearance order, groups still sort by relative recency (today newest → first).
+        // Simulated items=[folders desc][files desc]: folders on yesterday/this week, files on today. The old "first appearance" logic pushed
+        // the files-only "today" bucket behind the folder-established order (user report: "today is at the very bottom"). New logic sorts by recencyRank, today first.
         func dirItem(_ dt: Date) -> FileItem {
             FileItem(url: URL(fileURLWithPath: "/tmp/nspace-i49-\(dt.timeIntervalSinceReferenceDate)"),
                      name: "d", isDirectory: true, isPackage: false, isSymlink: false,
@@ -3175,13 +3175,13 @@ enum UISelfTest {
         let scrambled = [dirItem(date(2026, 6, 16)), dirItem(date(2026, 6, 15)), item(date(2026, 6, 17))]
         let gsDesc = FileGrouping.buckets(scrambled, key: .dateModified, ascending: false).map(\.key)
         record(gsDesc.first == "g0-today",
-               "I-49 foldersFirst 下组仍按新近排：今天(仅文件)在最前不被文件夹桶挤到末尾（得 \(gsDesc)）")
+               "I-49 foldersFirst groups still sort by recency: today (files only) is first, not pushed to the end by folder buckets (got \(gsDesc))")
     }
 
-    /// I-44：第三方"打开文件位置"（Antigravity 等经 activateFileViewerSelectingURLs → openFileURLs →
-    /// openWindow(selecting:)）此前 select 参数被整段丢弃，只到父目录不选中文件。验证：
-    /// ① openWindow(selecting:) 列表视图真选中目标；② pane.reveal 在图标视图（非 listVC）也真选中。
-    /// 沙箱铁律：只动自建 nspace-uitest-reveal-* 夹具。
+    /// I-44: third-party "open file location" (Antigravity etc via activateFileViewerSelectingURLs → openFileURLs →
+    /// openWindow(selecting:)) used to drop the select argument entirely, reaching the parent without selecting the file. Verifies:
+    /// ① openWindow(selecting:) really selects the target in list view; ② pane.reveal really selects in icon view too (not listVC).
+    /// Sandbox hard rule: touch only self-created nspace-uitest-reveal-* fixtures.
     private static func runRevealSelectScenario(delegate: AppDelegate) async {
         let fs = FileManager.default
         let token = String(UUID().uuidString.prefix(8))
@@ -3195,19 +3195,19 @@ enum UISelfTest {
             files.append(f)
         }
         let target = files[2]
-        record(files.allSatisfy { assertSandboxed($0) }, "沙箱守卫[I-44]: reveal 夹具 4 文件在自建夹具内")
+        record(files.allSatisfy { assertSandboxed($0) }, "Sandbox guard [I-44]: reveal fixture of 4 files inside own fixture")
 
-        // ① 模拟第三方"打开文件位置"默认落点（externalOpenTarget=newTab → openWindow(selecting:)）。
-        // select 参数此前被整段丢弃——此处验证它真被接通并在默认视图落选中（视图模式无关，不受用户默认视图影响）
+        // ① simulate the default landing of a third-party "open file location" (externalOpenTarget=newTab → openWindow(selecting:)).
+        // The select argument used to be dropped entirely; this verifies it is wired up and selects in the default view (independent of view mode and the user's default view)
         let wc = delegate.openWindow(at: box, selecting: target)
         let pane = wc.grid.activePane
         _ = await pollFS { pane.activeTab.model.items.count == 4 }
         _ = await pollFS { pane.currentSelectionCount == 1 }
         record(pane.currentSelectionCount == 1,
-               "I-44 openWindow(selecting:) 真定位选中目标文件（select 参数不再被丢弃，选中数=\(pane.currentSelectionCount)）")
+               "I-44 openWindow(selecting:) really locates and selects the target file (select argument no longer dropped, selected=\(pane.currentSelectionCount))")
         if let w = wc.window { capture(w, "32-reveal") }
 
-        // ② 列表视图 reveal 分派：navigate 触发异步载入 + pending 选中落位
+        // ② list view reveal dispatch: navigate triggers the async load + pending selection lands
         pane.setViewMode(.list)
         try? await Task.sleep(for: .milliseconds(200))
         pane.navigate(to: box)
@@ -3215,21 +3215,21 @@ enum UISelfTest {
         _ = await pollFS { pane.activeTab.listVC.selectedURLs.count == 1 }
         let selList = pane.activeTab.listVC.selectedURLs.map(\.standardizedFileURL)
         record(selList == [target.standardizedFileURL],
-               "I-44 列表视图 reveal 真定位选中目标文件（\(selList.map(\.lastPathComponent))）")
+               "I-44 list view reveal really locates and selects the target file (\(selList.map(\.lastPathComponent)))")
 
-        // I-48：reveal 定位后表格成为 first responder → 选中显蓝色强调（否则未强调灰几乎不可见，用户报"没蓝色选中"）
+        // I-48: after reveal the table becomes first responder → selection shows blue accent (otherwise the unemphasized gray is nearly invisible; user report: "no blue selection")
         let fr = wc.window?.firstResponder
         record(fr === pane.activeTab.listVC.tableView,
-               "I-48 reveal 后表格获焦（选中显蓝色强调，非未强调灰）（firstResponder=\(type(of: fr as Any))）")
+               "I-48 reveal focuses the table (selection shows blue accent, not unemphasized gray) (firstResponder=\(type(of: fr as Any)))")
 
-        // I-45：QL 收起走淡出（sourceFrame 收起态=.zero，QL 不再"缩到图标"）、开启态=行内图标矩形（保留放大）
+        // I-45: QL dismiss fades (sourceFrame in dismiss state = .zero, QL no longer "shrinks to the icon"); open state = inline icon rect (zoom kept)
         let lvc = pane.activeTab.listVC
         let qlFade = lvc.uiTestQLSourceFrame(dismissing: true, for: target)
         let qlZoom = lvc.uiTestQLSourceFrame(dismissing: false, for: target)
         record(qlFade == .zero && qlZoom != .zero,
-               "I-45 QL 收起 sourceFrame 淡出(.zero)、开启为图标矩形缩放（收起\(NSStringFromRect(qlFade)) 开启\(NSStringFromRect(qlZoom))）")
+               "I-45 QL dismiss sourceFrame fades (.zero), open zooms from icon rect (dismiss \(NSStringFromRect(qlFade)) open \(NSStringFromRect(qlZoom)))")
 
-        // ③ 图标视图 reveal（走 iconVC 分支，非硬编码 listVC）：同 navigate+pending 落位
+        // ③ icon view reveal (via the iconVC branch, not a hardcoded listVC): same navigate + pending landing
         pane.setViewMode(.icons)
         try? await Task.sleep(for: .milliseconds(250))
         pane.navigate(to: box)
@@ -3237,18 +3237,18 @@ enum UISelfTest {
         _ = await pollFS { (pane.activeTab.iconVC?.selectedURLs.count ?? 0) == 1 }
         let selIcon = (pane.activeTab.iconVC?.selectedURLs ?? []).map(\.standardizedFileURL)
         record(selIcon == [target.standardizedFileURL],
-               "I-44 图标视图 reveal 真定位选中目标文件（视图模式感知，非硬编码 listVC）（\(selIcon.map(\.lastPathComponent))）")
+               "I-44 icon view reveal really locates and selects the target file (view-mode aware, not a hardcoded listVC) (\(selIcon.map(\.lastPathComponent)))")
 
-        // 收尾：关测试窗 + 清夹具
+        // Wrap up: close the test window + clear the fixture
         wc.window?.orderOut(nil)
         wc.window?.close()
         try? await Task.sleep(for: .milliseconds(150))
         if assertSandboxed(box) { try? fs.removeItem(at: box) }
     }
 
-    /// M28：搜索智能排序集成——两条同名（同匹配质量）命中仅 frecency 不同，验证：
-    /// 开关开 → 高 frecency 排最前（融合分接管）；开关关 → 回退到达序（frecency 不介入）。
-    /// 走真实 appendResults/rankLess 链（uiTestAppend），确定性、不碰真实引擎与用户文件。
+    /// M28: smart search ranking integration: two same-named hits (equal match quality) differ only in frecency, verifying:
+    /// toggle on → high frecency first (blended score takes over); toggle off → back to arrival order (frecency stays out).
+    /// Through the real appendResults/rankLess chain (uiTestAppend), deterministic, touching neither the real engine nor user files.
     private static func runSmartSortScenario() {
         let sp = SearchPanelController.shared
         let base = URL(fileURLWithPath: "/tmp/nspace-m28-\(UUID().uuidString.prefix(6))")
@@ -3260,26 +3260,26 @@ enum UISelfTest {
         }
         let snapshot = [b.standardizedFileURL.path: FrecencyEntry(count: 12, lastAccess: Date())]
 
-        // 智能开：B（高 frecency）排到 A 前（二者匹配质量相同 → 仅 frecency 决定）
+        // Smart on: B (high frecency) ranks before A (equal match quality → frecency alone decides)
         sp.uiTestReset(root: nil)
         sp.uiTestConfigureSmart(query: "note", snapshot: snapshot, active: true)
         sp.uiTestAppend([hit(a), hit(b)])
         let onFirst = sp.uiTestResultPaths.first
         record(onFirst == b.path,
-               "M28 智能排序开：高 frecency 命中排最前（首=\((onFirst.map { ($0 as NSString).lastPathComponent }) ?? "nil")，期望 B/note.txt）")
+               "M28 smart sort on: high frecency hit ranks first (first=\((onFirst.map { ($0 as NSString).lastPathComponent }) ?? "nil"), expected B/note.txt)")
 
-        // 智能关：回退到达序（先 append A → A 在前，不受 frecency 影响）
+        // Smart off: back to arrival order (A appended first → A leads, unaffected by frecency)
         sp.uiTestReset(root: nil)
         sp.uiTestConfigureSmart(query: "note", snapshot: snapshot, active: false)
         sp.uiTestAppend([hit(a), hit(b)])
         let offFirst = sp.uiTestResultPaths.first
         record(offFirst == a.path,
-               "M28 智能排序关：回退到达序（首=\((offFirst.map { ($0 as NSString).lastPathComponent }) ?? "nil")，期望 A/note.txt）")
+               "M28 smart sort off: back to arrival order (first=\((offFirst.map { ($0 as NSString).lastPathComponent }) ?? "nil"), expected A/note.txt)")
 
-        // ── I-74：大小写与查询一致的排前面（用户报告：「优先展示匹配大小写的，
-        // 然后后面是不匹配大小写的，但是字符一样的」）──
-        // 走 uiTestAppend 注入而不是建真文件：APFS 默认大小写不敏感，
-        // `override.md` 与 `OVERRIDE.md` 在同一目录里根本是同一个文件，建不出这个对照。
+        // ── I-74: hits matching the query's case rank first (user report: "show matching case first,
+        // then the ones with the same characters but different case") ──
+        // Injected through uiTestAppend, not real files: APFS is case-insensitive by default,
+        // `override.md` and `OVERRIDE.md` are one file in one directory, so the contrast cannot be built on disk.
         let lower = base.appendingPathComponent("C/nsoverride.md")
         let upper = base.appendingPathComponent("D/NSOVERRIDE.md")
         func mdHit(_ u: URL) -> SearchHit {
@@ -3288,37 +3288,37 @@ enum UISelfTest {
         }
         sp.uiTestReset(root: nil)
         sp.uiTestConfigureSmart(query: "nsoverride", snapshot: [:], active: true)
-        // 先 append 大写那个：若比较器没生效，到达序会让它留在首位，断言即红
+        // Append the uppercase one first: if the comparator had no effect, arrival order would keep it first and the assertion goes red
         sp.uiTestAppend([mdHit(upper), mdHit(lower)])
         let caseFirst = sp.uiTestResultPaths.first
         record(caseFirst == lower.path,
-               "I-74 大小写与查询一致的命中排最前（首=\((caseFirst.map { ($0 as NSString).lastPathComponent }) ?? "nil")，期望 nsoverride.md）")
+               "I-74 hits matching the query's case rank first (first=\((caseFirst.map { ($0 as NSString).lastPathComponent }) ?? "nil"), expected nsoverride.md)")
 
-        // 带空格的查询在面板这层也要算得出分并排上来（引擎找得到、排序判 0 分沉底 = 用户仍看不到）
+        // Queries with spaces must also score and rank at the panel layer (engine finds them, ranking scores 0 and sinks them = the user still does not see them)
         sp.uiTestReset(root: nil)
         sp.uiTestConfigureSmart(query: "nsoverride md", snapshot: [:], active: true)
         sp.uiTestAppend([mdHit(upper), mdHit(lower)])
         let spacedFirst = sp.uiTestResultPaths.first
         record(sp.uiTestResultPaths.count == 2 && spacedFirst == lower.path,
-               "I-74 带空格查询在结果排序里同样有效（\(sp.uiTestResultPaths.count) 条，首=\((spacedFirst.map { ($0 as NSString).lastPathComponent }) ?? "nil")）")
+               "I-74 query with spaces works in result ranking too (\(sp.uiTestResultPaths.count) hits, first=\((spacedFirst.map { ($0 as NSString).lastPathComponent }) ?? "nil"))")
         sp.uiTestReset(root: nil)
     }
 
-    /// I-47：导航即落盘——导航活动窗格到夹具后，会话（隔离存储）应在防抖内记住该目录。
-    /// 证明 onActiveLocationChange→noteStateChanged 生效：位置不再只在干净退出才保存，非干净退出也不回 home。
+    /// I-47: navigation persists immediately: after navigating the active pane to a fixture, the session (isolated storage) should remember that directory within the debounce.
+    /// Proves onActiveLocationChange→noteStateChanged works: location is no longer saved only on clean exit, and an unclean exit does not return to home.
     private static func runSessionSaveScenario(delegate: AppDelegate) async {
         let fs = FileManager.default
         let token = String(UUID().uuidString.prefix(8))
         let box = fs.temporaryDirectory.appendingPathComponent("nspace-uitest-sess-\(token)", isDirectory: true)
         try? fs.createDirectory(at: box, withIntermediateDirectories: true)
-        record(assertSandboxed(box), "沙箱守卫[I-47]: 会话夹具在自建夹具内")
+        record(assertSandboxed(box), "Sandbox guard [I-47]: session fixture inside own fixture")
         guard let wc = NSApp.windows.compactMap({ $0.windowController as? MainWindowController }).first else {
-            record(false, "I-47 导航即落盘：会话记住导航目录"); return
+            record(false, "I-47 navigation persists immediately: session remembers the navigated directory"); return
         }
         let pane = wc.grid.activePane
-        pane.navigate(to: box)   // → onActiveLocationChange → noteStateChanged（UITEST 下 sessionReady=true）
-        // 轮询而非固定 sleep：SessionStore 防抖 1s，原本的 1400ms 只剩 400ms 余量——
-        // 套件变长或机器变忙就假失败（1/6 实测复现）。轮询在常见情况下还更快。
+        pane.navigate(to: box)   // → onActiveLocationChange → noteStateChanged (sessionReady=true under UITEST)
+        // Poll rather than a fixed sleep: SessionStore debounces 1s, and the old 1400ms left only 400ms of margin;
+        // a longer suite or busier machine gave false failures (reproduced 1 in 6). Polling is also faster in the common case.
         var hit = false
         for _ in 0..<40 {
             try? await Task.sleep(for: .milliseconds(100))
@@ -3327,13 +3327,13 @@ enum UISelfTest {
                 .flatMap { $0.workspaces }.flatMap { $0.panes }.map { $0.tab.path }
             if paths.contains(box.path) || paths.contains(box.standardizedFileURL.path) { hit = true; break }
         }
-        record(hit, "I-47 导航即落盘：会话记住导航目录（隔离 session 含 \(box.lastPathComponent)=\(hit)）")
+        record(hit, "I-47 navigation persists immediately: session remembers the navigated directory (isolated session has \(box.lastPathComponent)=\(hit))")
 
-        // I-50：改排序即落盘（点列头改排序此前不触发保存，非干净退出重启回退旧排序）
+        // I-50: sort changes persist immediately (changing sort by header click used to trigger no save; an unclean exit restarted with the old sort)
         pane.setViewMode(.list)
         try? await Task.sleep(for: .milliseconds(150))
         pane.activeTab.listVC.tableView.sortDescriptors = [NSSortDescriptor(key: "size", ascending: false)]
-        // 同上：轮询到落盘，不拿固定 sleep 赌防抖窗口
+        // Same as above: poll until persisted, no betting on the debounce window with a fixed sleep
         var lastKey: String?
         var lastAsc: Bool?
         var sortSaved = false
@@ -3347,68 +3347,68 @@ enum UISelfTest {
             lastAsc = tab?.sortAscending
             if lastKey == "size" && lastAsc == false { sortSaved = true; break }
         }
-        record(sortSaved, "I-50 改排序即落盘：会话记住排序列/方向（得 \(lastKey ?? "nil")/\(lastAsc.map { String($0) } ?? "nil")，期望 size/false）")
+        record(sortSaved, "I-50 sort change persists immediately: session remembers sort column/direction (got \(lastKey ?? "nil")/\(lastAsc.map { String($0) } ?? "nil"), expected size/false)")
 
-        // 收尾：导航回 home + 清夹具
+        // Wrap up: navigate back home + clear the fixture
         pane.navigate(to: fs.homeDirectoryForCurrentUser)
         try? await Task.sleep(for: .milliseconds(200))
         if assertSandboxed(box) { try? fs.removeItem(at: box) }
     }
 
-    /// I-52：外部/浏览器 reveal 落点可配——默认「现有窗口新标签」复用当前窗口开新标签（不弹新窗，
-    /// 修用户报的"每次开新窗口"）；「新窗口」才每次弹新窗。经真实 application(_:open:) → openFileURLs 链验证。
+    /// I-52: configurable landing spot for external/browser reveal: the default "new tab in existing window" reuses the current window (no new window,
+    /// fixing the user-reported "opens a new window every time"); only "New Window" opens one each time. Verified through the real application(_:open:) → openFileURLs chain.
     private static func runExternalOpenTargetScenario(delegate: AppDelegate) async {
         let fs = FileManager.default
         let token = String(UUID().uuidString.prefix(8))
         let box = fs.temporaryDirectory.appendingPathComponent("nspace-uitest-extopen-\(token)", isDirectory: true)
         try? fs.createDirectory(at: box, withIntermediateDirectories: true)
-        record(assertSandboxed(box), "沙箱守卫[I-52]: 外部打开夹具在自建夹具内")
+        record(assertSandboxed(box), "Sandbox guard [I-52]: external open fixture inside own fixture")
         func mainWins() -> Int { NSApp.windows.filter { $0.windowController is MainWindowController && $0.isVisible }.count }
         guard let wc = NSApp.windows.compactMap({ $0.windowController as? MainWindowController }).first,
               let hostWindow = wc.window else {
-            record(false, "I-52 外部打开默认新标签：复用现有窗口不弹新窗"); return
+            record(false, "I-52 external open defaults to a new tab: reuses the existing window, no new window"); return
         }
         let prev = Preferences.externalOpenTarget
 
-        // 前置settle：外部打开路由到【key 窗】——先令宿主窗夺 key 并等前序场景遗留窗关净，
-        // 否则断言查的是 first 窗、开的却落在残留 key 窗上，造成"标签未+1"的时序假失败（I-53 加时暴露）。
+        // Settle precondition: external opens route to the [key window]; first make the host window key and wait for windows left by earlier scenarios to close,
+        // or the assertion checks the first window while the open lands on a leftover key window, a timing false failure of "tab not +1" (exposed by I-53's added time).
         hostWindow.makeKeyAndOrderFront(nil)
         _ = await pollFS { mainWins() == 1 }
         try? await Task.sleep(for: .milliseconds(100))
 
-        // 默认「现有窗口新工作区标签」：窗口数不变、工作区 +1、活动窗格落到目标目录。
-        // v0.19.26 起落点从窗格标签改成工作区标签（窗格内多标签退役）——路径这一维是新加的：
-        // 只数"工作区 +1"验不出它开在**哪儿**，而落错目录正是这次改动最可能出的错。
+        // Default "new workspace tab in existing window": window count unchanged, workspaces +1, active pane lands on the target directory.
+        // Since v0.19.26 the landing moved from pane tabs to workspace tabs (in-pane tabs retired); the path dimension is new:
+        // counting "workspaces +1" alone cannot tell **where** it opened, and a wrong directory is the likeliest failure of this change.
         Preferences.externalOpenTarget = "newTab"
         let w0 = mainWins(); let ws0 = wc.workspaceCount
         delegate.application(NSApp, open: [box])
         _ = await pollFS { wc.workspaceCount == ws0 + 1 }
         let landed = await pollFS { samePath(wc.grid.activePane.uiTestCurrentURL, box) }
         record(mainWins() == w0 && wc.workspaceCount == ws0 + 1 && landed,
-               "I-52 外部打开默认「新工作区标签」：复用现有窗口不弹新窗（窗口 \(w0)→\(mainWins())，工作区 \(ws0)→\(wc.workspaceCount)，落到目标目录=\(landed)）")
+               "I-52 external open defaults to a 'new workspace tab': reuses the existing window, no new window (windows \(w0)→\(mainWins()), workspaces \(ws0)→\(wc.workspaceCount), reached target directory=\(landed))")
 
-        // 「新窗口」：窗口数 +1
+        // "New Window": window count +1
         Preferences.externalOpenTarget = "newWindow"
         let w1 = mainWins()
         delegate.application(NSApp, open: [box])
         _ = await pollFS { mainWins() == w1 + 1 }
-        record(mainWins() == w1 + 1, "I-52 外部打开「新窗口」：弹新窗（窗口 \(w1)→\(mainWins())）")
+        record(mainWins() == w1 + 1, "I-52 external open 'New Window': opens a new window (windows \(w1)→\(mainWins()))")
         for w in NSApp.windows where (w.windowController is MainWindowController) && w !== hostWindow { w.close() }
         hostWindow.makeKeyAndOrderFront(nil)
         while wc.workspaceCount > ws0 { wc.closeActiveWorkspace(nil) }
         try? await Task.sleep(for: .milliseconds(200))
 
-        // ── I-73：外部打开不许践踏其余窗格 / 不许顶掉用户的工作区 / 同目录多文件只开一个 ──
-        // 这三条都是「落点从窗格标签改成工作区标签」引出的新风险（对抗审查抓到）：
-        // 工作区标签比窗格标签重得多——它复制整套布局，一不留神就把别的窗格连同
-        // 浏览历史/选中/滚动位置一起重建，或者因为上限把用户最老的工作区挤掉。
+        // ── I-73: external open must not trample other panes / must not evict the user's workspaces / same-directory files open only one ──
+        // All three are new risks from "landing moved from pane tabs to workspace tabs" (caught in adversarial review):
+        // a workspace tab is much heavier than a pane tab: it copies the whole layout, and a slip rebuilds other panes along with their
+        // browsing history/selection/scroll position, or the limit squeezes out the user's oldest workspace.
         Preferences.externalOpenTarget = "newTab"
         let f1 = box.appendingPathComponent("i73-a.txt")
         let f2 = box.appendingPathComponent("i73-b.txt")
         try? Data("a".utf8).write(to: f1)
         try? Data("b".utf8).write(to: f2)
 
-        // ① 非活动窗格的选中必须活下来（双栏：右窗格选中一个文件，再从外部打开到左窗格）
+        // ① an inactive pane's selection must survive (dual panes: select a file in the right pane, then open externally into the left)
         let layout0 = wc.grid.layout
         wc.grid.apply(layout: .dualH)
         try? await Task.sleep(for: .milliseconds(300))
@@ -3427,21 +3427,21 @@ enum UISelfTest {
             delegate.application(NSApp, open: [box])
             _ = await pollFS { wc.workspaceCount > ws0 }
             try? await Task.sleep(for: .milliseconds(400))
-            // 同一个窗格对象仍在、且选中没被清空 —— 证明它没有被重建
+            // Same pane object still there and selection not cleared: proves it was not rebuilt
             let now = wc.grid.visiblePanes.count > 1 ? wc.grid.visiblePanes[1] : nil
             otherKept = now === other && !otherSelBefore.isEmpty
                 && now?.activeTab.listVC.selectedURLs.map(\.path) == otherSelBefore.map(\.path)
         }
         record(otherKept,
-               "I-73 外部打开不重建其余窗格：非活动窗格选中保住（选中 \(otherSelBefore.count) 项，保住=\(otherKept)）")
+               "I-73 external open does not rebuild other panes: inactive pane selection kept (selected \(otherSelBefore.count) items, kept=\(otherKept))")
         while wc.workspaceCount > ws0 { wc.closeActiveWorkspace(nil) }
         wc.grid.apply(layout: layout0)
         try? await Task.sleep(for: .milliseconds(250))
 
-        // ② 同目录的多个文件只开**一个**工作区（一次 reveal 五个附件不该炸出五个）
-        // 同时是**外部打开「文件」**这条日常路径的唯一覆盖（I-52/I-60 都只开目录）：
-        // 投的是文件，落点必须是它的父目录，而且那个文件要被选中——
-        // 用户点「在访达中显示」要的就是"帮我把它指出来"，只到目录等于没做完。
+        // ② multiple files from one directory open only **one** workspace (revealing five attachments at once should not explode into five)
+        // This is also the only coverage of the everyday **external open of a "file"** path (I-52/I-60 open directories only):
+        // with a file, it must land on the parent directory with that file selected;
+        // "Show in Finder" means "point it out for me", and stopping at the directory leaves the job unfinished.
         let wsMerge0 = wc.workspaceCount
         delegate.application(NSApp, open: [f1, f2])
         _ = await pollFS { wc.workspaceCount == wsMerge0 + 1 }
@@ -3451,15 +3451,15 @@ enum UISelfTest {
         }
         let merged = wc.workspaceCount == wsMerge0 + 1
         record(merged && revealed,
-               "I-73 同目录多文件外部打开只开一个工作区且选中目标文件（工作区 \(wsMerge0)→\(wc.workspaceCount)，投 2 个同目录文件，落目录+选中=\(revealed)）")
+               "I-73 same-directory multi-file external open opens one workspace and selects the target file (workspaces \(wsMerge0)→\(wc.workspaceCount), sent 2 files from one directory, landed + selected=\(revealed))")
         while wc.workspaceCount > ws0 { wc.closeActiveWorkspace(nil) }
         try? await Task.sleep(for: .milliseconds(200))
 
-        // ③ 到达工作区上限时，外部打开不许顶掉最老的那个（别的 App 触发的动作不该销毁用户状态）
+        // ③ at the workspace limit, external open must not evict the oldest (an action triggered by another app must not destroy user state)
         let limit0 = Preferences.workspaceTabLimit
         let wsBase = wc.workspaceCount
         Preferences.workspaceTabLimit = wsBase + 1
-        wc.openWorkspaceTab(at: nil)                       // 主动 ⌘T 填到上限
+        wc.openWorkspaceTab(at: nil)                       // Fill up to the limit as an explicit ⌘T would
         try? await Task.sleep(for: .milliseconds(300))
         let atLimit = wc.workspaceCount
         let oldestBefore = wc.uiTestWorkspaceTitles.first
@@ -3468,10 +3468,10 @@ enum UISelfTest {
         let oldestAfter = wc.uiTestWorkspaceTitles.first
         let noEvict = wc.workspaceCount == atLimit && oldestBefore != nil && oldestAfter == oldestBefore
         record(noEvict,
-               "I-73 到工作区上限时外部打开不顶掉最老的（上限 \(Preferences.workspaceTabLimit) 工作区 \(atLimit)→\(wc.workspaceCount) 最老 \(oldestBefore ?? "nil")→\(oldestAfter ?? "nil")）")
+               "I-73 at the workspace limit external open does not evict the oldest (limit \(Preferences.workspaceTabLimit) workspaces \(atLimit)→\(wc.workspaceCount) oldest \(oldestBefore ?? "nil")→\(oldestAfter ?? "nil"))")
         Preferences.workspaceTabLimit = limit0
 
-        // 收尾：复原偏好 + 关掉多开的窗口（保留宿主窗）+ 关掉本场景加的工作区 + 清夹具
+        // Wrap up: restore preferences + close extra windows (keep the host window) + close workspaces this scenario added + clear the fixture
         Preferences.externalOpenTarget = prev
         for w in NSApp.windows where (w.windowController is MainWindowController) && w !== hostWindow { w.close() }
         while wc.workspaceCount > ws0 { wc.closeActiveWorkspace(nil) }
@@ -3480,17 +3480,17 @@ enum UISelfTest {
         if assertSandboxed(box) { try? fs.removeItem(at: box) }
     }
 
-    // MARK: 工具
+    // MARK: Utilities
 
     private static func record(_ ok: Bool, _ message: String) {
         lines.append("\(ok ? "PASS" : "FAIL") \(message)")
         if !ok { failed = true }
-        // 实时进度落盘（挂死可定位最后到达点；finish 前 record 只在内存，挂死即全丢——I-35 后补仪器）
+        // Persist progress in real time (a hang can be traced to the last point reached; before finish, records lived only in memory and a hang lost them all; instrument added after I-35)
         try? (lines.joined(separator: "\n") + "\n").data(using: .utf8)?
             .write(to: outDir.appendingPathComponent("progress.txt"))
     }
 
-    /// 自渲染截图：无需录屏权限
+    /// Self-rendered screenshot: no Screen Recording permission needed
     private static func capture(_ window: NSWindow, _ name: String) {
         guard let view = window.contentView,
               let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
@@ -3499,7 +3499,7 @@ enum UISelfTest {
         try? data.write(to: outDir.appendingPathComponent("\(name).png"))
     }
 
-    /// 截图任意视图（无需在可见窗口中；自绘 sheet 内容 headless 人眼终审用）
+    /// Screenshot any view (need not be in a visible window; for headless human review of custom-drawn sheet content)
     private static func captureView(_ view: NSView, _ name: String) {
         view.layoutSubtreeIfNeeded()
         guard view.bounds.width > 0, view.bounds.height > 0,
@@ -3514,7 +3514,7 @@ enum UISelfTest {
         return [root] + root.subviews.flatMap { viewTree($0) }
     }
 
-    /// 文件系统结果轮询（coordinator/kernel 操作异步落盘）：条件满足即返回，超时返回末次判定
+    /// File system result polling (coordinator/kernel operations persist asynchronously): returns once the condition holds, on timeout returns the last evaluation
     private static func pollFS(_ tries: Int = 30, _ cond: @MainActor () -> Bool) async -> Bool {
         for _ in 0..<tries {
             if cond() { return true }
@@ -3523,14 +3523,14 @@ enum UISelfTest {
         return cond()
     }
 
-    /// 路径等价（消解 /var⟷/private/var 符号链接差异）
+    /// Path equivalence (resolves the /var⟷/private/var symlink difference)
     private static func samePath(_ a: URL, _ b: URL) -> Bool {
         a.resolvingSymlinksInPath().standardizedFileURL.path
             == b.resolvingSymlinksInPath().standardizedFileURL.path
     }
 
-    /// 向地址栏 field editor 发一次**真实** Return 键（走 keyDown → 响应链 → doCommandBy
-    /// insertNewline；直调回调是捷径，测不到键路由断裂）
+    /// Send one **real** Return key to the address bar field editor (keyDown → responder chain → doCommandBy
+    /// insertNewline; calling the callback directly is a shortcut that misses broken key routing)
     private static func pressReturn(in editor: PathEditorField, window: NSWindow) {
         guard let fe = editor.currentEditor() as? NSTextView,
               let ev = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
@@ -3542,8 +3542,8 @@ enum UISelfTest {
         fe.keyDown(with: ev)
     }
 
-    /// 沙箱守卫（用户铁律 2026-08-26）：任何测试可变文件操作的目标必须在自建临时夹具内
-    /// （temporaryDirectory 下），防误伤用户真实文件。守卫失败即跳过该 mutating 操作。
+    /// Sandbox guard (user's hard rule 2026-08-26): the target of any mutating test file operation must be inside a self-made temp fixture
+    /// (under temporaryDirectory), to protect the user's real files. On guard failure the mutating operation is skipped.
     private static func assertSandboxed(_ url: URL) -> Bool {
         let sandboxRoot = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().path
         return url.resolvingSymlinksInPath().path.hasPrefix(sandboxRoot)

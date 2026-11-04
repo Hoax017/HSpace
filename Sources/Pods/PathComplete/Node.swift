@@ -1,8 +1,8 @@
 import Foundation
 
-/// 构造注入目录枚举器（Axiom 2）：默认真实文件系统，测试注入纯内存夹具
+/// Constructor-injected directory lister (Axiom 2): the real file system by default, tests inject an in-memory fixture
 public struct PathCompleter: PathCompleting {
-    /// 目录路径 → 其中的子目录名列表
+    /// Directory path → names of its subdirectories
     private let listSubdirectories: @Sendable (String) -> [String]
     private let homePath: String
 

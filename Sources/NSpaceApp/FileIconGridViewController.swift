@@ -4,12 +4,12 @@ import UniformTypeIdentifiers
 import NSpaceContracts
 import IconThumb
 
-/// 交互上报的图标网格集合视图：点击即请求激活所属窗格；右键菜单钩子；
-/// 空格 Quick Look、双击打开；Return 不支持重命名（诚实 beep，不装）
+/// Icon grid collection view that reports interaction: a click requests activation of the owning pane; context menu hook;
+/// space for Quick Look, double click to open; Return doesn't support rename (an honest beep, no pretending)
 @MainActor
 final class IconGridCollectionView: NSCollectionView {
     var onInteract: (() -> Void)?
-    /// 右键菜单提供者：入参为点击到的条目（nil 表示空白区，走目录级菜单）
+    /// Context menu provider: the argument is the clicked item (nil means empty space, using the directory-level menu)
     var menuProvider: ((IndexPath?) -> NSMenu?)?
     var onSpace: (() -> Void)?
     var onDoubleClick: ((IndexPath) -> Void)?
@@ -17,7 +17,7 @@ final class IconGridCollectionView: NSCollectionView {
     override func mouseDown(with event: NSEvent) {
         onInteract?()
         super.mouseDown(with: event)
-        // 双击：selection 已由 super 处理，再派发打开
+        // Double click: selection was handled by super; dispatch open
         if event.clickCount == 2 {
             let point = convert(event.locationInWindow, from: nil)
             if let ip = indexPathForItem(at: point) { onDoubleClick?(ip) }
@@ -38,7 +38,7 @@ final class IconGridCollectionView: NSCollectionView {
         onInteract?()
         let point = convert(event.locationInWindow, from: nil)
         let ip = indexPathForItem(at: point)
-        // 右击未选中条目 → 先把它设为唯一选中（Finder 语义）
+        // Right-clicking an unselected item → make it the only selection first (Finder semantics)
         if let ip, !selectionIndexPaths.contains(ip) {
             deselectAll(nil)
             selectItems(at: [ip], scrollPosition: [])
@@ -47,11 +47,11 @@ final class IconGridCollectionView: NSCollectionView {
     }
 
     override func keyDown(with event: NSEvent) {
-        // 纯 ⌘↑/⌘↓ 落到网格 = 导航菜单未接（禁用态）——吞掉，不让默认选中跳变顶替导航语义（I-39）；
-        // 带 ⇧/⌥/⌃ 的组合不吞，保持系统行为
+        // Plain ⌘↑/⌘↓ reaching the grid = navigation menu not wired (disabled state): swallow it, so default selection jumps can't replace navigation semantics (I-39);
+        // combos with ⇧/⌥/⌃ aren't swallowed and keep system behaviour
         if event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
            event.keyCode == 125 || event.keyCode == 126 { return }
-        // 空格（49）Quick Look；Return（36/76）图标视图不支持行内重命名——诚实 beep
+        // Space (49) Quick Look; Return (36/76): the icon view has no inline rename, so an honest beep
         if event.keyCode == 49, let onSpace {
             onSpace()
             return
@@ -64,7 +64,7 @@ final class IconGridCollectionView: NSCollectionView {
     }
 }
 
-/// 图标网格单元：图标（尺寸随滑块）+ 两行截断文件名 + 圆角选中底
+/// Icon grid cell: icon (size follows the slider) + two-line truncated file name + rounded selection background
 @MainActor
 final class FileIconItem: NSCollectionViewItem {
     static let reuseID = NSUserInterfaceItemIdentifier("fileIconItem")
@@ -98,7 +98,7 @@ final class FileIconItem: NSCollectionViewItem {
             backdrop.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -2),
             backdrop.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 2),
             backdrop.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -2),
-            // 图标区：左右 16 内边距成正方形（itemSize = 图标边长 + 32）
+            // Icon area: 16 side padding makes a square (itemSize = icon side + 32)
             icon.topAnchor.constraint(equalTo: root.topAnchor, constant: 4),
             icon.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
             icon.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
@@ -130,7 +130,7 @@ final class FileIconItem: NSCollectionViewItem {
         label.textColor = dimmed ? .secondaryLabelColor : .labelColor
     }
 
-    /// 缩略图到货：只换图不重建（不打断选中态）
+    /// Thumbnail arrived: swap the image without rebuilding (keeps selection state)
     func setIcon(_ image: NSImage) {
         icon.image = image
     }
@@ -143,11 +143,11 @@ final class FileIconItem: NSCollectionViewItem {
     }
 }
 
-/// 图标网格视图（M9 ⌘1）：NSCollectionView + FlowLayout，图标 48~128 可调（滑块，App 层偏好）。
-/// 与列表共享同一 DirectoryViewModel（onUpdate 多播）——本层只读消费（BG-1 零写型文件 API）；
-/// 缩略图只对可见项异步请求、滚出/挂起即取消（北极星零浪费）；语义与列表一致：
-/// 双击打开、右键菜单复用 builder、拖出/投放同判卷规则、空格 Quick Look。
-/// 行内重命名本期不支持（菜单项诚实灰显，不装假）。
+/// Icon grid view (M9 ⌘1): NSCollectionView + FlowLayout, icons adjustable 48~128 (slider, app-level preference).
+/// Shares one DirectoryViewModel with the list (onUpdate multicast); this layer only consumes reads (BG-1: no write-type file APIs);
+/// thumbnails are requested async for visible items only and cancelled on scroll-out/suspend (north star of zero waste); semantics match the list:
+/// double-click opens, context menu reuses the builder, drag-out/drop use the same volume rules, space for Quick Look.
+/// Inline rename isn't supported in this phase (the menu item is honestly grayed out, no faking).
 @MainActor
 final class FileIconGridViewController: NSViewController, FileRevealTarget {
     let model: DirectoryViewModel
@@ -163,28 +163,28 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     private let emptyLabel = NSTextField(labelWithString: "")
     private let sizeSlider = NSSlider()
 
-    /// 操作完成后待显露（选中）的目标；图标视图不支持行内重命名，rename 标志忽略
+    /// Target to reveal (select) after an operation completes; the icon view has no inline rename, so the rename flag is ignored
     private var pendingReveal: (url: URL, rename: Bool)?
 
-    /// 选中态 URL 缓存（I-32）：随选中变更记账，作 applySnapshot 恢复选中的真源。
-    /// 直接用 selectionIndexPaths 反查会错映（model.items 已换新），造成删除后选中"漂移"到顶项。
+    /// Selected URL cache (I-32): updated on selection change, the source of truth for restoring selection in applySnapshot.
+    /// Looking up selectionIndexPaths directly would mis-map (model.items is already new), making the selection "drift" to the top item after a delete.
     private var selectionURLCache: Set<URL> = []
 
-    // 分组视图态（M26 v2）：section↔model 下标映射的唯一真源，别处严禁散落 index 算术。
-    // 不分组时为单 section 全量（identity 映射）；分组时每 section 一组。
+    // Grouped view state (M26 v2): the single source of truth for section ↔ model index mapping; never scatter index arithmetic elsewhere.
+    // Ungrouped it's one full section (identity mapping); grouped it's one section per group.
     private var sections: [FileGrouping.Group] = []
-    // 折叠已取消（用户要求：分组头印在背景条上，不是可伸缩控件）。
-    // 保留一个恒空集合会留下"看着能折其实不能"的半截实现，所以整块拿掉。
+    // Collapsing was dropped (owner request: group headers are printed on a background strip, not expandable controls).
+    // Keeping an always-empty set would leave a half-implementation that "looks collapsible but isn't", so the whole thing was removed.
     private var groupFilterKey: String?
     private let filterPill = FilterPillButton(frame: .zero)
 
-    // 装饰状态（派生显示层，可随时丢弃）
+    // Decoration state (derived display layer, disposable at any time)
     private var thumbOverlay: [URL: NSImage] = [:]
     private var thumbTasks: [URL: Task<Void, Never>] = [:]
-    /// 缩略图资格按 UTType 缓存（滚动路径零重复 conforms 计算）
+    /// Thumbnail eligibility cached per UTType (no repeated conforms work on the scroll path)
     private static var thumbEligible: [String: Bool] = [:]
 
-    /// 图标大小（App 层偏好，所有窗格网格共用；出现时对齐最新值）
+    /// Icon size (app-level preference shared by all pane grids; aligned to the latest value on appear)
     static var preferredIconSize: CGFloat {
         get {
             let v = UserDefaults.standard.double(forKey: "iconGridSize")
@@ -196,7 +196,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
 
     var focusTarget: NSView { collectionView }
 
-    /// 当前目录（空白处拷贝路径 / 新建 / 粘贴的落点；语义同列表视图）
+    /// Current directory (destination of empty-space Copy Path / New / Paste; same semantics as the list view)
     var currentDirectory: URL { model.directory }
 
     init(model: DirectoryViewModel) {
@@ -207,13 +207,13 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     override func loadView() {
         flowLayout.minimumInteritemSpacing = 8
         flowLayout.minimumLineSpacing = 8
         flowLayout.sectionInset = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
-        flowLayout.sectionHeadersPinToVisibleBounds = true   // M26 v2：组头悬浮（对齐列表 floatsGroupRows）
+        flowLayout.sectionHeadersPinToVisibleBounds = true   // M26 v2: floating group headers (matches the list's floatsGroupRows)
 
         collectionView.collectionViewLayout = flowLayout
         collectionView.isSelectable = true
@@ -233,7 +233,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
             guard let self, let file = self.fileItem(at: ip) else { return }
             self.open(file)
         }
-        // 拖拽：语义与列表一致（拖出 NSURL；投放到目录项或空白=当前目录，⌥ 复制）
+        // Drag: same semantics as the list (drag out NSURL; drop on a directory item or empty space = current directory, ⌥ copies)
         collectionView.registerForDraggedTypes([.fileURL])
         collectionView.setDraggingSourceOperationMask([.copy, .move, .generic], forLocal: true)
         collectionView.setDraggingSourceOperationMask([.copy, .move, .generic], forLocal: false)
@@ -241,17 +241,17 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         scrollView.documentView = collectionView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
-        // 滚动/尺寸变化 → 重算可见项缩略图请求（只对可见项发请求，滚出取消）
+        // Scroll/size change → recompute thumbnail requests for visible items (requests only for visible items, cancelled on scroll-out)
         scrollView.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(
             self, selector: #selector(scrollBoundsChanged(_:)),
             name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
-        // 分组开关变更广播：重建 section 即时生效（与列表共用同一通知）
+        // Grouping toggle broadcast: rebuild sections, takes effect at once (shares the notification with the list)
         NotificationCenter.default.addObserver(
             self, selector: #selector(groupingChanged(_:)),
             name: Notification.Name.nspaceGroupingChanged, object: nil)
 
-        // 底部工具条：图标大小滑块（4pt 网格：高 24、右缘 8）
+        // Bottom bar: icon size slider (4pt grid: height 24, right edge 8)
         let separator = NSBox()
         separator.boxType = .separator
         let bottomBar = NSView()
@@ -305,12 +305,12 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         ])
         view = root
         applyIconSize()
-        applySnapshot()   // 共享 model 通常已有快照（列表先行加载），直接呈现
+        applySnapshot()   // The shared model usually already has a snapshot (the list loads first), so present it directly
     }
 
     override func viewWillAppear() {
         super.viewWillAppear()
-        // 其他窗格可能改过 App 层图标大小偏好：出现时对齐
+        // Another pane may have changed the app-level icon size preference: align on appear
         let preferred = Self.preferredIconSize
         if preferred != iconSize {
             iconSize = preferred
@@ -319,7 +319,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         }
     }
 
-    // MARK: 图标大小（滑块，UserDefaults App 层）
+    // MARK: Icon size (slider, app-level UserDefaults)
 
     @objc private func sliderChanged(_ sender: NSSlider) {
         let size = CGFloat(sender.doubleValue.rounded())
@@ -334,7 +334,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         flowLayout.invalidateLayout()
     }
 
-    // MARK: 快照呈现
+    // MARK: Snapshot presentation
 
     private var lastSnapshotDirectory: URL?
 
@@ -343,13 +343,13 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
             lastSnapshotDirectory = model.directory
             cancelDecorationWork()
         }
-        // 同目录刷新也清缩略图覆盖层：文件可能已改内容（IconThumb 缓存键含 mtime）
+        // Same-directory refreshes clear the thumbnail overlay too: file contents may have changed (the IconThumb cache key includes mtime)
         thumbOverlay.removeAll()
         emptyLabel.isHidden = true
-        let kept = selectionURLCache   // I-32：删除前实际选中的真源（不用位移后的 selectionIndexPaths）
-        rebuildSections()              // M26 v2：分组时重建 section↔model 映射（reloadData 前）
+        let kept = selectionURLCache   // I-32: source of truth for the actual pre-delete selection (not the shifted selectionIndexPaths)
+        rebuildSections()              // M26 v2: rebuild the section ↔ model mapping when grouped (before reloadData)
         collectionView.reloadData()
-        select(urls: Array(kept), scroll: false)   // 空集也走 → deselectAll 显式清空（被删项不"漂移"到新项）
+        select(urls: Array(kept), scroll: false)   // An empty set goes through too → deselectAll clears explicitly (deleted items don't "drift" onto new ones)
         if model.items.isEmpty, !model.isLoading {
             showEmptyState(L10n.t("empty.folder"))
         }
@@ -363,7 +363,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         emptyLabel.isHidden = false
     }
 
-    /// 仅重绘可见项（剪切灰显变化，无需重建/重新读盘）
+    /// Redraws visible items only (cut dimming changed; no rebuild or disk re-read needed)
     func redraw() {
         for ip in collectionView.indexPathsForVisibleItems() {
             guard let cell = collectionView.item(at: ip) as? FileIconItem,
@@ -374,11 +374,11 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         }
     }
 
-    // MARK: 分组换算（M26 v2）——section↔model 下标映射唯一真源
+    // MARK: Grouping conversions (M26 v2): the single source of truth for section ↔ model index mapping
 
     private var groupingActive: Bool { FileGrouping.active(model.sort) }
 
-    /// 依当前 model.items（reader 已排序）重建 section 序列 + 刷过滤药丸。
+    /// Rebuilds the section sequence from the current model.items (already sorted by the reader) + refreshes the filter pill.
     private func rebuildSections() {
         if groupingActive {
             var gs = FileGrouping.buckets(model.items, key: model.sort.key, ascending: model.sort.ascending)
@@ -394,7 +394,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         flowLayout.invalidateLayout()
     }
 
-    /// section+item 下标 → model.items 下标
+    /// section+item index → model.items index
     private func modelIndex(at ip: IndexPath) -> Int? {
         guard sections.indices.contains(ip.section) else { return nil }
         let sec = sections[ip.section]
@@ -407,7 +407,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         return model.items[i]
     }
 
-    /// model 下标 → indexPath（在被过滤掉的 section 内 → nil）
+    /// model index → indexPath (in a filtered-out section → nil)
     private func indexPath(forModelIndex idx: Int) -> IndexPath? {
         for (s, sec) in sections.enumerated() {
             if let pos = sec.indices.firstIndex(of: idx) { return IndexPath(item: pos, section: s) }
@@ -424,7 +424,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         }
     }
 
-    /// 重建 section + reload（保 URL 选中）——折叠/过滤/开关变更共用
+    /// Rebuilds sections + reloads (preserving URL selection); shared by collapse/filter/toggle changes
     private func rebuildAndReloadPreservingSelection() {
         let kept = selectionURLCache
         rebuildSections()
@@ -449,16 +449,16 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     }
     @objc private func groupFilterAll(_ sender: Any?) { groupFilterKey = nil; rebuildAndReloadPreservingSelection() }
 
-    /// UISelfTest（M26 v2）：可见 section 数（分组开=组数；关=1）
+    /// UISelfTest (M26 v2): number of visible sections (grouping on = group count; off = 1)
     var uiTestSectionCount: Int { sections.count }
     var uiTestGroupTitles: [String] { sections.map(\.title) }
-    /// 组头真有底色（"印在背景条上"）
+    /// The group header really has a background ("printed on a background strip")
     var uiTestGroupHeaderIsBackgroundBar: Bool {
         let h = IconGroupHeaderView(frame: .zero)
         guard let bg = h.layer?.backgroundColor else { return false }
         return bg.alpha > 0.01
     }
-    /// 组头是否还接单击（折叠已取消 → 必须为 false）
+    /// Whether the group header still accepts clicks (collapsing was dropped → must be false)
     var uiTestGroupHeaderIsClickable: Bool {
         IconGroupHeaderView.instancesRespond(to: #selector(NSView.mouseDown(with:)))
             && IconGroupHeaderView.uiTestOverridesMouseDown
@@ -466,23 +466,23 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     func uiTestFilterFirstGroup() { if let k = sections.first?.key { applyGroupFilter(key: k) } }
     func uiTestClearFilter() { groupFilterKey = nil; rebuildAndReloadPreservingSelection() }
 
-    /// UISelfTest（I-59）：清空选中（模拟点击网格空白处）
+    /// UISelfTest (I-59): clears the selection (simulates clicking empty grid space)
     func uiTestClearSelection() { collectionView.deselectAll(nil) }
     var uiTestFilterPillVisible: Bool { !filterPill.isHidden }
 
-    // MARK: 按需缩略图（只对可见项、滚出取消——北极星零浪费）
+    // MARK: On-demand thumbnails (visible items only, cancelled on scroll-out; north star of zero waste)
 
     @objc private func scrollBoundsChanged(_ note: Notification) {
         refreshVisibleDecorations()
     }
 
-    /// 取消全部在飞缩略图请求（标签/窗格挂起、目录切换时调用；已回填结果保留）
+    /// Cancels all in-flight thumbnail requests (called on tab/pane suspend and directory switch; backfilled results are kept)
     func cancelDecorationWork() {
         thumbTasks.values.forEach { $0.cancel() }
         thumbTasks.removeAll()
     }
 
-    /// 对当前可见项发起缺失的缩略图请求；不再可见的在飞请求全部取消
+    /// Issues missing thumbnail requests for visible items; cancels all in-flight requests no longer visible
     func refreshVisibleDecorations() {
         guard view.window != nil, !model.items.isEmpty else { return }
         var wanted = Set<URL>()
@@ -498,7 +498,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         }
     }
 
-    /// 有内容缩略图价值的类型：图片/影音/PDF；目录与应用包用类型图标（不发 QuickLook 请求）
+    /// Types worth a content thumbnail: images/audio-video/PDF; directories and app bundles use type icons (no QuickLook request)
     private func wantsThumbnail(_ item: FileItem) -> Bool {
         guard !item.isDirectory, !item.isPackage, let id = item.contentTypeID else { return false }
         if let cached = Self.thumbEligible[id] { return cached }
@@ -512,7 +512,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
 
     private func requestThumbnail(_ url: URL) {
         guard thumbTasks[url] == nil else { return }
-        // 统一按 128pt 上限请求（内部 x2 像素）：滑块缩放只影响显示端，不反复重新生成
+        // Always request at the 128pt ceiling (x2 pixels internally): slider scaling affects display only and doesn't regenerate repeatedly
         thumbTasks[url] = Task { [weak self] in
             let cg = await Engines.iconThumb.thumbnail(for: url, size: 128)
             guard let self, !Task.isCancelled else { return }
@@ -528,18 +528,18 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         }
     }
 
-    // MARK: 选中态
+    // MARK: Selection state
 
     var selectedItems: [FileItem] {
         collectionView.selectionIndexPaths.sorted().compactMap { fileItem(at: $0) }
     }
     var selectedURLs: [URL] { selectedItems.map(\.url) }
 
-    /// UISelfTest（I-32）：视图层原始选中数（直查 collectionView，不经 model 映射）——验删除后真清空
+    /// UISelfTest (I-32): raw selection count at the view layer (queries collectionView directly, bypassing model mapping); verifies a real clear after delete
     var uiTestRawSelectionCount: Int { collectionView.selectionIndexPaths.count }
 
-    /// 按 URL 集恢复选中（视图模式切换迁移 / FSEvents 刷新保留）；标准化路径匹配（尾斜杠跨源差异，I-39）；
-    /// 经 indexPath(forModelIndex:) 走分组映射（折叠/过滤组内的项自然落选）。
+    /// Restores the selection from a URL set (view mode migration / keeping it over FSEvents refresh); matches standardized paths (trailing-slash differences across sources, I-39);
+    /// goes through the group mapping via indexPath(forModelIndex:) (items in collapsed/filtered groups naturally drop out).
     func select(urls: [URL], scroll: Bool = true) {
         let wanted = Set(urls.map { $0.standardizedFileURL.path })
         var paths = Set<IndexPath>()
@@ -551,11 +551,11 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         if !paths.isEmpty {
             collectionView.selectItems(at: paths, scrollPosition: scroll ? .nearestHorizontalEdge : [])
         }
-        // 程序化 select/deselect 不触发 delegate → 手动同步缓存为"实得的精确匹配集"（空即空）
+        // Programmatic select/deselect doesn't call the delegate → manually sync the cache to the exact matched set (empty means empty)
         selectionURLCache = Set(paths.compactMap { fileItem(at: $0)?.url })
     }
 
-    // MARK: 显露（新建后选中；图标视图不支持行内重命名，rename 忽略——诚实不装）
+    // MARK: Reveal (select after creating; the icon view has no inline rename, so rename is ignored: honest, no faking)
 
     func prepareReveal(_ url: URL, rename: Bool) { pendingReveal = (url, rename) }
 
@@ -564,61 +564,61 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         return pendingReveal
     }
 
-    /// UISelfTest（I-56）：是否还挂着待定位目标（验证切视图模式时 pending 真的被搬过来）
+    /// UISelfTest (I-56): whether a pending reveal is still set (verifies the pending target really moved on a view mode switch)
     var uiTestHasPendingReveal: Bool { pendingReveal != nil }
 
     private func revealPendingIfPossible() {
-        // 标准化路径比较 + 大小写兜底，判据统一在 model.itemIndex(forURL:)（I-39/I-55 同病同修）
+        // Standardized path compare + case-insensitive fallback, unified in model.itemIndex(forURL:) (same fix as I-39/I-55)
         guard let pending = pendingReveal else { return }
         guard let idx = model.itemIndex(forURL: pending.url),
               let ip = indexPath(forModelIndex: idx)
         else {
-            // 目标目录已载入却找不到目标：作废 pending，否则日后会"幽灵跳选"并抢走键盘焦点
+            // Target directory loaded but target not found: void the pending target, or it would later "ghost-select" and steal keyboard focus
             if model.isLoadedDirectory(forParentOf: pending.url) { pendingReveal = nil }
             return
         }
         pendingReveal = nil
         collectionView.deselectAll(nil)
         collectionView.selectItems(at: [ip], scrollPosition: .nearestHorizontalEdge)
-        selectionURLCache = [pending.url]   // I-32：程序化选中同步缓存真源
-        view.window?.makeFirstResponder(collectionView)   // I-48：聚焦网格，选中显蓝色强调（否则未强调灰几乎不可见）
+        selectionURLCache = [pending.url]   // I-32: sync the cache source of truth on programmatic selection
+        view.window?.makeFirstResponder(collectionView)   // I-48: focus the grid so the selection shows the blue accent (otherwise an unemphasized gray that's nearly invisible)
         onSelectionChange?()
     }
 
-    // MARK: 打开行为（语义同列表：文件走系统默认 App；文件夹窗格内导航）
+    // MARK: Open behaviour (same semantics as the list: files open in the system default app; folders navigate within the pane)
 
     private func open(_ item: FileItem) {
         if item.isDirectory && !item.isPackage {
             onNavigate?(item.url)
         } else {
-            coordinator?.recordAccess(item.url)   // M28：打开文件 = 一次使用记账
+            coordinator?.recordAccess(item.url)   // M28: opening a file = one usage record
             NSWorkspace.shared.open(item.url)
         }
     }
 
-    // MARK: 右键菜单（复用 builder；未实现的动作自动灰显）
+    // MARK: Context menu (reuses the builder; unimplemented actions gray out automatically)
 
     private func buildMenu() -> NSMenu {
         FileContextMenuBuilder.menu(selection: selectedItems, directory: model.directory, target: self)
     }
 
-    // MARK: 菜单命令（响应链；语义与列表一致）
+    // MARK: Menu commands (responder chain; semantics match the list)
 
     @objc func toggleHiddenFiles(_ sender: Any?) { model.includeHidden.toggle() }
     @objc func refresh(_ sender: Any?) { model.reload() }
 
     @objc func copyItems(_ sender: Any?) { coordinator?.copy(selectedURLs) }
     @objc func cutItems(_ sender: Any?) { coordinator?.cut(selectedURLs) }
-    /// 放回原处（仅废纸篓内；只对台账里有记录的项有效，其余诚实置灰）
+    /// Put Back (only inside the Trash; works only for items in the ledger, others honestly grayed out)
     @objc func putBackItems(_ sender: Any?) { coordinator?.putBack(selectedURLs) }
 
     @objc func pasteItems(_ sender: Any?) { coordinator?.paste(into: model.directory, revealIn: self) }
-    /// 拷贝路径（⌘⇧C）：**空选中时回落到当前目录**——用户点文件夹空白处按快捷键，
-    /// 意图就是"复制我现在所在这个文件夹的路径"（Finder ⌥⌘C 在空白处同样给当前文件夹）。
-    /// 此前只传 selectedURLs，空选中即空数组，copyPaths 的 guard 直接吞掉，表现为快捷键没反应。
+    /// Copy Path (⌘⇧C): **with nothing selected, falls back to the current directory**. Pressing the shortcut on empty space in a folder
+    /// means "copy the path of the folder I'm in" (Finder's ⌥⌘C on empty space also gives the current folder).
+    /// It used to pass only selectedURLs, an empty array with no selection, which copyPaths' guard swallowed, so the shortcut seemed dead.
     @objc func copyPath(_ sender: Any?) { copyPath(to: .general) }
 
-    /// 自测注入私有 pasteboard 用（产品路径恒走 .general）
+    /// For self-tests to inject a private pasteboard (the product path always uses .general)
     func copyPath(to pasteboard: NSPasteboard) {
         coordinator?.copyPaths(selectedURLs.isEmpty ? [currentDirectory] : selectedURLs, to: pasteboard)
     }
@@ -671,9 +671,9 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         onNavigate?(pkg.url)
     }
 
-    // MARK: Quick Look（空格开关；与列表同款响应链面板控制）
+    // MARK: Quick Look (space toggles; same responder-chain panel control as the list)
 
-    /// I-45：收起走淡出而非"缩到图标"（同列表视图，sourceFrame 收起态返回 .zero）
+    /// I-45: dismiss with a fade rather than "shrink to icon" (same as the list view: sourceFrame returns .zero when dismissing)
     private var quickLookDismissing = false
 
     @objc func toggleQuickLook(_ sender: Any?) {
@@ -701,13 +701,13 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     }
 }
 
-// MARK: - 菜单校验（按选中态启用/禁用；重命名未实现 → 不响应即自动灰显）
+// MARK: - Menu validation (enable/disable by selection state; rename unimplemented → not responding grays it out automatically)
 
 extension FileIconGridViewController: @preconcurrency NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         let hasSelection = !collectionView.selectionIndexPaths.isEmpty
         switch menuItem.action {
-        // 拷贝路径恒可用：空选中回落到当前目录（同列表视图）
+        // Copy Path is always available: with no selection it falls back to the current directory (same as the list view)
         case #selector(copyPath(_:)):
             return true
         case #selector(putBackItems(_:)):
@@ -717,9 +717,9 @@ extension FileIconGridViewController: @preconcurrency NSMenuItemValidation {
              #selector(copyToOtherPane(_:)), #selector(moveToOtherPane(_:)),
              #selector(copy(_:)), #selector(cut(_:)):
             return hasSelection
-        // 废纸篓里禁掉「把活文件放进来」的动作（Finder 同样禁用）。废纸篓可浏览之后
-        // 这些入口才第一次可达：放进来的文件既无撤销、也无「放回原处」元数据，
-        // 将来清空废纸篓就真没了。三视图同病同修。
+        // Inside the Trash, disable actions that "bring live files in" (Finder disables them too). These became reachable only once
+        // the Trash was browsable: files put here have no undo and no Put Back metadata,
+        // so emptying the Trash later would really lose them. Same fix across all three views.
         case #selector(pasteItems(_:)), #selector(paste(_:)):
             if TrashLocation.isInsideTrash(model.directory) { return false }
             return NSPasteboard.general.canReadObject(forClasses: [NSURL.self],
@@ -735,7 +735,7 @@ extension FileIconGridViewController: @preconcurrency NSMenuItemValidation {
     }
 }
 
-// MARK: - 数据源 / 委托
+// MARK: - Data source / delegate
 
 extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionViewDelegate {
     func numberOfSections(in collectionView: NSCollectionView) -> Int { sections.count }
@@ -750,14 +750,14 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
         let item = collectionView.makeItem(withIdentifier: FileIconItem.reuseID, for: indexPath)
         guard let cell = item as? FileIconItem, let file = fileItem(at: indexPath) else { return item }
         let cut = coordinator?.isCut(file.url) ?? false
-        // 快路径先出类型图标；已到货的内容缩略图直接用（升级路径见 requestThumbnail）
+        // Fast path shows the type icon first; a delivered content thumbnail is used directly (upgrade path in requestThumbnail)
         cell.configure(icon: thumbOverlay[file.url] ?? Formatters.fullIcon(for: file),
                        name: file.name, dimmed: file.isHidden || cut)
         return item
     }
 
-    /// 分组组头：印在背景条上的「2026年8月」+ 项数。不可折叠（用户要求：不要伸缩），
-    /// 右键仍可按组过滤（那是另一件事，没被取消）。
+    /// Group header: "Aug 2026" + item count printed on a background strip. Not collapsible (owner request: no folding);
+    /// right-click can still filter by group (a separate feature, not dropped).
     func collectionView(_ collectionView: NSCollectionView,
                         viewForSupplementaryElementOfKind kind: NSCollectionView.SupplementaryElementKind,
                         at indexPath: IndexPath) -> NSView {
@@ -772,7 +772,7 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
         return header
     }
 
-    /// 组头右键菜单（FG-3：仅显示此组 / 显示全部组）
+    /// Group header context menu (FG-3: Show Only This Group / Show All Groups)
     private func buildGroupMenu(key: String) -> NSMenu {
         let menu = NSMenu()
         let only = menu.addItem(withTitle: L10n.t("group.filter.only"),
@@ -795,7 +795,7 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
     }
 
     private func selectionDidChange() {
-        // I-32：用户点选经此（didSelect/didDeselect）→ 记账真源
+        // I-32: user clicks arrive here (didSelect/didDeselect) → source-of-truth bookkeeping
         selectionURLCache = Set(selectedURLs)
         onSelectionChange?()
         if QLPreviewPanel.sharedPreviewPanelExists(),
@@ -804,20 +804,20 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
         }
     }
 
-    // MARK: 拖拽源（可拖到 Finder/其他 App/另一窗格/侧边栏书签/暂存架）
+    // MARK: Drag source (can drag to Finder/other apps/another pane/sidebar bookmarks/stash shelf)
 
     func collectionView(_ collectionView: NSCollectionView,
                         pasteboardWriterForItemAt indexPath: IndexPath) -> (any NSPasteboardWriting)? {
         fileItem(at: indexPath)?.url as NSURL?
     }
 
-    // MARK: 投放目标（BG-1：落点只发意图，kind 判定与提交在 coordinator）
+    // MARK: Drop target (BG-1: the destination only sends intent; kind decision and submission live in the coordinator)
 
     func collectionView(_ collectionView: NSCollectionView, validateDrop draggingInfo: any NSDraggingInfo,
                         proposedIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
                         dropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>) -> NSDragOperation {
         guard let urls = Self.draggedFileURLs(draggingInfo), !urls.isEmpty else { return [] }
-        // 落点归一：目录项=投进该文件夹；文件项/空白=投进当前目录
+        // Normalize the destination: directory item = drop into that folder; file item/empty space = drop into the current directory
         var target = model.directory
         let dropItem = fileItem(at: proposedIndexPath.pointee as IndexPath)
         if dropOperation.pointee == .on, let f = dropItem, f.isDirectory, !f.isPackage {
@@ -825,18 +825,18 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
         } else {
             dropOperation.pointee = .before
         }
-        // 拒绝把目录投进它自己/子孙
+        // Refuse dropping a directory into itself/a descendant
         guard urls.allSatisfy({ !FileOpsCoordinator.isSelfOrDescendant(destination: target, ofSource: $0) }) else {
             return []
         }
         let forceCopy = draggingInfo.draggingSourceOperationMask == .copy
-        // 全部来源已在目标目录：移动是无操作 → 拒绝（⌥ 复制放行，语义=制作副本）
+        // All sources already in the destination: a move is a no-op → refuse (⌥ copy is allowed, meaning make a duplicate)
         let destPath = target.standardizedFileURL.path
         if !forceCopy, urls.allSatisfy({ $0.standardizedFileURL.deletingLastPathComponent().path == destPath }) {
             return []
         }
         if forceCopy { return .copy }
-        // Finder 惯例：同卷=移动、跨卷=复制
+        // Finder convention: same volume = move, across volumes = copy
         return urls.allSatisfy({ FileOpsCoordinator.isSameVolume($0, target) }) ? .move : .copy
     }
 
@@ -858,7 +858,7 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
     }
 }
 
-// MARK: - Quick Look 数据源/委托（多选预览；缩放动画锚条目图标区）
+// MARK: - Quick Look data source/delegate (multi-selection preview; zoom animation anchored to the item's icon area)
 
 extension FileIconGridViewController: @preconcurrency QLPreviewPanelDataSource, @preconcurrency QLPreviewPanelDelegate {
     func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
@@ -871,14 +871,14 @@ extension FileIconGridViewController: @preconcurrency QLPreviewPanelDataSource, 
         return urls[index] as NSURL
     }
 
-    /// 面板收到方向键先转回网格（四向皆推进选中，Finder 手感）
+    /// Arrow keys on the panel go back to the grid first (all four directions advance the selection, Finder feel)
     func previewPanel(_ panel: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
         guard event.type == .keyDown, (123...126).contains(Int(event.keyCode)) else { return false }
         collectionView.keyDown(with: event)
         return true
     }
 
-    /// 缩放动画起点=条目图标区
+    /// Zoom animation origin = the item's icon area
     func previewPanel(_ panel: QLPreviewPanel!, sourceFrameOnScreenFor item: (any QLPreviewItem)!) -> NSRect {
         if quickLookDismissing { return .zero }
         guard let url = (item as? NSURL) as URL?,
@@ -891,10 +891,10 @@ extension FileIconGridViewController: @preconcurrency QLPreviewPanelDataSource, 
     }
 }
 
-/// 图标视图分组组头（NSCollectionView section header，M26 v2）：
-/// 印在背景条上的「2026年8月」+ 项数。**不可折叠**（用户要求：像 QSpace，不要伸缩）——
-/// 去掉了折叠三角与整块点击，一个长得像按钮却什么都不做的箭头比没有箭头更糟。
-/// 右键仍出「仅显示此组/显示全部组」过滤菜单（那是另一件事，没被取消）。
+/// Icon view group header (NSCollectionView section header, M26 v2):
+/// "Aug 2026" + item count printed on a background strip. **Not collapsible** (owner request: like QSpace, no folding).
+/// The disclosure triangle and block click were removed: an arrow that looks like a button but does nothing is worse than no arrow.
+/// Right-click still offers the "Show Only This Group / Show All Groups" filter menu (a separate feature, not dropped).
 @MainActor
 final class IconGroupHeaderView: NSView {
     static let reuseID = NSUserInterfaceItemIdentifier("iconGroupHeader")
@@ -925,7 +925,7 @@ final class IconGroupHeaderView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     func configure(title: String, count: Int) {
         titleLabel.stringValue = title
@@ -934,8 +934,8 @@ final class IconGroupHeaderView: NSView {
 
     override func menu(for event: NSEvent) -> NSMenu? { menuProvider?() }
 
-    /// 自测口径：本类是否自己覆写了 mouseDown（折叠取消后必须为 false）。
-    /// 直接判"有没有这个方法"没用——NSView 本来就有；要判的是**本类**有没有覆写。
+    /// Self-test check: whether this class itself overrides mouseDown (must be false since collapsing was dropped).
+    /// Testing "has this method" is useless, since NSView has it anyway; what matters is whether **this class** overrides it.
     static var uiTestOverridesMouseDown: Bool {
         class_getInstanceMethod(IconGroupHeaderView.self, #selector(NSView.mouseDown(with:)))
             != class_getInstanceMethod(NSView.self, #selector(NSView.mouseDown(with:)))

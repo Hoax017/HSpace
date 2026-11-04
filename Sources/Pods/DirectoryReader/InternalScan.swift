@@ -2,7 +2,7 @@ import Foundation
 import UniformTypeIdentifiers
 import NSpaceContracts
 
-// 私有关注点：contentsOfDirectory + resource key 预取（一次系统调用拿全展示所需元数据）
+// Private concern: contentsOfDirectory + resource key prefetch (one system call fetches all metadata needed for display)
 
 private let prefetchKeys: [URLResourceKey] = [
     .nameKey, .isDirectoryKey, .isPackageKey, .isSymbolicLinkKey, .isHiddenKey,
@@ -28,7 +28,7 @@ func scanDirectory(_ request: ReadRequest) throws -> [FileItem] {
     items.reserveCapacity(urls.count)
     for url in urls {
         guard let rv = try? url.resourceValues(forKeys: Set(prefetchKeys)) else {
-            // 单条元数据失败不整目录失败：以最小信息呈现（容错矩阵：装饰失败不伤主链）
+            // A single entry's metadata failure does not fail the whole directory: show it with minimal info (fault matrix: decoration failure must not hurt the main path)
             items.append(FileItem(url: url, name: url.lastPathComponent,
                                   isDirectory: false, isPackage: false, isSymlink: false,
                                   isHidden: false, size: nil, modified: nil, created: nil,

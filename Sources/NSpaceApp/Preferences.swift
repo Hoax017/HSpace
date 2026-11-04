@@ -1,167 +1,167 @@
 import Foundation
 
-/// App 层集中偏好（外部化配置唯一入口——不散落硬编码；胶囊层禁用本类型，经构造注入）。
-/// 全部键在此登记，设置窗按此渲染；新增可配置项 = 加一个静态属性。
+/// Centralized app-layer preferences (single entry for externalized config, no hard-coding scattered around; the pod layer must not use this type and gets values by constructor injection).
+/// All keys are registered here and the settings window renders from this; a new configurable item = one more static property.
 @MainActor
 enum Preferences {
     private static let d = UserDefaults.standard
 
-    /// 新窗口/新工作区标签的默认布局（用户点名：单栏还是双栏要可配）
+    /// Default layout for new windows/workspace tabs (user request: single or dual pane must be configurable)
     static var defaultLayoutRaw: Int {
-        get { d.object(forKey: "defaultLayout") as? Int ?? 1 }  // 1 = 单窗格
+        get { d.object(forKey: "defaultLayout") as? Int ?? 1 }  // 1 = single pane
         set { d.set(newValue, forKey: "defaultLayout") }
     }
 
-    /// 新窗格的默认视图模式（icons=0/list=1/columns=2）
+    /// Default view mode for new panes (icons=0/list=1/columns=2)
     static var defaultViewModeRaw: Int {
         get { d.object(forKey: "defaultViewMode") as? Int ?? 1 }  // list
         set { d.set(newValue, forKey: "defaultViewMode") }
     }
 
-    /// 新窗格默认显示隐藏文件
+    /// Show hidden files by default in new panes
     static var showHiddenByDefault: Bool {
         get { d.bool(forKey: "showHiddenByDefault") }
         set { d.set(newValue, forKey: "showHiddenByDefault") }
     }
 
-    /// 排序时文件夹置顶
+    /// Keep folders on top when sorting
     static var foldersFirst: Bool {
         get { d.object(forKey: "foldersFirst") as? Bool ?? true }
         set { d.set(newValue, forKey: "foldersFirst") }
     }
 
-    /// 默认终端（"auto"=iTerm 优先回退 Terminal）
+    /// Default terminal ("auto" = iTerm first, falling back to Terminal)
     static var terminalChoice: String {
         get { d.string(forKey: "terminalChoice") ?? "auto" }
         set { d.set(newValue, forKey: "terminalChoice") }
     }
 
-    /// 可选列显隐（名称恒在）；QSpace 式列头右键勾选
+    /// Optional column visibility (Name is always shown); QSpace-style right-click ticks on the column header
     static var visibleColumns: [String] {
         get { d.stringArray(forKey: "visibleColumns") ?? ["dateModified", "size", "kind"] }
         set { d.set(newValue, forKey: "visibleColumns") }
     }
 
-    /// 列表视图按「年/月」分组（M26；默认开——用户预期日期排序即见分组）。
-    /// 仅当排序键为日期类（dateModified/created/added）时生效；非日期键或关闭 → 单线长列表。
+    /// Group the list view by year/month (M26; on by default: users expect grouping when sorting by date).
+    /// Applies only when the sort key is date-based (dateModified/created/added); a non-date key or turning it off gives a single flat list.
     static var listGrouping: Bool {
         get { d.object(forKey: "listGrouping") as? Bool ?? true }
         set { d.set(newValue, forKey: "listGrouping") }
     }
 
-    /// 聚焦搜索按使用习惯智能排序（M28，Listary 式 frecency + 匹配质量融合）。默认开；
-    /// 关则回退原排序（局部按离根近、全局按到达序）。
+    /// Smart focused-search ranking by usage (M28, Listary-style blend of frecency + match quality). On by default;
+    /// when off, falls back to the original order (local: nearest to root, global: arrival order).
     static var searchSmartSort: Bool {
         get { d.object(forKey: "searchSmartSort") as? Bool ?? true }
         set { d.set(newValue, forKey: "searchSmartSort") }
     }
 
-    /// 侧栏分组顺序（QSpace 语义——用户点名：书签可拖到最前）。
-    /// outline 分组键：bookmarks/icloud/volumes（暂存架在专区不入 outline）；拖动分组标题行重排落盘于此。
+    /// Sidebar group order (QSpace semantics, user request: bookmarks can be dragged to the top).
+    /// Outline group keys: bookmarks/icloud/volumes (the stash shelf has its own area, not in the outline); reordering by dragging a group header persists here.
     static var sidebarGroupOrder: [String] {
         get { d.stringArray(forKey: "sidebarGroupOrder") ?? ["bookmarks", "icloud", "volumes"] }
         set { d.set(newValue, forKey: "sidebarGroupOrder") }
     }
 
-    // MARK: 归档默认值（ArchiveEngine 能力；FileOpsCoordinator 据此构造 ArchiveOptions）
+    // MARK: Archive defaults (ArchiveEngine capability; FileOpsCoordinator builds ArchiveOptions from these)
 
-    /// 压缩默认格式："zip" / "tar.gz"
+    /// Default compression format: "zip" / "tar.gz"
     static var archiveFormat: String {
         get { d.string(forKey: "archiveFormat") ?? "zip" }
         set { d.set(newValue, forKey: "archiveFormat") }
     }
 
-    /// 压缩后保留原文件（false = 打包成功后把原文件移到废纸篓）
+    /// Keep originals after compressing (false = move the originals to the Trash after a successful archive)
     static var archiveKeepOriginal: Bool {
         get { d.object(forKey: "archiveKeepOriginal") as? Bool ?? true }
         set { d.set(newValue, forKey: "archiveKeepOriginal") }
     }
 
-    /// 解压确保创建包裹文件夹（顶层多于一个条目时先建同名文件夹；只有一个条目则忽略）
+    /// Ensure a wrapper folder on extraction (with more than one top-level entry, create a folder of the same name first; ignored for a single entry)
     static var extractCreateWrapper: Bool {
         get { d.object(forKey: "extractCreateWrapper") as? Bool ?? true }
         set { d.set(newValue, forKey: "extractCreateWrapper") }
     }
 
-    /// 解压后保留压缩包（false = 解压成功后把压缩包移到废纸篓）
+    /// Keep the archive after extracting (false = move the archive to the Trash after a successful extraction)
     static var extractKeepArchive: Bool {
         get { d.object(forKey: "extractKeepArchive") as? Bool ?? true }
         set { d.set(newValue, forKey: "extractKeepArchive") }
     }
 
-    /// 归档格式候选（popup 渲染用）
+    /// Archive format choices (for the popup)
     static let archiveFormatOptions: [(id: String, nameKey: String)] = [
         ("zip", "settings.archiveFormat.zip"),
         ("tar.gz", "settings.archiveFormat.targz"),
     ]
-    // MARK: 使用习惯（QSpace 对齐子集）
+    // MARK: Behavior (QSpace-aligned subset)
 
-    /// Enter 键行为："rename"（默认，行内重命名）/"open"（打开选中项）
+    /// Enter key behavior: "rename" (default, inline rename) / "open" (open the selection)
     static var enterAction: String {
         get { d.string(forKey: "enterAction") ?? "rename" }
         set { d.set(newValue, forKey: "enterAction") }
     }
 
-    /// Backspace 键行为："ignore"（默认）/"back"（返回上一步）/"delete"（移到废纸篓）/"up"（上层文件夹）
+    /// Backspace key behavior: "ignore" (default) / "back" (go back a step) / "delete" (move to Trash) / "up" (parent folder)
     static var backspaceAction: String {
         get { d.string(forKey: "backspaceAction") ?? "ignore" }
         set { d.set(newValue, forKey: "backspaceAction") }
     }
 
-    /// 拖放行为："auto"（默认，同卷移动跨卷复制）/"copy"（恒复制）/"move"（同卷恒移动跨卷仍复制）
+    /// Drag and drop behavior: "auto" (default, move within a volume, copy across volumes) / "copy" (always copy) / "move" (always move within a volume, still copy across volumes)
     static var dragBehavior: String {
         get { d.string(forKey: "dragBehavior") ?? "auto" }
         set { d.set(newValue, forKey: "dragBehavior") }
     }
 
-    /// 双击列表空白处前往上层文件夹（默认 false）
+    /// Double-click blank list space to go to the parent folder (default false)
     static var doubleClickBlank: Bool {
         get { d.bool(forKey: "doubleClickBlank") }
         set { d.set(newValue, forKey: "doubleClickBlank") }
     }
 
-    /// 新窗格默认排序键（name/dateModified/size/kind；只对新建的窗格生效）
+    /// Default sort key for new panes (name/dateModified/size/kind; applies only to newly created panes)
     static var defaultSortKey: String {
         get { d.string(forKey: "defaultSortKey") ?? "name" }
         set { d.set(newValue, forKey: "defaultSortKey") }
     }
 
-    /// 新窗格默认升序（默认 true）
+    /// New panes sort ascending by default (default true)
     static var defaultSortAscending: Bool {
         get { d.object(forKey: "defaultSortAscending") as? Bool ?? true }
         set { d.set(newValue, forKey: "defaultSortAscending") }
     }
 
-    /// 工作区标签上限（0=不限制；>0 时新建工作区超限覆盖最老——移除 index 0，同 QSpace 语义）。
-    /// v0.19.26 起这是唯一的标签上限：窗格内多标签已退役。
+    /// Workspace tab limit (0 = no limit; >0 means a new workspace over the limit replaces the oldest: removes index 0, same as QSpace).
+    /// Since v0.19.26 this is the only tab limit: in-pane tabs are retired.
     static var workspaceTabLimit: Int {
-        get { d.integer(forKey: "workspaceTabLimit") }  // 未设=0=不限制
+        get { d.integer(forKey: "workspaceTabLimit") }  // unset = 0 = no limit
         set { d.set(newValue, forKey: "workspaceTabLimit") }
     }
 
-    /// 外部 open-URL 打开目录的落点："newWindow"=每次开新窗；
-    /// 其余值（默认 "newTab"，含旧值 "activePane"）=复用现有窗口新建**工作区标签**，
-    /// 活动窗格落到目标目录。v0.19.26 前是往活动窗格里新建窗格标签——那层已退役。
+    /// Destination when an external open-URL opens a directory: "newWindow" = a new window every time;
+    /// any other value (default "newTab", including the old value "activePane") = reuse the existing window with a new **workspace tab**,
+    /// pointing the active pane at the target directory. Before v0.19.26 this made a new pane tab in the active pane; that layer is retired.
     static var externalOpenTarget: String {
         get { d.string(forKey: "externalOpenTarget") ?? "newTab" }
         set { d.set(newValue, forKey: "externalOpenTarget") }
     }
 
-    /// 完全磁盘访问自动提示"不再提示"标记（默认 false=未勾掉，未授权时启动会提示一次）
+    /// "Don't ask again" flag for the automatic Full Disk Access prompt (default false = not dismissed; when not granted, launch prompts once)
     static var fdaPromptDismissed: Bool {
         get { d.bool(forKey: "fdaPromptDismissed") }
         set { d.set(newValue, forKey: "fdaPromptDismissed") }
     }
 
-    // MARK: 外观（QSpace 外观面 v1 子集；全部即时生效、经 Theme 广播刷新）
+    // MARK: Appearance (v1 subset of QSpace's appearance options; all apply immediately, refreshed through Theme broadcasts)
 
-    /// 明暗模式："system"（跟随系统，默认）/ "light"（浅色）/ "dark"（深色）
+    /// Light/dark mode: "system" (follow system, default) / "light" / "dark"
     static var appearanceMode: String {
         get { d.string(forKey: "appearanceMode") ?? "system" }
         set { d.set(newValue, forKey: "appearanceMode") }
     }
 
-    /// 主题强调色（6 位 hex，RRGGBB）；nil = 跟随系统强调色（controlAccentColor）
+    /// Theme accent color (6-digit hex, RRGGBB); nil = follow the system accent color (controlAccentColor)
     static var accentColorHex: String? {
         get { d.string(forKey: "accentColorHex") }
         set {
@@ -170,7 +170,7 @@ enum Preferences {
         }
     }
 
-    /// 列表字号（11/12/13/14，默认 12）——越界回夹到候选区间
+    /// List font size (11/12/13/14, default 12); out-of-range values are clamped to the allowed range
     static var listFontSize: Int {
         get {
             let v = d.object(forKey: "listFontSize") as? Int ?? 12
@@ -179,13 +179,13 @@ enum Preferences {
         set { d.set(min(14, max(11, newValue)), forKey: "listFontSize") }
     }
 
-    /// 高亮活动窗格地址栏（默认开）
+    /// Highlight the active pane's address bar (on by default)
     static var activePaneHighlight: Bool {
         get { d.object(forKey: "activePaneHighlight") as? Bool ?? true }
         set { d.set(newValue, forKey: "activePaneHighlight") }
     }
 
-    /// 非活动窗格内容暗化 alpha（0~0.3，默认 0=不暗化）——越界夹紧
+    /// Inactive pane content dimming alpha (0~0.3, default 0 = no dimming); out-of-range values are clamped
     static var inactivePaneDimming: Double {
         get {
             let v = d.object(forKey: "inactivePaneDimming") as? Double ?? 0
@@ -194,7 +194,7 @@ enum Preferences {
         set { d.set(min(0.3, max(0, newValue)), forKey: "inactivePaneDimming") }
     }
 
-    /// 终端候选（bundle id；auto 特殊值）
+    /// Terminal choices (bundle id; auto is a special value)
     static let terminalOptions: [(id: String, nameKey: String)] = [
         ("auto", "settings.terminal.auto"),
         ("com.googlecode.iterm2", "settings.terminal.iterm"),

@@ -3,30 +3,30 @@ import NSpaceContracts
 import VolumeInfo
 import BookmarkStore
 
-/// 左侧边栏：source list 分组（书签/iCloud/位置，可拖动标题行重排）。
-/// 只读+发导航意图（BG-1）；书签增删改经 BookmarkStore 胶囊提交。
+/// Left sidebar: source list groups (bookmarks/iCloud/locations, reorderable by dragging header rows).
+/// Read-only plus navigation intents (BG-1); bookmark add/remove/change is committed through the BookmarkStore pod.
 @MainActor
 final class SidebarViewController: NSViewController {
     let model: SidebarModel
     var onNavigate: ((URL) -> Void)?
 
-    /// 程序化同步高亮期间不许触发导航（否则 selectRowIndexes → selectionDidChange → navigate → 又同步，成环）
+    /// No navigation during programmatic highlight sync (otherwise selectRowIndexes -> selectionDidChange -> navigate -> sync again, a cycle)
     private var suppressSelectionNavigation = false
-    /// 本次点击里选中有没有真的变过。
-    /// AppKit 顺序：选中在 mouseDown 追踪期变化 → action 在 mouseUp 发出。
-    /// 所以 action 里看到这个标志为 true，说明 selectionDidChange 已经导过航了，不重复。
+    /// Whether the selection really changed during this click.
+    /// AppKit order: selection changes during mouseDown tracking -> the action fires on mouseUp.
+    /// So if the action sees this flag true, selectionDidChange has already navigated; do not repeat it.
     private var selectionChangedInThisClick = false
 
     private let stashView = StashShelfView()
-    /// 暂存架专区视图（UISelfTest I-07 居中度量入口；M17 §5）
+    /// Stash shelf area view (UISelfTest I-07 centering measurement entry; M17 §5)
     var stashShelfView: StashShelfView { stashView }
     private let outline = NSOutlineView()
     private let scroll = NSScrollView()
     private let banner = NSTextField(labelWithString: "")
     private var bannerTimer: Timer?
-    /// 书签内部重排的拖拽类型
+    /// Drag type for reordering bookmarks internally
     private static let reorderType = NSPasteboard.PasteboardType("com.nspace.sidebar.bookmark")
-    /// 分组标题行重排的拖拽类型（用户点名：书签可拖到最前）
+    /// Drag type for reordering group header rows (user request: bookmarks can be dragged to the top)
     private static let groupType = NSPasteboard.PasteboardType("com.nspace.sidebar.group")
 
     init(model: SidebarModel) {
@@ -36,7 +36,7 @@ final class SidebarViewController: NSViewController {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     override func loadView() {
         let column = NSTableColumn(identifier: .init("main"))
@@ -46,11 +46,11 @@ final class SidebarViewController: NSViewController {
         outline.headerView = nil
         outline.style = .sourceList
         outline.floatsGroupRows = false
-        outline.rowSizeStyle = .small  // QSpace 式紧凑行高
+        outline.rowSizeStyle = .small  // QSpace-style compact row height
         outline.dataSource = self
         outline.delegate = self
-        // 点击驱动的导航：点**已经选中**的那一行时 selection 不变，
-        // 光靠 outlineViewSelectionDidChange 接不到（用户报告：点「下载」没反应）
+        // Click-driven navigation: clicking the **already selected** row leaves the selection unchanged,
+        // so outlineViewSelectionDidChange alone misses it (user report: clicking Downloads does nothing)
         outline.target = self
         outline.action = #selector(rowClicked(_:))
         outline.registerForDraggedTypes([.fileURL, Self.reorderType, Self.groupType])
@@ -64,7 +64,7 @@ final class SidebarViewController: NSViewController {
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
 
-        // 推出失败等错误的原位横幅（3s 自动隐退，严禁模态弹窗）
+        // In-place banner for errors such as eject failure (hides after 3s; modal alerts are forbidden)
         banner.isHidden = true
         banner.font = .systemFont(ofSize: 11)
         banner.textColor = .systemRed
@@ -79,7 +79,7 @@ final class SidebarViewController: NSViewController {
             root.addSubview(sub)
         }
         NSLayoutConstraint.activate([
-            // QSpace 式顶格：侧栏直通窗口顶，仅留红绿灯行高度（不锚 safeArea/不被工具栏推下）
+            // QSpace-style flush top: the sidebar runs up to the window top, leaving only the traffic light row height (not anchored to safeArea, not pushed down by a toolbar)
             stashView.topAnchor.constraint(equalTo: root.topAnchor, constant: 36),
             stashView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             stashView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
@@ -100,7 +100,7 @@ final class SidebarViewController: NSViewController {
     }
 
     private func reload() {
-        // 暂存架专区注入（幂等；stash 注入晚于 loadView）+ 错误原位横幅
+        // Stash area injection (idempotent; stash is injected later than loadView) + in-place error banner
         if let stash = model.stash {
             stash.onError = { [weak self] message in self?.showBanner(message) }
             stashView.attach(stash)
@@ -118,7 +118,7 @@ final class SidebarViewController: NSViewController {
         }
     }
 
-    // MARK: 推出
+    // MARK: Eject
 
     @objc private func ejectClicked(_ sender: NSButton) {
         let row = outline.row(for: sender)
@@ -132,7 +132,7 @@ final class SidebarViewController: NSViewController {
         }
     }
 
-    // MARK: 书签操作
+    // MARK: Bookmark actions
 
     @objc private func renameBookmark(_ sender: NSMenuItem) {
         guard let leaf = sender.representedObject as? SidebarLeafNode else { return }
@@ -157,7 +157,7 @@ final class SidebarViewController: NSViewController {
 
 }
 
-// MARK: - 数据源
+// MARK: - Data source
 
 extension SidebarViewController: NSOutlineViewDataSource {
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
@@ -174,7 +174,7 @@ extension SidebarViewController: NSOutlineViewDataSource {
         item is SidebarGroupNode
     }
 
-    // 拖出：分组标题=组重排源；书签=重排源；暂存项=resolve 后真实 URL（可投放到任何 fileURL 目标）
+    // Drag out: group header = group reorder source; bookmark = reorder source; stash item = resolved real URL (can drop onto any fileURL target)
     func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> (any NSPasteboardWriting)? {
         if let group = item as? SidebarGroupNode {
             let pb = NSPasteboardItem()
@@ -192,10 +192,10 @@ extension SidebarViewController: NSOutlineViewDataSource {
 
     func outlineView(_ outlineView: NSOutlineView, validateDrop info: any NSDraggingInfo,
                      proposedItem item: Any?, proposedChildIndex index: Int) -> NSDragOperation {
-        // 分组重排：仅允许组拖到根级（item==nil）分组之间（index>=0，非落在某行正中）
+        // Group reorder: groups may only be dragged to the root level (item==nil) between groups (index>=0, not onto the middle of a row)
         if info.draggingPasteboard.types?.contains(Self.groupType) == true {
             if item == nil && index >= 0 { return .move }
-            // 悬停在某分组/条目上 → 重定向到根级缝隙（不接收落在正中）
+            // Hovering over a group/item -> redirect to a root-level gap (drops on the middle are not accepted)
             outlineView.setDropItem(nil, dropChildIndex: NSOutlineViewDropOnItemIndex)
             return []
         }
@@ -205,7 +205,7 @@ extension SidebarViewController: NSOutlineViewDataSource {
         }
         let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []
         guard !urls.isEmpty else { return [] }
-        // 外部文件拖入书签：只收目录，落点强制书签分组
+        // External files dragged into bookmarks: directories only, with the destination forced to the bookmark group
         guard isBookmarkGroup || item == nil else { return [] }
         let allDirs = urls.allSatisfy {
             var d: ObjCBool = false
@@ -220,7 +220,7 @@ extension SidebarViewController: NSOutlineViewDataSource {
 
     func outlineView(_ outlineView: NSOutlineView, acceptDrop info: any NSDraggingInfo,
                      item: Any?, childIndex index: Int) -> Bool {
-        // 分组重排：重排 Preferences.sidebarGroupOrder 并 rebuild
+        // Group reorder: reorder Preferences.sidebarGroupOrder and rebuild
         if let kindStr = info.draggingPasteboard.string(forType: Self.groupType) {
             reorderGroups(movingKind: kindStr, toVisibleIndex: index)
             return true
@@ -244,7 +244,7 @@ extension SidebarViewController: NSOutlineViewDataSource {
         return true
     }
 
-    /// 组重排：把可见分组顺序按拖放落点重算，合并回持久化全序（隐藏的空 iCloud 组置尾不影响呈现）
+    /// Group reorder: recompute the visible group order from the drop point and merge it into the persisted full order (a hidden empty iCloud group goes last without affecting display)
     private func reorderGroups(movingKind kindStr: String, toVisibleIndex index: Int) {
         let visible = model.groups.map { $0.kind.rawValue }
         guard let from = visible.firstIndex(of: kindStr) else { return }
@@ -252,7 +252,7 @@ extension SidebarViewController: NSOutlineViewDataSource {
         let moved = newVisible.remove(at: from)
         let dest = from < index ? index - 1 : index
         newVisible.insert(moved, at: min(max(dest, 0), newVisible.count))
-        // 合并进持久化全序：补齐三键 → 隐藏键（不在可见列表）追尾，可见键按新序在前
+        // Merge into the persisted full order: fill in all three keys -> hidden keys (not in the visible list) go last, visible keys come first in the new order
         var full = Preferences.sidebarGroupOrder
         for key in [SidebarGroupNode.Kind.bookmarks.rawValue,
                     SidebarGroupNode.Kind.icloud.rawValue,
@@ -265,7 +265,7 @@ extension SidebarViewController: NSOutlineViewDataSource {
     }
 }
 
-// MARK: - 委托
+// MARK: - Delegate
 
 extension SidebarViewController: NSOutlineViewDelegate {
     func outlineView(_ outlineView: NSOutlineView, isGroupItem item: Any) -> Bool {
@@ -294,29 +294,29 @@ extension SidebarViewController: NSOutlineViewDelegate {
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
-        // 程序化同步高亮时**既不导航、也不留下"选中变过"的痕迹**：
-        // 留了的话，紧接着那次真实点击会被 handleClick 的去重吞掉——
-        // 而真实 App 每次换目录都会同步一次，用户报的"点了没反应"会原样活下来。
-        // （第一版把置位写在 guard 之前，I-68 当场抓到。）
+        // During programmatic highlight sync, **neither navigate nor leave a "selection changed" trace**:
+        // a trace would make the real click right after it get swallowed by handleClick's dedupe,
+        // and since the real app syncs on every directory change, the user's "click does nothing" would survive unchanged.
+        // (The first version set the flag before the guard; I-68 caught it on the spot.)
         guard !suppressSelectionNavigation else { return }
         selectionChangedInThisClick = true
         navigate(row: outline.selectedRow)
     }
 
-    /// 点击驱动的导航：**点已经选中的那一行**时 selection 不变，
-    /// `outlineViewSelectionDidChange` 根本不触发——用户报告的"点下载没反应，
-    /// 得先点别的再点回来"就是这条缺口。
+    /// Click-driven navigation: **clicking the already selected row** leaves the selection unchanged,
+    /// so `outlineViewSelectionDidChange` never fires; the user's "clicking Downloads does nothing,
+    /// I must click something else and come back" is exactly this gap.
     @objc private func rowClicked(_ sender: Any?) {
         handleClick(row: outline.clickedRow)
     }
 
-    /// 点击落点（internal：自测直接驱动）。
-    /// **不要用合成 mouseDown 去测**：NSOutlineView 的 mouseDown 会开鼠标追踪循环，
-    /// headless 下等不到 mouseUp 永不返回——实测把整个自测挂死，连主线程上的
-    /// 180s 看门狗都一起被饿死（2026-09-11 真挂过一次）。
+    /// Click landing point (internal: driven directly by self-tests).
+    /// **Do not test this with a synthesized mouseDown**: NSOutlineView's mouseDown starts a mouse tracking loop,
+    /// which headless never gets a mouseUp to leave; it hung the entire self-test in practice, starving even
+    /// the 180s watchdog on the main thread (a real hang on 2026-09-11).
     func handleClick(row: Int) {
         defer { selectionChangedInThisClick = false }
-        guard !selectionChangedInThisClick else { return }   // 选中真变过 → selectionDidChange 已导航
+        guard !selectionChangedInThisClick else { return }   // the selection really changed -> selectionDidChange already navigated
         navigate(row: row)
     }
 
@@ -327,9 +327,9 @@ extension SidebarViewController: NSOutlineViewDelegate {
         onNavigate?(url)
     }
 
-    /// 把高亮同步到窗格当前所在目录（没有对应书签就清空高亮）。
-    /// 旧版**完全没有这个同步**：高亮只是"你上次点了谁"，用面包屑/双击换目录之后它就
-    /// 一直指着旧位置——既在撒谎，也让"再点它一次"变成无效操作。
+    /// Syncs the highlight to the pane's current directory (clears the highlight when no bookmark matches).
+    /// The old version **had no such sync at all**: the highlight meant only "what you clicked last", and after changing directory through the breadcrumb/double-click it
+    /// kept pointing at the old location: a lie, which also made "click it again" a no-op.
     func syncSelection(to url: URL?) {
         suppressSelectionNavigation = true
         defer { suppressSelectionNavigation = false }
@@ -342,17 +342,17 @@ extension SidebarViewController: NSOutlineViewDelegate {
                 return
             }
         }
-        outline.deselectAll(nil)   // 当前目录不在书签里 → 不许留着旧高亮冒充"你在这儿"
+        outline.deselectAll(nil)   // current directory is not bookmarked -> no stale highlight may pose as "you are here"
     }
 
-    // ---- 自测通道（I-68）----
-    /// 当前高亮行对应的 URL（nil = 无高亮）
+    // ---- Self-test channel (I-68) ----
+    /// URL of the currently highlighted row (nil = no highlight)
     var uiTestSelectedURL: URL? {
         guard outline.selectedRow >= 0,
               let leaf = outline.item(atRow: outline.selectedRow) as? SidebarLeafNode else { return nil }
         return leaf.url
     }
-    /// 按 URL 找行号（-1 = 侧栏里没有这一项）
+    /// Finds the row number by URL (-1 = not in the sidebar)
     func uiTestRow(for url: URL) -> Int {
         let want = url.standardizedFileURL.path
         for row in 0..<outline.numberOfRows {
@@ -361,14 +361,14 @@ extension SidebarViewController: NSOutlineViewDelegate {
         }
         return -1
     }
-    /// 模拟点某一行：**选中真会变**的情形走 selectRowIndexes（真实触发 selectionDidChange），
-    /// 随后补一次 handleClick——与 AppKit 的实际顺序一致（选中在 mouseDown 期变、action 在 mouseUp 发）。
+    /// Simulates clicking a row: where the **selection really changes**, uses selectRowIndexes (really fires selectionDidChange),
+    /// then adds one handleClick, matching AppKit's actual order (selection changes during mouseDown, the action fires on mouseUp).
     func uiTestClickRow(_ row: Int) {
         guard row >= 0, row < outline.numberOfRows else { return }
         if outline.selectedRow != row { outline.selectRowIndexes([row], byExtendingSelection: false) }
         handleClick(row: row)
     }
-    /// 点击接线是否真的挂上了（上面那条走的是 handleClick，证明不了 action 接没接）
+    /// Whether click wiring is really attached (the path above uses handleClick, which cannot prove the action is wired)
     var uiTestClickWiredToOutline: Bool {
         outline.action == #selector(rowClicked(_:)) && (outline.target as? SidebarViewController) === self
     }
@@ -390,7 +390,7 @@ extension SidebarViewController: NSOutlineViewDelegate {
     }
 }
 
-// MARK: - 右键菜单（书签：重命名/移除；暂存架：移除/清空）
+// MARK: - Context menu (bookmarks: rename/remove; stash shelf: remove/clear)
 
 extension SidebarViewController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -410,7 +410,7 @@ extension SidebarViewController: NSMenuDelegate {
     }
 }
 
-// MARK: - 书签行内重命名提交
+// MARK: - Bookmark inline rename commit
 
 extension SidebarViewController: NSTextFieldDelegate {
     func controlTextDidEndEditing(_ notification: Notification) {
@@ -421,7 +421,7 @@ extension SidebarViewController: NSTextFieldDelegate {
               case let .bookmark(item) = leaf.payload else { return }
         let newName = field.stringValue.trimmingCharacters(in: .whitespaces)
         guard !newName.isEmpty, newName != item.name else {
-            field.stringValue = item.name  // FG-6：无效输入回滚旧名
+            field.stringValue = item.name  // FG-6: invalid input rolls back to the old name
             return
         }
         Task {
@@ -431,7 +431,7 @@ extension SidebarViewController: NSTextFieldDelegate {
     }
 }
 
-/// 侧栏叶子行：图标+标题（+容量副标题）（+推出钮）
+/// Sidebar leaf row: icon + title (+ capacity subtitle) (+ eject button)
 @MainActor
 final class SidebarLeafCell: NSTableCellView {
     private let icon = NSImageView()
@@ -475,13 +475,13 @@ final class SidebarLeafCell: NSTableCellView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     func configure(leaf: SidebarLeafNode, ejectable: Bool, ejectTarget: AnyObject, ejectAction: Selector) {
         icon.image = leaf.icon
-        icon.contentTintColor = leaf.tint  // Finder 式蓝色收藏（nil=原色）
+        icon.contentTintColor = leaf.tint  // Finder-style blue favorites (nil = original color)
         title.stringValue = leaf.title
-        // 标题色：显式覆盖优先（暂存操作行/丢失项）；否则目标丢失置灰
+        // Title color: explicit override first (stash action rows/lost items); otherwise gray for a lost target
         title.textColor = leaf.titleColor ?? (leaf.url == nil ? .tertiaryLabelColor : .labelColor)
         subtitle.stringValue = leaf.subtitle ?? ""
         subtitle.isHidden = leaf.subtitle == nil

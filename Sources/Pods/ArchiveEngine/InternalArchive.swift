@@ -1,35 +1,35 @@
 import Foundation
 import NSpaceContracts
 
-// 私有关注点：compress / extract 的物理实现。
-// 关键设计——"暂存目录"落地：一切产物先写入目标目录内的隐藏暂存目录（同卷→原子 rename），
-// 成功后再搬到最终落点；取消/出错只需删暂存目录，天然"不留半成品"（呼应铁律"取消清理半成品"）。
+// Private concern: physical implementation of compress / extract.
+// Key design, the "staging directory" landing: all output is first written to a hidden staging directory inside the target directory (same volume → atomic rename),
+// and moved to its final location on success; cancel or error just deletes the staging directory, so nothing half-finished is left (per the hard rule "cancel cleans up partial output").
 
 extension ArchiveEngineNode {
 
-    // MARK: 压缩
+    // MARK: Compress
 
     func compress(_ spec: OperationSpec, context: NodeContext, started: Date) async throws -> OperationReceipt {
         let fm = FileManager.default
         guard !spec.sources.isEmpty else {
-            throw ArchiveError(.logic, "compress 需要至少一个源")
+            throw ArchiveError(.logic, "compress requires at least one source")
         }
         for src in spec.sources where !fm.fileExists(atPath: src.path) {
-            throw ArchiveError(.external, "源不存在: \(src.lastPathComponent)", path: src.path)
+            throw ArchiveError(.external, "Source not found:\(src.lastPathComponent)", path: src.path)
         }
         let options = spec.archiveOptions ?? ArchiveOptions()
         let isTarGz = options.format.lowercased() == "tar.gz"
         let ext = isTarGz ? "tar.gz" : "zip"
 
-        // 全部选中项共享同一父目录（文件管理器选中恒来自单一目录），作为 zip/tar 的相对根
+        // All selected items share one parent directory (a file manager selection always comes from a single directory), used as the zip/tar relative root
         let sourcesParent = spec.sources[0].deletingLastPathComponent()
         let outputDir = spec.destination ?? sourcesParent
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: outputDir.path, isDirectory: &isDir), isDir.boolValue else {
-            throw ArchiveError(.external, "输出目录不可用: \(outputDir.lastPathComponent)", path: outputDir.path)
+            throw ArchiveError(.external, "Output folder unavailable:\(outputDir.lastPathComponent)", path: outputDir.path)
         }
 
-        // 归档基名：显式 newName 优先；单源省扩展名取名；多源取共同父目录名（退化时兜底 Archive）
+        // Archive base name: explicit newName first; single source uses its extensionless name; multiple sources use the common parent's name (falling back to Archive)
         let baseName: String
         if let n = spec.newName, !n.isEmpty {
             baseName = n
@@ -45,7 +45,7 @@ extension ArchiveEngineNode {
         context.report(.scanTotals(files: 1, bytes: inputBytes))
         context.report(.progress(filesDone: 0, bytesDone: 0, currentPath: finalName))
 
-        // 暂存目录（目标目录内隐藏，同卷）；产物先落此处，成功再原子搬出
+        // Staging directory (hidden inside the target directory, same volume); output lands here first, then moves out atomically on success
         let staging = outputDir.appendingPathComponent(".nspace-archive-\(UUID().uuidString)")
         try Self.makeDir(staging)
         defer { try? fm.removeItem(at: staging) }
@@ -54,50 +54,50 @@ extension ArchiveEngineNode {
         let names = spec.sources.map(\.lastPathComponent)
         do {
             if isTarGz {
-                // tar 无内建加密：口令被忽略（Contract 已注明）
+                // tar has no built-in encryption: the password is ignored (noted in Contract)
                 try await runArchiveTool(Tools.tar,
                     ["-czf", stagedArchive.path, "-C", sourcesParent.path] + names)
             } else {
                 var args = ["-r", "-q"]
-                if let pw = options.password, !pw.isEmpty { args += ["-P", pw] }  // ZipCrypto 弱加密
+                if let pw = options.password, !pw.isEmpty { args += ["-P", pw] }  // ZipCrypto weak encryption
                 args += [stagedArchive.path] + names
-                // cwd = 共同父目录 → 归档内为相对路径（不含绝对前缀）
+                // cwd = common parent → relative paths inside the archive (no absolute prefix)
                 try await runArchiveTool(Tools.zip, args, cwd: sourcesParent)
             }
         } catch is CancellationError {
-            throw CancellationError()   // defer 清理暂存目录（含 zip 的 zi* 临时文件），最终名从未出现
+            throw CancellationError()   // defer cleans up the staging directory (including zip's zi* temp files); the final name never appeared
         }
 
-        // 成功：把归档搬到最终落点（搬前复检唯一名，防并发新建撞名）
+        // Success: move the archive to its final location (re-check the unique name before moving, in case something concurrent took it)
         let landedName = uniqueArchiveName(base: baseName, ext: ext, in: outputDir)
         let landed = outputDir.appendingPathComponent(landedName)
         do {
             try fm.moveItem(at: stagedArchive, to: landed)
         } catch {
-            throw ArchiveError(.external, "归档落地失败: \(error.localizedDescription)", path: landed.path)
+            throw ArchiveError(.external, "Could not save archive:\(error.localizedDescription)", path: landed.path)
         }
-        // 进度以"已处理输入字节"为分子分母（Process 无细粒度，压缩后到达 100%）；归档实体见 createdURLs
+        // Progress uses "input bytes processed" as numerator and denominator (Process has no fine granularity, so it reaches 100% after compression); the archive itself is in createdURLs
         context.report(.progress(filesDone: 1, bytesDone: inputBytes, currentPath: landedName))
         return OperationReceipt(id: context.operationID, filesDone: 1, bytesDone: inputBytes,
                                 duration: Date().timeIntervalSince(started), createdURLs: [landed])
     }
 
-    // MARK: 解压
+    // MARK: Extract
 
     func extract(_ spec: OperationSpec, context: NodeContext, started: Date) async throws -> OperationReceipt {
         let fm = FileManager.default
         guard !spec.sources.isEmpty else {
-            throw ArchiveError(.logic, "extract 需要至少一个源")
+            throw ArchiveError(.logic, "extract requires at least one source")
         }
         let options = spec.archiveOptions ?? ArchiveOptions()
 
-        // 预检：全部源存在且格式可识别（否则 logic：调用方不该派进不支持的类型）
+        // Pre-check: all sources exist and have a recognized format (otherwise logic: the caller should not dispatch unsupported types)
         for src in spec.sources {
             guard fm.fileExists(atPath: src.path) else {
-                throw ArchiveError(.external, "压缩包不存在: \(src.lastPathComponent)", path: src.path)
+                throw ArchiveError(.external, "Archive not found:\(src.lastPathComponent)", path: src.path)
             }
             guard ArchiveFormat.detect(src) != nil else {
-                throw ArchiveError(.logic, "无法识别的归档格式: \(src.lastPathComponent)", path: src.path)
+                throw ArchiveError(.logic, "Unrecognized archive format:\(src.lastPathComponent)", path: src.path)
             }
         }
 
@@ -119,21 +119,21 @@ extension ArchiveEngineNode {
                                 duration: Date().timeIntervalSince(started), createdURLs: created)
     }
 
-    /// 解一个压缩包，返回落地的顶层 URL 列表（供 UI 选中）。暂存目录保证取消/出错不留半成品。
+    /// Extracts one archive and returns the landed top-level URLs (for UI selection). The staging directory ensures cancel or error leaves nothing half-finished.
     private func extractOne(_ archive: URL, options: ArchiveOptions) async throws -> [URL] {
         let fm = FileManager.default
         guard let format = ArchiveFormat.detect(archive) else {
-            throw ArchiveError(.logic, "无法识别的归档格式: \(archive.lastPathComponent)", path: archive.path)
+            throw ArchiveError(.logic, "Unrecognized archive format:\(archive.lastPathComponent)", path: archive.path)
         }
         let targetBaseDir = options.extractInto ?? archive.deletingLastPathComponent()
-        try Self.makeDir(targetBaseDir)  // extractInto 可能尚不存在
+        try Self.makeDir(targetBaseDir)  // extractInto may not exist yet
 
         let staging = targetBaseDir.appendingPathComponent(".nspace-extract-\(UUID().uuidString)")
         try Self.makeDir(staging)
         var stagingAlive = true
         defer { if stagingAlive { try? fm.removeItem(at: staging) } }
 
-        // 落地到暂存目录
+        // Land in the staging directory
         do {
             switch format {
             case .zip:
@@ -153,25 +153,25 @@ extension ArchiveEngineNode {
                 try await extractSingleStream(archive, format: format, into: staging)
             }
         } catch is CancellationError {
-            throw CancellationError()   // defer 清理暂存目录
+            throw CancellationError()   // defer cleans up the staging directory
         }
 
-        // 暂存目录内的顶层条目 = 真实解出的顶层（比预读列表更可靠）
+        // Top-level entries inside staging = what was really extracted (more reliable than a pre-read listing)
         let children = (try? fm.contentsOfDirectory(at: staging,
             includingPropertiesForKeys: nil, options: [])) ?? []
         let topCount = children.count
 
         var landed: [URL] = []
         if options.createWrapper && topCount > 1 {
-            // 包裹语义：顶层多于一个 → 先建同名包裹文件夹（即把整个暂存目录改名为包裹目录）
+            // Wrapper semantics: more than one top-level entry → create a same-named wrapper folder first (by renaming the whole staging directory to the wrapper)
             let stem = Self.archiveStemName(archive, format: format)
             let wrapperName = uniqueArchiveName(base: stem, ext: "", in: targetBaseDir)
             let wrapper = targetBaseDir.appendingPathComponent(wrapperName)
             try fm.moveItem(at: staging, to: wrapper)
-            stagingAlive = false   // 暂存目录已被改名为包裹目录，defer 不再删
+            stagingAlive = false   // staging was renamed to the wrapper, so defer no longer deletes it
             landed = [wrapper]
         } else {
-            // 只有一个条目（或不要包裹）→ 忽略包裹，逐个搬到目标目录（同名覆盖，呼应 unzip -o 语义）
+            // Only one entry (or no wrapper wanted) → skip the wrapper and move entries into the target directory one by one (same name overwrites, matching unzip -o semantics)
             for child in children {
                 let dest = targetBaseDir.appendingPathComponent(child.lastPathComponent)
                 if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
@@ -182,13 +182,13 @@ extension ArchiveEngineNode {
         return landed
     }
 
-    /// 单流压缩（.gz/.bz2/.xz/.Z）：解压到暂存目录内的单个输出文件（stdout 重定向）
+    /// Single-stream compression (.gz/.bz2/.xz/.Z): extracts to a single output file inside staging (stdout redirected)
     private func extractSingleStream(_ archive: URL, format: ArchiveFormat, into staging: URL) async throws {
         let fm = FileManager.default
         let outName = ArchiveFormat.singleStreamOutputName(for: archive)
         let outURL = staging.appendingPathComponent(outName)
         guard fm.createFile(atPath: outURL.path, contents: Data()) else {
-            throw ArchiveError(.external, "无法创建解压输出: \(outName)", path: outURL.path)
+            throw ArchiveError(.external, "Could not create extraction output:\(outName)", path: outURL.path)
         }
         let handle = try FileHandle(forWritingTo: outURL)
         defer { try? handle.close() }
@@ -200,34 +200,34 @@ extension ArchiveEngineNode {
         }
     }
 
-    // MARK: 工具调用（退码分类）
+    // MARK: Tool invocation (exit code classification)
 
-    /// 运行归档工具并把退码归类：0=成功；取消=CancellationError；非0=external(带 stderr 摘要)
+    /// Runs an archive tool and classifies its exit code: 0 = success; cancelled = CancellationError; non-zero = external (with stderr summary)
     private func runArchiveTool(_ tool: String, _ args: [String], cwd: URL? = nil,
                                stdoutTo: FileHandle? = nil) async throws {
         let result = try await runTool(tool, args, cwd: cwd, stdoutTo: stdoutTo)
         if Task.isCancelled { throw CancellationError() }
         if result.status != 0 {
             let summary = Self.stderrSummary(result.stderr)
-            let tail = summary.isEmpty ? "退出码 \(result.status)" : summary
-            throw ArchiveError(.external, "\(URL(fileURLWithPath: tool).lastPathComponent) 失败: \(tail)")
+            let tail = summary.isEmpty ? "exit code\(result.status)" : summary
+            throw ArchiveError(.external, "\(URL(fileURLWithPath: tool).lastPathComponent) failed:\(tail)")
         }
     }
 
-    // MARK: 工具函数
+    // MARK: Utilities
 
     static func makeDir(_ url: URL) throws {
         do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
-        catch { throw ArchiveError(.external, "无法创建目录: \(url.lastPathComponent)", path: url.path) }
+        catch { throw ArchiveError(.external, "Could not create folder:\(url.lastPathComponent)", path: url.path) }
     }
 
-    /// 单文件字节大小（失败按 0）
+    /// Size of one file in bytes (0 on failure)
     static func fileSize(_ url: URL) -> Int64 {
         let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
         return (attrs?[.size] as? Int64) ?? 0
     }
 
-    /// 递归字节大小（压缩进度分母；失败按 0，装饰性不伤主链）
+    /// Recursive size in bytes (compression progress denominator; 0 on failure, decorative, must not hurt the main path)
     static func treeSize(_ url: URL) -> Int64 {
         let fm = FileManager.default
         var isDir: ObjCBool = false
@@ -245,7 +245,7 @@ extension ArchiveEngineNode {
         return total
     }
 
-    /// 归档"主干名"（去掉归档后缀，保留原大小写）——包裹文件夹命名用
+    /// Archive "stem" (archive suffix removed, original case kept), used to name wrapper folders
     static func archiveStemName(_ url: URL, format: ArchiveFormat) -> String {
         let name = url.lastPathComponent
         let lower = name.lowercased()

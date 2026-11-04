@@ -5,16 +5,16 @@ import DirectoryWatch
 import FolderSize
 import IconThumb
 
-/// 全 App 共享引擎实例（构造一次、全局注入）：FolderSize 的并发限界（=2）与缓存全局生效，
-/// IconThumb 的 LRU 缩略图缓存跨窗格/标签复用。两者均 Sendable，静态持有安全。
+/// App-wide shared engine instances (constructed once, injected globally): FolderSize's concurrency limit (=2) and cache apply globally,
+/// and IconThumb's LRU thumbnail cache is reused across panes and tabs. Both are Sendable, so static storage is safe.
 enum Engines {
     static let folderSize = FolderSize()
     static let iconThumb = IconThumb()
 }
 
-/// 每窗格内容的胶水：订阅 DirectoryReader 投影，持有快照，代际防过期覆盖（spec 3.2）。
-/// 另持 DirectoryWatch 监听句柄实现 FSEvents 自动刷新；挂起/恢复走 mtime 比对（北极星：后台零功耗）。
-/// 展示层只读消费——本类不含任何写型文件操作（BG-1）。
+/// Glue for one pane's content: subscribes to the DirectoryReader projection, holds the snapshot, and uses generations to block stale overwrites (spec 3.2).
+/// Also holds the DirectoryWatch handle for FSEvents auto-refresh; suspend/resume compares mtimes (north star: zero background power).
+/// The presentation layer only consumes reads: this class contains no write-type file operations (BG-1).
 @MainActor
 final class DirectoryViewModel {
     private let reader = DirectoryReader()
@@ -22,9 +22,9 @@ final class DirectoryViewModel {
 
     private var watcher: DirectoryWatcher?
     private var watchTask: Task<Void, Never>?
-    /// 挂起态（spec 3.2 suspended）：true 时 FSEventStream 已真停——零回调零功耗
+    /// Suspended state (spec 3.2 suspended): when true the FSEventStream is really stopped, with no callbacks and no power use
     private(set) var isSuspended = false
-    /// 挂起瞬间的目录 mtime；恢复时比对，变了才 reload，没变零工作
+    /// Directory mtime at the moment of suspension; compared on resume, reloading only if changed, otherwise no work
     private var suspendedMTime: Date?
 
     private(set) var directory: URL
@@ -34,13 +34,13 @@ final class DirectoryViewModel {
     var includeHidden = false { didSet { reload() } }
     var sort = SortSpec() { didSet { reload() } }
 
-    // M9 多播：同一 model 被列表/图标网格多视图消费（观察者与标签同生命周期，不需移除）
+    // M9 multicast: one model is consumed by the list and icon grid views (observers live as long as the tab, so no removal is needed)
     private var updateHandlers: [() -> Void] = []
     private var errorHandlers: [(String) -> Void] = []
 
-    /// 订阅快照更新（多视图共享同一 model 的唯一挂点）
+    /// Subscribe to snapshot updates (the single hook for multiple views sharing one model)
     func addOnUpdate(_ handler: @escaping () -> Void) { updateHandlers.append(handler) }
-    /// 订阅就地错误呈现（原位空态横幅，严禁弹窗轰炸——spec 容错矩阵）
+    /// Subscribe to in-place error presentation (in-place empty-state banner; no alert storms, per the spec's fault-tolerance matrix)
     func addOnError(_ handler: @escaping (String) -> Void) { errorHandlers.append(handler) }
 
     private func notifyUpdate() { updateHandlers.forEach { $0() } }
@@ -55,13 +55,13 @@ final class DirectoryViewModel {
 
     func navigate(to url: URL) {
         directory = url
-        lastAppliedGeneration = 0  // 新目录重置代际基线
-        startWatching()            // 停旧流开新流
+        lastAppliedGeneration = 0  // Reset the generation baseline for the new directory
+        startWatching()            // Stop the old stream and open a new one
         reload()
     }
 
     func reload() {
-        if watcher == nil { startWatching() }  // 首次装载（loadView → reload）时补开监听
+        if watcher == nil { startWatching() }  // Start watching on first load (loadView → reload)
         loadTask?.cancel()
         isLoading = true
         let request = ReadRequest(directory: directory, includeHidden: includeHidden, sort: sort)
@@ -86,9 +86,9 @@ final class DirectoryViewModel {
         }
     }
 
-    // MARK: 实时刷新（FSEvents）与挂起/恢复（spec 3.2：后台标签/窗格零功耗是北极星）
+    // MARK: Live refresh (FSEvents) and suspend/resume (spec 3.2: zero power for background tabs/panes is the north star)
 
-    /// 开新监听流（先彻底停旧流）。FSEventStream 创建失败时静默降级为手动刷新（⌘R），不崩不弹窗。
+    /// Opens a new watch stream (fully stopping the old one first). If FSEventStream creation fails, silently degrades to manual refresh (⌘R), with no crash or alert.
     private func startWatching() {
         stopWatching()
         let w = watchFactory.watch(directory)
@@ -96,19 +96,19 @@ final class DirectoryViewModel {
         watchTask = Task { [weak self] in
             for await _ in w.signals {
                 guard let self else { return }
-                // 目录内容变了：先失效其 FolderSize 缓存（父目录列表中的本目录行下次重算）
+                // Directory contents changed: invalidate its FolderSize cache first (this directory's row in the parent listing recomputes next time)
                 await Engines.folderSize.invalidate(self.directory)
                 self.reload()
             }
         }
-        // 挂起态下换目录（罕见路径）：新流立即挂起，恢复时仍按 mtime 比对
+        // Directory changed while suspended (rare path): suspend the new stream at once; resume still compares mtimes
         if isSuspended {
             w.suspend()
             suspendedMTime = currentMTime()
         }
     }
 
-    /// 彻底停流并收尾信号任务（关标签时调用；navigate 换目录经 startWatching 先停旧流）
+    /// Fully stops the stream and finishes the signal task (called on tab close; navigate stops the old stream via startWatching)
     func stopWatching() {
         watchTask?.cancel()
         watchTask = nil
@@ -116,7 +116,7 @@ final class DirectoryViewModel {
         watcher = nil
     }
 
-    /// 挂起：真停 FSEventStream（零回调零功耗），记录当前目录 mtime 供恢复比对
+    /// Suspend: really stops the FSEventStream (no callbacks, no power use) and records the directory mtime for comparison on resume
     func suspend() {
         guard !isSuspended else { return }
         isSuspended = true
@@ -124,7 +124,7 @@ final class DirectoryViewModel {
         suspendedMTime = currentMTime()
     }
 
-    /// 恢复：重启流；mtime 变了才 reload，没变零工作（spec 3.2 suspended → loaded/loading）
+    /// Resume: restarts the stream; reloads only if the mtime changed, otherwise no work (spec 3.2 suspended → loaded/loading)
     func resume() {
         guard isSuspended else { return }
         isSuspended = false
@@ -137,24 +137,24 @@ final class DirectoryViewModel {
         }
     }
 
-    /// 只读 stat（BG-1 允许读）：目录的 contentModificationDate
+    /// Read-only stat (BG-1 allows reads): the directory's contentModificationDate
     private func currentMTime() -> Date? {
         (try? directory.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
     }
 
     deinit {
-        // 兜底收流（正常路径 closeTab 已显式 stopWatching）；两者均 Sendable，deinit 可安全触碰
+        // Safety-net stream teardown (the normal path, closeTab, calls stopWatching explicitly); both are Sendable, so deinit may touch them
         watchTask?.cancel()
         watcher?.stop()
     }
 }
 
 extension DirectoryViewModel {
-    /// 按 URL 找条目下标（列表/图标/分栏三视图定位共用的唯一判据）。
-    /// 先精确比标准化路径（目录条目 URL 带尾斜杠、导航/搜索来源的不带——I-39 同病同修）；
-    /// 找不到再退到**大小写不敏感**比较：APFS/HFS+ 默认大小写不敏感，用户粘贴或第三方传入的
-    /// 路径大小写常与盘上不同——`fileExists` 能过、精确字符串比较却匹配不上，表现为
-    /// 「跳到父目录了却什么都没选中」的静默失败。
+    /// Finds an item's index by URL (the single criterion shared by list, icon and column view positioning).
+    /// First an exact compare of standardized paths (directory entry URLs have a trailing slash, those from navigation/search don't; same fix as I-39);
+    /// if that fails, falls back to a **case-insensitive** compare: APFS/HFS+ are case-insensitive by default, and paths pasted by users or passed
+    /// by third parties often differ in case from disk, so `fileExists` passes while an exact string compare fails, showing up as
+    /// a silent failure: "jumped to the parent but nothing is selected".
     func itemIndex(forURL url: URL) -> Int? {
         let target = url.standardizedFileURL.path
         if let exact = items.firstIndex(where: { $0.url.standardizedFileURL.path == target }) {
@@ -165,7 +165,7 @@ extension DirectoryViewModel {
         }
     }
 
-    /// 该目录是否就是这个 URL 的父目录（判断"目标目录已经载入完了"，用于作废落空的 pending 定位）
+    /// Whether this directory is the URL's parent (i.e. "the target directory has finished loading"; used to void a pending reveal that missed)
     func isLoadedDirectory(forParentOf url: URL) -> Bool {
         directory.standardizedFileURL.path
             == url.deletingLastPathComponent().standardizedFileURL.path

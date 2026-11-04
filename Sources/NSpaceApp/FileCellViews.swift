@@ -1,28 +1,28 @@
 import AppKit
 
-/// 上报用户交互的表视图（窗格焦点协调：点击即请求激活所属窗格）。
-/// 另承载右键菜单构造钩子与 Return 键（触发行内重命名）。
+/// Table view that reports user interaction (pane focus coordination: a click requests activation of the owning pane).
+/// Also hosts the context menu hook and the Return key (triggers inline rename).
 @MainActor
 final class FocusReportingTableView: NSTableView {
     var onInteract: (() -> Void)?
-    /// 右键菜单提供者：入参为点击行（-1 表示空白区，走目录级菜单）
+    /// Context menu provider: the argument is the clicked row (-1 means empty space, using the directory-level menu)
     var menuProvider: ((Int) -> NSMenu?)?
-    /// Return 键：触发选中行的行内重命名
+    /// Return key: starts inline rename of the selected row
     var onReturn: (() -> Void)?
-    /// Return 键（enterAction=open 时）：打开选中项
+    /// Return key (when enterAction=open): opens the selected item
     var onOpenSelected: (() -> Void)?
-    /// Backspace 键（无 ⌘ 修饰）：按 backspaceAction 分发（忽略/返回/废纸篓/上层）
+    /// Backspace key (no ⌘): dispatches by backspaceAction (ignore/back/trash/up)
     var onBackspaceAction: (() -> Void)?
-    /// 空格键：Quick Look 预览开关（Finder 肌肉记忆）
+    /// Space key: toggles Quick Look preview (Finder muscle memory)
     var onSpace: (() -> Void)?
-    /// 拖拽移出/结束（spring-loaded 计时器取消用）
+    /// Drag exited/ended (cancels the spring-loaded timer)
     var onDragExited: (() -> Void)?
-    /// ←/→ 键（分栏视图列间移动用；nil 时交回系统默认行为）
+    /// ←/→ keys (moving between columns in column view; nil hands back to system default behaviour)
     var onArrowLeft: (() -> Void)?
     var onArrowRight: (() -> Void)?
-    /// 组头行判定（M26）：真时该行为组头，点击切折叠、不参与选中语义
+    /// Group header check (M26): true means the row is a group header; clicking toggles collapse and takes no part in selection
     var isGroupRowProvider: ((Int) -> Bool)?
-    /// 组头行点击（M26）：切换该行所属组的折叠态
+    /// Group header click (M26): toggles the collapse state of the row's group
     var onGroupRowClick: ((Int) -> Void)?
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {
@@ -35,20 +35,20 @@ final class FocusReportingTableView: NSTableView {
         super.draggingEnded(sender)
     }
 
-    /// I-43：本次 super.mouseDown 期间是否发起了拖拽（由 delegate 的 pasteboardWriterForRow 置位）——
-    /// 用于区分"纯单击已选中行"(需抢先收敛) 与"拖拽多选"(选中保持不动)。
+    /// I-43: whether a drag started during this super.mouseDown (set by the delegate's pasteboardWriterForRow).
+    /// Distinguishes "plain click on a selected row" (collapse early) from "dragging a multi-selection" (selection stays).
     var dragInitiated = false
 
-    /// 单击已选中项 → 重命名（用户报告：只有 Enter 能触发）。
-    /// `onSingleClickRename` 由 FileListViewController 接到 beginRename(row:)。
+    /// Click on an already selected item → rename (user report: only Enter could trigger it).
+    /// `onSingleClickRename` is wired to beginRename(row:) by FileListViewController.
     var onSingleClickRename: ((Int) -> Void)?
-    /// 待触发的重命名（等一个双击间隔；双击到来即作废）
+    /// Pending rename (waits one double-click interval; a double click voids it)
     private var pendingRenameToken = 0
 
-    /// 单击重命名的决策谓词（纯函数，可确定性单测）。
-    /// 只有「**恰好单选** + 点在那个已选中的行 + 无修饰键 + 单击」才算。
-    /// 为什么排除多选：那一手势已经归 I-43 的"抢先收敛选区"，两者抢同一个动作时收敛优先——
-    /// 收敛本身就是一次选中变更，紧接着弹出重命名框会很突兀。
+    /// Decision predicate for click-to-rename (pure function, deterministically unit-testable).
+    /// Only "**exactly one selected** + click on that selected row + no modifiers + single click" qualifies.
+    /// Why multi-selection is excluded: that gesture belongs to I-43's "collapse selection early"; when the two compete, collapsing wins,
+    /// since collapsing is itself a selection change and an immediate rename field would be jarring.
     static func shouldScheduleRename(clickedRow: Int, modifiers: NSEvent.ModifierFlags,
                                      clickCount: Int, selectedCount: Int,
                                      rowIsSelected: Bool, isGroupRow: Bool) -> Bool {
@@ -60,11 +60,11 @@ final class FocusReportingTableView: NSTableView {
             && rowIsSelected
     }
 
-    /// 取消待触发的重命名（双击、导航、键盘操作都要作废它）
+    /// Cancels a pending rename (double click, navigation and keyboard actions must all void it)
     func cancelPendingRename() { pendingRenameToken += 1 }
 
-    /// I-43 决策谓词（纯函数，可确定性单测）：是否需要在 super.mouseDown 后抢先把选中收敛为单选。
-    /// 仅「无修饰键 + 单击(非双击) + 当前多选 + 点在已选中行」时为真——此即 AppKit 会等双击间隔的场景。
+    /// I-43 decision predicate (pure function, deterministically unit-testable): whether to collapse the selection to one row right after super.mouseDown.
+    /// True only for "no modifiers + single click (not double) + current multi-selection + click on a selected row", the case where AppKit waits out the double-click interval.
     static func shouldPreemptCollapse(clickedRow: Int, modifiers: NSEvent.ModifierFlags,
                                       clickCount: Int, selectedCount: Int, rowIsSelected: Bool) -> Bool {
         clickedRow >= 0
@@ -76,15 +76,15 @@ final class FocusReportingTableView: NSTableView {
 
     override func mouseDown(with event: NSEvent) {
         onInteract?()
-        // 组头行：不可选、不可折叠，单击直接吞掉（不落入 super 的选中链，
-        // 否则会把选中"跳"到组头下面那一行）
+        // Group header row: unselectable and non-collapsible; swallow the click (keep it out of super's selection chain,
+        // otherwise the selection "jumps" to the row below the header)
         let point = convert(event.locationInWindow, from: nil)
         let row = self.row(at: point)
         if row >= 0, isGroupRowProvider?(row) == true { return }
-        // I-43：纯单击「已选中的多选行」时，AppKit 会等双击间隔(~0.5s NSEvent.doubleClickInterval)才把
-        // 选中收敛为单选（为区分双击打开）——造成"点选区内卡 0.5-1s、点选区外即时"（真机插桩实测 0.672s）。
-        // 让 super 正常处理（拖拽/双击语义不受影响），若期间未发起拖拽（pasteboardWriterForRow 未被调）则
-        // super 返回后立即抢先收敛为单选，消除等待（实测降至 0.160s）。抢先目标行与 AppKit 延迟收敛目标一致。
+        // I-43: on a plain click on a selected row in a multi-selection, AppKit waits the double-click interval (~0.5s NSEvent.doubleClickInterval) before
+        // collapsing to a single selection (to allow for double-click open), so clicks inside the selection stalled 0.5-1s while clicks outside were instant (instrumented on a real machine: 0.672s).
+        // Let super handle it normally (drag/double-click semantics unaffected); if no drag started meanwhile (pasteboardWriterForRow not called),
+        // collapse to single selection right after super returns, removing the wait (measured down to 0.160s). The target row matches AppKit's delayed collapse.
         if Self.shouldPreemptCollapse(clickedRow: row, modifiers: event.modifierFlags,
                                       clickCount: event.clickCount,
                                       selectedCount: selectedRowIndexes.count,
@@ -96,11 +96,11 @@ final class FocusReportingTableView: NSTableView {
             }
             return
         }
-        // 双击：作废待触发的重命名（否则先弹重命名框、再被"打开"顶掉，两个动作打架）
+        // Double click: void the pending rename (otherwise the rename field appears, then "open" displaces it, and the two actions fight)
         if event.clickCount >= 2 { cancelPendingRename() }
 
-        // 单击已选中项 → 重命名。必须**等满一个双击间隔**再动手：
-        // 立刻重命名的话，用户想双击进入时会先看到重命名框弹出来一下。
+        // Click on a selected item → rename. Must **wait out a double-click interval** first:
+        // renaming at once would flash the rename field when the user meant to double-click in.
         let willScheduleRename = Self.shouldScheduleRename(
             clickedRow: row, modifiers: event.modifierFlags, clickCount: event.clickCount,
             selectedCount: selectedRowIndexes.count,
@@ -114,9 +114,9 @@ final class FocusReportingTableView: NSTableView {
             let token = pendingRenameToken
             let delay = NSEvent.doubleClickInterval
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self, self.pendingRenameToken == token else { return }   // 期间被双击/导航作废
+                guard let self, self.pendingRenameToken == token else { return }   // Voided by a double click/navigation in the meantime
                 guard self.selectedRowIndexes.count == 1,
-                      self.selectedRowIndexes.contains(row) else { return }        // 选中已变，不动手
+                      self.selectedRowIndexes.contains(row) else { return }        // Selection changed, do nothing
                 fire(row)
             }
         }
@@ -137,11 +137,11 @@ final class FocusReportingTableView: NSTableView {
         onInteract?()
         let point = convert(event.locationInWindow, from: nil)
         let row = self.row(at: point)
-        // 组头行右键：不改选中（组头不可选），直接交 menuProvider 出组过滤菜单
+        // Right-click on a group header: leaves the selection alone (headers are unselectable) and asks menuProvider for the group filter menu
         if row >= 0, isGroupRowProvider?(row) == true {
             return menuProvider?(row)
         }
-        // 右击未选中行 → 先把它设为唯一选中（Finder 语义）
+        // Right-clicking an unselected row → make it the only selection first (Finder semantics)
         if row >= 0, !selectedRowIndexes.contains(row) {
             selectRowIndexes([row], byExtendingSelection: false)
         }
@@ -149,17 +149,17 @@ final class FocusReportingTableView: NSTableView {
     }
 
     override func keyDown(with event: NSEvent) {
-        cancelPendingRename()   // 键盘一动就作废「单击待重命名」，避免打字打到一半冒出输入框
-        // 纯 ⌘↑/⌘↓ 落到表 = 导航菜单未接（禁用态）——吞掉，不让默认"跳选行"顶替导航语义（I-39）；
-        // 带 ⇧/⌥/⌃ 的组合（如 ⇧⌘↓ 扩选）不吞，保持系统行为
+        cancelPendingRename()   // Any key voids "pending click-to-rename", so an input field can't pop up mid-typing
+        // Plain ⌘↑/⌘↓ reaching the table = navigation menu not wired (disabled state): swallow it, so the default "jump selection" can't replace navigation semantics (I-39);
+        // combos with ⇧/⌥/⌃ (such as ⇧⌘↓ to extend the selection) aren't swallowed and keep system behaviour
         if event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
            event.keyCode == 125 || event.keyCode == 126 { return }
-        // Return（36）/ Enter（76）：按使用习惯分发（rename→行内重命名 / open→打开选中）
+        // Return (36) / Enter (76): dispatch by usage preference (rename → inline rename / open → open selected)
         if event.keyCode == 36 || event.keyCode == 76 {
             if Preferences.enterAction == "open" { onOpenSelected?() } else { onReturn?() }
             return
         }
-        // Backspace（51）：⌘⌫ 保持废纸篓语义交回菜单快捷键；无 ⌘ 时按使用习惯分发
+        // Backspace (51): ⌘⌫ keeps trash semantics and goes back to the menu shortcut; without ⌘, dispatch by usage preference
         if event.keyCode == 51 {
             if event.modifierFlags.contains(.command) {
                 super.keyDown(with: event)
@@ -172,7 +172,7 @@ final class FocusReportingTableView: NSTableView {
             onSpace()
             return
         }
-        // ←（123）/ →（124）：分栏视图接管列间移动；未接管时交回默认
+        // ← (123) / → (124): column view takes over moving between columns; otherwise back to default
         if event.keyCode == 123, let onArrowLeft {
             onArrowLeft()
             return
@@ -185,7 +185,7 @@ final class FocusReportingTableView: NSTableView {
     }
 }
 
-/// 行内重命名编辑框：Enter 提交、Esc 取消、失焦提交；可只选中文件名主体（不含扩展名）
+/// Inline rename field: Enter commits, Esc cancels, losing focus commits; can select just the base name (excluding the extension)
 @MainActor
 final class InlineRenameField: NSTextField, NSTextFieldDelegate {
     var onCommit: ((String) -> Void)?
@@ -207,9 +207,9 @@ final class InlineRenameField: NSTextField, NSTextFieldDelegate {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
-    /// 选中文件名主体（扩展名保留不选）；无扩展名则全选
+    /// Selects the base name (leaves the extension unselected); selects everything if there is no extension
     func selectBaseName() {
         guard let editor = currentEditor() else { return }
         let ns = stringValue as NSString
@@ -228,7 +228,7 @@ final class InlineRenameField: NSTextField, NSTextFieldDelegate {
         return false
     }
 
-    /// 失焦 = 提交（Finder 语义）
+    /// Losing focus = commit (Finder semantics)
     func controlTextDidEndEditing(_ obj: Notification) {
         guard !finished else { return }
         commit()
@@ -238,14 +238,14 @@ final class InlineRenameField: NSTextField, NSTextFieldDelegate {
     private func cancel() { guard !finished else { return }; finished = true; onCancel?() }
 }
 
-/// 名称单元格：图标 + 文本；支持行内重命名（label ⟷ 可编辑框）
+/// Name cell: icon + text; supports inline rename (label ⟷ editable field)
 @MainActor
 final class NameCellView: NSTableCellView {
     private let iconView = NSImageView()
     private let label = NSTextField(labelWithString: "")
     private var editor: InlineRenameField?
 
-    /// 提交/取消回调（由 FileListViewController 注入，接 .rename 提交与 FG-6 回滚）
+    /// Commit/cancel callbacks (injected by FileListViewController, wired to the .rename submission and FG-6 rollback)
     var onRenameCommit: ((String) -> Void)?
     var onRenameCancel: (() -> Void)?
 
@@ -272,18 +272,18 @@ final class NameCellView: NSTableCellView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     func configure(icon: NSImage, name: String, dimmed: Bool) {
         iconView.image = icon
         label.stringValue = name
-        label.font = .systemFont(ofSize: Formatters.listFontSize)  // 每次配置重取字号（列重建时即时生效）
+        label.font = .systemFont(ofSize: Formatters.listFontSize)  // Re-read the font size on each configure (takes effect at once on column rebuild)
         label.textColor = dimmed ? .secondaryLabelColor : .labelColor
     }
 
     var isEditing: Bool { editor != nil }
 
-    /// 进入行内编辑：隐藏 label，覆盖一个可编辑框，选中文件名主体
+    /// Enters inline editing: hides the label, overlays an editable field, selects the base name
     func beginRename() {
         guard editor == nil, let win = window else { return }
         let field = InlineRenameField(string: label.stringValue)
@@ -311,17 +311,17 @@ final class NameCellView: NSTableCellView {
     }
 }
 
-/// 组头行视图（M26 列表分组）：折叠三角 + 「2026年8月」 + 项数（tabular-nums 次级墨色）。
-/// 整行可点击切换折叠（onToggle）；右键菜单由表视图 menuProvider 按行类型分发。
-/// 行高 24、floatsGroupRows 悬浮由 FileListViewController 配置。
+/// Group header row view (M26 list grouping): disclosure triangle + "Aug 2026" + item count (tabular-nums, secondary ink).
+/// The whole row is clickable to toggle collapse (onToggle); the context menu is dispatched per row type by the table view's menuProvider.
+/// Row height 24 and floatsGroupRows floating are configured by FileListViewController.
 @MainActor
 final class GroupHeaderView: NSTableCellView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let countLabel = NSTextField(labelWithString: "")
 
-    /// 组头是**印在背景条上的标题**，不是可点开合的控件（用户要求：像 QSpace，不要伸缩）。
-    /// 去掉了 chevron 与折叠能力：一个长得像按钮却什么都不做的箭头，
-    /// 比没有箭头更糟——它在承诺一件做不到的事。
+    /// A group header is a **title printed on a background strip**, not a control to expand or collapse (owner request: like QSpace, no folding).
+    /// The chevron and folding were removed: an arrow that looks like a button but does nothing
+    /// is worse than no arrow, since it promises something it can't do.
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
         self.identifier = identifier
@@ -345,7 +345,7 @@ final class GroupHeaderView: NSTableCellView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     func configure(title: String, count: Int) {
         titleLabel.stringValue = title
@@ -353,7 +353,7 @@ final class GroupHeaderView: NSTableCellView {
     }
 }
 
-/// 纯文本单元格（日期/大小/种类）
+/// Plain text cell (date/size/kind)
 @MainActor
 final class TextCellView: NSTableCellView {
     private let label = NSTextField(labelWithString: "")
@@ -375,23 +375,23 @@ final class TextCellView: NSTableCellView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
-    /// 普通文本（种类列等）；日期列传 monospacedDigits=true → 等宽数字，刷新不抖动（塔夫特）
+    /// Plain text (kind column etc); the date column passes monospacedDigits=true → tabular digits, no jitter on refresh (Tufte)
     func configure(_ text: String, alignment: NSTextAlignment, monospacedDigits: Bool = false) {
-        let size = Formatters.listFontSize  // 每次配置重取字号（列重建时即时生效）
+        let size = Formatters.listFontSize  // Re-read the font size on each configure (takes effect at once on column rebuild)
         label.stringValue = text
-        label.textColor = .secondaryLabelColor  // 复用格重置（上轮可能被大小列改成 attributed/labelColor）
+        label.textColor = .secondaryLabelColor  // Reset on cell reuse (the size column may have left attributed/labelColor last time)
         label.font = monospacedDigits
             ? .monospacedDigitSystemFont(ofSize: size, weight: .regular)
             : .systemFont(ofSize: size)
         label.alignment = alignment
     }
 
-    /// 大小列：数值 labelColor + 单位 secondaryLabelColor（墨色三级，单位灰阶退后），等宽数字。
+    /// Size column: value in labelColor + unit in secondaryLabelColor (three-tier ink, gray unit recedes), tabular digits.
     func configureSize(value: String, unit: String, alignment: NSTextAlignment) {
         let font = NSFont.monospacedDigitSystemFont(ofSize: Formatters.listFontSize, weight: .regular)
-        // I-34：窄列宽下禁止折行（"151.4 MB"折两行会撑爆 22pt 行高）——单行 + 头部截断保单位可见
+        // I-34: no wrapping in narrow columns ("151.4 MB" on two lines would overflow the 22pt row): single line + head truncation keeps the unit visible
         label.usesSingleLineMode = true
         label.lineBreakMode = .byTruncatingHead
         let s = NSMutableAttributedString(string: value,
@@ -405,13 +405,13 @@ final class TextCellView: NSTableCellView {
     }
 }
 
-/// 底部留白可右键的滚动视图：`contentInsets.bottom` 让出的那条带子落在 clip view 上，
-/// 表视图收不到那儿的点击，于是事件上浮到本层——在这里出目录级菜单。
+/// Scroll view whose bottom margin takes right-clicks: the strip reserved by `contentInsets.bottom` falls on the clip view,
+/// the table view gets no clicks there, and the event bubbles up to this layer, which shows the directory-level menu.
 ///
-/// 为什么不用"加几行假的空行"：那会污染表的数据源，行数、选中、分组计数全要跟着说谎。
+/// Why not add a few fake blank rows: that would pollute the table's data source, and row count, selection and group counts would all have to lie.
 @MainActor
 final class BlankAreaScrollView: NSScrollView {
-    /// 空白区右键 → 目录级菜单（由 FileListViewController 提供，与 clickedRow: -1 同一份）
+    /// Right-click on empty space → directory-level menu (provided by FileListViewController, same one as clickedRow: -1)
     var onBlankMenu: (() -> NSMenu?)?
 
     override func menu(for event: NSEvent) -> NSMenu? {

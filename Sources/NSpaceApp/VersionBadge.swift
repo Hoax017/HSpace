@@ -1,17 +1,17 @@
 import AppKit
 
-/// App 版本读取（唯一读取点）：走 Bundle.main 的 Info.plist（.app 包内由 build-app.sh 注入
-/// CFBundleShortVersionString=VERSION / CFBundleVersion=git 提交数）。
-/// 裸二进制（swift run 开发态）无 Info.plist 时回退占位，不崩。
+/// App version reader (the single read point): uses Bundle.main's Info.plist (build-app.sh injects into the .app
+/// CFBundleShortVersionString=VERSION / CFBundleVersion=git commit count).
+/// A bare binary (swift run during development) has no Info.plist, so it falls back to a placeholder rather than crashing.
 @MainActor
 enum AppVersion {
-    /// 短版本号（如 "0.9.3"）；缺省回退 "0.0.0"
+    /// Short version (such as "0.9.3"); falls back to "0.0.0"
     static var shortVersion: String {
         (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
             .flatMap { $0.isEmpty ? nil : $0 } ?? "0.0.0"
     }
 
-    /// 构建号（如 "482"）；缺省回退 "0"
+    /// Build number (such as "482"); falls back to "0"
     static var buildNumber: String {
         (Bundle.main.infoDictionary?["CFBundleVersion"] as? String)
             .flatMap { $0.isEmpty ? nil : $0 } ?? "0"

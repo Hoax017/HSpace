@@ -2,9 +2,9 @@ import Testing
 import Foundation
 import StashStore
 
-/// 黑盒验收：真实临时目录夹具（无 Fake Mock）
+/// Black-box acceptance: real temp directory fixtures (no fakes or mocks)
 @Suite struct StashStoreTests {
-    /// 建临时夹具：存储目录 + 两个真实文件 + 一个真实子目录
+    /// Builds a temp fixture: storage directory + two real files + one real subdirectory
     func makeFixture() throws -> (StashStore, dir: URL, fileA: URL, fileB: URL, folder: URL) {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("nspace-stash-\(UUID().uuidString)")
@@ -21,7 +21,7 @@ import StashStore
     @Test func addResolveRoundTrip() async throws {
         let (store, dir, fileA, _, folder) = try makeFixture()
         defer { try? FileManager.default.removeItem(at: dir) }
-        // 收文件也收目录（与书签组只收目录不同）
+        // Takes files as well as directories (unlike the bookmark group, which takes only directories)
         let added = try await store.add([fileA, folder])
         #expect(added.count == 2)
         let items = await store.all()
@@ -35,7 +35,7 @@ import StashStore
         let (store, dir, fileA, fileB, _) = try makeFixture()
         defer { try? FileManager.default.removeItem(at: dir) }
         try await store.add([fileA])
-        // 重复加入同路径（含同批内重复）不产生新项
+        // Re-adding the same path (including duplicates within a batch) produces no new item
         let added = try await store.add([fileA, fileA, fileB])
         #expect(added.count == 1)
         let items = await store.all()
@@ -59,7 +59,7 @@ import StashStore
         let (store, dir, fileA, _, folder) = try makeFixture()
         defer { try? FileManager.default.removeItem(at: dir) }
         try await store.add([fileA, folder])
-        // 新实例从磁盘重载（跨启动持久化验收）
+        // A new instance reloads from disk (cross-launch persistence acceptance)
         let store2 = StashStore(directory: dir)
         let items = await store2.all()
         #expect(items.count == 2)
@@ -72,7 +72,7 @@ import StashStore
         defer { try? FileManager.default.removeItem(at: dir) }
         let added = try await store.add([fileA])
         try FileManager.default.removeItem(at: fileA)
-        // 目标已删除 → resolve 返回 nil（UI 据此置灰），项本身仍在
+        // Target deleted → resolve returns nil (the UI grays it out), the item itself remains
         #expect(store.resolve(added[0]) == nil)
         let items = await store.all()
         #expect(items.count == 1)

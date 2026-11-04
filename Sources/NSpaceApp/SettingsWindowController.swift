@@ -1,7 +1,7 @@
 import AppKit
 
-/// 设置窗口（⌘,）三页签：通用（外部化默认配置）/ 快捷键（注册表可录制）/ 替代 Finder。
-/// 原则：所有可配置项集中于此（Preferences/KeyBindings 外部化，零硬编码散落）。
+/// Settings window (⌘,) with three tabs: General (externalized defaults) / Shortcuts (registry, recordable) / Finder Replacement.
+/// Principle: all configurable items live here (externalized through Preferences/KeyBindings, with no scattered hard-coding).
 @MainActor
 final class SettingsWindowController: NSWindowController {
     static let shared = SettingsWindowController()
@@ -20,7 +20,7 @@ final class SettingsWindowController: NSWindowController {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     private let searchField = NSSearchField()
     private let resultsTable = NSTableView()
@@ -63,7 +63,7 @@ final class SettingsWindowController: NSWindowController {
         finder.view = buildFinderTab()
         tabs.addTabViewItem(finder)
 
-        // 顶部设置项搜索：索引从**已装配的视图树**里现取，所以永远等于界面本身
+        // Settings search at the top: the index is read live from the **assembled view tree**, so it always equals the UI itself
         tabsRef = tabs
         searchField.placeholderString = L10n.t("settings.search.placeholder")
         searchField.translatesAutoresizingMaskIntoConstraints = false
@@ -109,23 +109,23 @@ final class SettingsWindowController: NSWindowController {
             tabs.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -12),
         ])
         window?.contentView = content
-        // 索引在装配之后建一次（各页 makeView 已经跑过，视图树是完整的）
+        // Build the index once after assembly (each page's makeView has run, so the view tree is complete)
         searchIndex = SettingsSearch.index(tabs)
     }
 
-    // MARK: 设置项搜索
+    // MARK: Settings search
 
     @objc private func searchChanged(_ sender: Any?) {
         applySearch(searchField.stringValue)
     }
 
-    /// internal：自测直接驱动它，不合成键盘事件
+    /// internal: driven directly by self-tests, without synthesizing keyboard events
     func applySearch(_ query: String) {
         hits = SettingsSearch.matches(query, in: searchIndex)
         resultsTable.reloadData()
         let show = !hits.isEmpty
         resultsScroll.isHidden = !show
-        // 高度跟条数走，最多 6 行；0 = 收起（隐藏视图照样占 Auto Layout 的位）
+        // Height follows the row count, up to 6 rows; 0 = collapsed (a hidden view still occupies its Auto Layout slot)
         resultsHeight.constant = show ? CGFloat(min(hits.count, 6)) * resultsTable.rowHeight + 4 : 0
     }
 
@@ -134,7 +134,7 @@ final class SettingsWindowController: NSWindowController {
         jumpToResult(row)
     }
 
-    /// internal：自测直接驱动（切页 + 滚到可见 + 闪高亮）
+    /// internal: driven directly by self-tests (switch page + scroll into view + flash highlight)
     @discardableResult
     func jumpToResult(_ row: Int) -> Bool {
         guard hits.indices.contains(row), let tabs = tabsRef else { return false }
@@ -142,7 +142,7 @@ final class SettingsWindowController: NSWindowController {
         return true
     }
 
-    // ---- 自测通道（I-65）----
+    // ---- Self-test channel (I-65) ----
     var uiTestSearchIndexCount: Int { searchIndex.count }
     var uiTestSearchResultCount: Int { hits.count }
     var uiTestSearchResultsVisible: Bool { !resultsScroll.isHidden }
@@ -151,7 +151,7 @@ final class SettingsWindowController: NSWindowController {
         return tabs.indexOfTabViewItem(sel)
     }
     var uiTestSearchIndexTexts: [String] { searchIndex.map(\.text) }
-    /// 自测切页（跳转断言要先切到别的页，否则本来就在那页会真空通过）
+    /// Self-test page switch (a jump assertion must switch to another page first, else being on that page already passes vacuously)
     func uiTestSelectTab(_ i: Int) {
         guard let tabs = tabsRef, tabs.tabViewItems.indices.contains(i) else { return }
         tabs.selectTabViewItem(at: i)
@@ -160,7 +160,7 @@ final class SettingsWindowController: NSWindowController {
         hits.indices.contains(row) ? hits[row].tabIndex : -1
     }
 
-    // MARK: 通用页（Preferences 外部化项全暴露）
+    // MARK: General page (exposes all externalized Preferences items)
 
     private func popupRow(_ titleKey: String, options: [(tag: Int, title: String)],
                           selectedTag: Int, action: Selector) -> NSView {
@@ -211,12 +211,12 @@ final class SettingsWindowController: NSWindowController {
         note.font = .systemFont(ofSize: 11)
         note.textColor = .tertiaryLabelColor
 
-        // I-14：默认书签种子可删可恢复——恢复按钮补齐缺失种子（按路径去重，不动用户书签）
+        // I-14: default bookmark seeds can be deleted and restored; the restore button refills missing seeds (dedupes by path, leaves user bookmarks alone)
         let restoreSeeds = NSButton(title: L10n.t("settings.restoreSeeds"), target: self,
                                     action: #selector(restoreDefaultSeeds))
         restoreSeeds.bezelStyle = .push
 
-        // M24：全局呼出/隐藏热键（Carbon，无需辅助功能权限；替代 Raycast 桥接）
+        // M24: global show/hide hotkey (Carbon, no Accessibility permission needed; replaces the Raycast bridge)
         let hotkeyLabel = NSTextField(labelWithString: L10n.t("settings.globalHotkey"))
         hotkeyLabel.font = .systemFont(ofSize: 12)
         hotkeyLabel.widthAnchor.constraint(equalToConstant: 152).isActive = true
@@ -273,7 +273,7 @@ final class SettingsWindowController: NSWindowController {
         }
     }
 
-    // MARK: 快捷键页（注册表驱动 + 录制）
+    // MARK: Shortcuts page (registry driven + recording)
 
     private func buildShortcutsTab() -> NSView {
         let stack = NSStackView()
@@ -323,21 +323,21 @@ final class SettingsWindowController: NSWindowController {
         guard let id = sender.identifier?.rawValue else { return }
         KeyBindings.reset(id)
         KeyBindings.rebuildMenus()
-        // 刷新同排录制钮标题
+        // Refresh the title of the recorder button in the same row
         if let row = sender.superview as? NSStackView,
            let recorder = row.arrangedSubviews.compactMap({ $0 as? ShortcutRecorderButton }).first {
             recorder.refreshTitle()
         }
     }
 
-    // MARK: 替代 Finder 页（原有内容）
+    // MARK: Finder Replacement page (original content)
 
     private let revealCheck = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let revealStatus = NSTextField(wrappingLabelWithString: "")
 
     private func buildFinderTab() -> NSView {
-        // I-28：Reveal 接管（NSFileViewer 全局键，QSpace 同机制）——「打开文件位置/在 Finder 中显示」
-        // 族调用改落 NSpace 并选中目标；可随时关闭还给 Finder
+        // I-28: Reveal takeover (the NSFileViewer global key, same mechanism as QSpace): the "open file location / Show in Finder"
+        // family of calls lands in NSpace with the target selected; can be turned off at any time to give it back to Finder
         let revealHeader = NSTextField(labelWithString: L10n.t("settings.reveal.title"))
         revealHeader.font = .systemFont(ofSize: 13, weight: .semibold)
         revealCheck.title = L10n.t("settings.reveal.toggle")
@@ -350,7 +350,7 @@ final class SettingsWindowController: NSWindowController {
         revealNote.font = .systemFont(ofSize: 11)
         revealNote.textColor = .tertiaryLabelColor
 
-        // I-25 UI 收尾：设默认程序被 OS 锁死后按钮=永败假按钮（违 FG-1），撤按钮改诚实状态陈述
+        // I-25 UI cleanup: with the default handler locked by the OS, the button could only ever fail (a fake button, violating FG-1), so it was replaced with an honest status statement
         let folderHeader = NSTextField(labelWithString: L10n.t("settings.folderDefault.title"))
         folderHeader.font = .systemFont(ofSize: 13, weight: .semibold)
         statusLabel.font = .systemFont(ofSize: 11)
@@ -360,7 +360,7 @@ final class SettingsWindowController: NSWindowController {
         limitation.font = .systemFont(ofSize: 11)
         limitation.textColor = .tertiaryLabelColor
 
-        // 完全磁盘访问的按钮与说明统一收口在「权限」页（I-09 去重），此页只留替代 Finder 主题内容
+        // Full Disk Access buttons and notes all live on the Permissions page (I-09 dedupe); this page keeps only Finder replacement content
         let stack = NSStackView(views: [revealHeader, revealCheck, revealStatus, revealNote,
                                         NSBox.separatorLine(),
                                         folderHeader, statusLabel, limitation])
@@ -385,7 +385,7 @@ final class SettingsWindowController: NSWindowController {
 
     private func refreshFinderState() {
         if FinderIntegration.isDefaultFolderHandler {
-            // 万一某个未来系统版本解锁——状态照实变绿
+            // Should a future system version unlock this, the status turns green as is
             statusLabel.stringValue = L10n.t("settings.isDefault")
             statusLabel.textColor = .systemGreen
         } else {
@@ -394,7 +394,7 @@ final class SettingsWindowController: NSWindowController {
         }
     }
 
-    /// Reveal 接管状态刷新（三态：NSpace/Finder/其他——失效残留给红字警示+勾选即修复）
+    /// Refresh Reveal takeover status (three states: NSpace/Finder/other; a stale leftover gets a red warning, and ticking the box repairs it)
     private func refreshRevealState() {
         switch FinderIntegration.revealHandler {
         case .nspace:
@@ -429,7 +429,7 @@ extension NSBox {
     }
 }
 
-/// 快捷键录制钮：点击进入录制态，按下组合键即保存；Esc 取消、⌫ 清空
+/// Shortcut recorder button: click to start recording, pressing a combo saves it; Esc cancels, ⌫ clears
 @MainActor
 final class ShortcutRecorderButton: NSButton {
     let bindingID: String
@@ -447,7 +447,7 @@ final class ShortcutRecorderButton: NSButton {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     func refreshTitle() {
         title = KeyBindings.display(bindingID)
@@ -459,11 +459,11 @@ final class ShortcutRecorderButton: NSButton {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             defer { self.endRecording() }
-            if event.keyCode == 53 {  // Esc 取消
+            if event.keyCode == 53 {  // Esc cancels
                 self.refreshTitle()
                 return nil
             }
-            if event.keyCode == 51 {  // ⌫ 清空（无快捷键）
+            if event.keyCode == 51 {  // ⌫ clears (no shortcut)
                 KeyBindings.set(self.bindingID, key: "", mods: [])
                 KeyBindings.rebuildMenus()
                 self.refreshTitle()
@@ -487,7 +487,7 @@ final class ShortcutRecorderButton: NSButton {
 }
 
 
-/// 全局热键录制钮（M24）：记录 keyCode+修饰键（Carbon 需 keyCode）；至少一个修饰键；Esc 取消、⌫ 清除
+/// Global hotkey recorder button (M24): records keyCode + modifiers (Carbon needs keyCode); at least one modifier; Esc cancels, ⌫ clears
 @MainActor
 final class GlobalHotkeyRecorderButton: NSButton {
     private var monitor: Any?
@@ -503,7 +503,7 @@ final class GlobalHotkeyRecorderButton: NSButton {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     func refreshTitle() {
         title = GlobalHotkey.current?.display ?? L10n.t("settings.globalHotkey.unset")
@@ -515,8 +515,8 @@ final class GlobalHotkeyRecorderButton: NSButton {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             defer { self.endRecording() }
-            if event.keyCode == 53 { self.refreshTitle(); return nil }          // Esc 取消
-            if event.keyCode == 51 {                                             // ⌫ 清除
+            if event.keyCode == 53 { self.refreshTitle(); return nil }          // Esc cancels
+            if event.keyCode == 51 {                                             // ⌫ clears
                 GlobalHotkey.clear()
                 self.refreshTitle()
                 return nil
@@ -552,7 +552,7 @@ final class GlobalHotkeyRecorderButton: NSButton {
 }
 
 
-// MARK: - 设置项搜索结果表（数据源/委托）
+// MARK: - Settings search results table (data source/delegate)
 
 extension SettingsWindowController: NSTableViewDataSource, NSTableViewDelegate {
     func numberOfRows(in tableView: NSTableView) -> Int { hits.count }
@@ -579,7 +579,7 @@ extension SettingsWindowController: NSTableViewDataSource, NSTableViewDelegate {
                 return c
             }()
         let h = hits[row]
-        // 带上"在哪一页"——只给项名字的话，用户跳过去还得自己找是哪一页
+        // Include "which page": with only the item name, users would have to find the page themselves after jumping
         cell.textField?.stringValue = "\(h.text)  ·  \(h.tabLabel)"
         return cell
     }

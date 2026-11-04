@@ -2,18 +2,18 @@ import AppKit
 import NSpaceContracts
 import SessionStore
 
-/// 窗格内容视图模式（M9：每窗格独立；⌘1 图标 / ⌘2 列表 / ⌘3 分栏）
+/// Pane content view mode (M9: independent per pane; ⌘1 icons / ⌘2 list / ⌘3 columns)
 enum PaneViewMode: Int {
     case icons, list, columns
 }
 
-/// 窗格：地址栏（面包屑⟷编辑器）+ 内容视图；一个窗格一个浏览上下文（独立浏览器与历史）。
-/// 多实例由 PaneGridController 编排；活动窗格高亮由 setActive 驱动
+/// Pane: address bar (breadcrumbs ⟷ editor) + content view; one pane holds one browsing context (its own browser and history).
+/// Multiple instances are arranged by PaneGridController; active pane highlighting is driven by setActive
 @MainActor
 final class PaneViewController: NSViewController {
-    /// 浏览上下文 = 独立浏览状态 + 独立目录模型 + 独立内容视图。
-    /// class 语义（M9）：viewMode 可变；图标/分栏视图懒创建——不切换就不付构造成本。
-    /// 三视图共享同一 DirectoryViewModel（onUpdate 多播）；分栏的列加载自管（局部 DirectoryReader）
+    /// Browsing context = independent browse state + independent directory model + independent content views.
+    /// Class semantics (M9): viewMode is mutable; icon/column views are created lazily, so there is no construction cost without switching.
+    /// The three views share one DirectoryViewModel (onUpdate multicast); columns manage their own loading (local DirectoryReader)
     final class Tab {
         let browser: BrowserState
         let model: DirectoryViewModel
@@ -29,23 +29,23 @@ final class PaneViewController: NSViewController {
         }
     }
 
-    /// 这个窗格唯一的浏览上下文。
+    /// The single browsing context of this pane.
     ///
-    /// v0.19.26 起窗格内不再有多标签（M13 的「每窗格多标签」退役）。Optional 只为满足
-    /// init 顺序——`installTab` 里的回调要捕获已完成初始化的 self；装好之后恒非空。
+    /// Since v0.19.26 panes no longer have multiple tabs (M13's "multiple tabs per pane" was retired). Optional only to satisfy
+    /// init order: the callbacks in `installTab` capture a fully initialized self; once installed it is never nil.
     private var tab: Tab?
-    /// 当前浏览上下文。名字沿用 `activeTab`：多标签没了但"这个窗格正在浏览的那个上下文"
-    /// 的语义没变，且全仓两百余处调用点因此一行不用改。
+    /// Current browsing context. The name `activeTab` is kept: tabs are gone but the meaning, "the context this pane is browsing",
+    /// hasn't changed, and it spares edits to the two hundred or so call sites across the repository.
     var activeTab: Tab { tab! }
 
-    /// 位置变化上抛（窗口标题）
+    /// Location change, passed up (window title)
     var onLocationChange: ((URL) -> Void)?
-    /// 用户在本窗格交互 → 请求成为活动窗格
+    /// User interaction in this pane → request to become the active pane
     var onRequestFocus: (() -> Void)?
-    /// 计数/选中变化上抛（甲板据此重验动作按钮 enabled；M17）
+    /// Count/selection change, passed up (the deck revalidates action button enabled state from it; M17)
     var onStatusChange: (() -> Void)?
 
-    /// 文件操作桥：下传内容视图（右键菜单/快捷键经此发 OperationSpec）
+    /// File-operation bridge: passed down to content views (context menus/shortcuts send OperationSpecs through it)
     var coordinator: FileOpsCoordinator? {
         didSet {
             guard let tab else { return }
@@ -55,22 +55,22 @@ final class PaneViewController: NSViewController {
         }
     }
     private let breadcrumb = BreadcrumbBar()
-    /// 「清倒」按钮：**只在窗格显示废纸篓根时出现**，同原生访达那颗。
-    /// 放地址栏右端而不是右键菜单——用户报告：藏在右键里等于没有。
+    /// "Empty" button: **shown only when the pane displays a Trash root**, like the one in native Finder.
+    /// In the address bar's right end rather than the context menu; user report: hidden in the context menu, it might as well not exist.
     private let emptyTrashButton = NSButton()
-    /// 按钮占位宽（隐藏时归零，面包屑随即吃回这段宽度）
+    /// Button width slot (zero when hidden, so the breadcrumbs reclaim the width)
     private var emptyTrashWidth: NSLayoutConstraint!
-    /// 面包屑右缘（显示按钮时让出 4pt 间隙）
+    /// Breadcrumb trailing edge (leaves a 4pt gap while the button shows)
     private var breadcrumbTrailing: NSLayoutConstraint!
     private let pathEditor = PathEditorField()
     private let addressArea = AddressBarBacking()
-    /// 地址栏内联错误提示（路径不存在/无权限）：红字贴右端、1.5s 后淡出——不弹窗（spec 做工不变量）
+    /// Inline address bar error hint (path missing/no permission): red text at the right end, fades after 1.5s; no alert (spec craftsmanship invariant)
     private let pathHint = NSTextField(labelWithString: "")
     private var pathHintFadeWorkItem: DispatchWorkItem?
     private let contentContainer = NSView()
     private let statusBar = StatusBarView()
     private(set) var isActivePane = false
-    /// 窗格级挂起（布局切走时置位）：置位期间标签切换不恢复 watcher——北极星零后台功耗
+    /// Pane-level suspension (set when the layout switches away): tab switches don't resume the watcher while set; north star of zero background power
     private(set) var isPaneSuspended = false
 
     init(directory: URL) {
@@ -79,12 +79,12 @@ final class PaneViewController: NSViewController {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     override func loadView() {
-        // onRequestFocus 先于动作：多窗格布局下点非活动窗格的地址栏，
-        // 旧版只导航不激活，窗口标题/甲板动作钮校验/状态栏全停在旧窗格上
-        // （列表/图标/分栏视图早就经 onInteract 报了活，只有地址栏漏了）
+        // onRequestFocus comes before the action: clicking an inactive pane's address bar in a multi-pane layout
+        // used to navigate without activating, leaving the window title, deck button validation and status bar on the old pane
+        // (list/icon/column views already report activity through onInteract; only the address bar was missing)
         breadcrumb.onNavigate = { [weak self] url in
             self?.onRequestFocus?()
             self?.navigate(to: url)
@@ -94,7 +94,7 @@ final class PaneViewController: NSViewController {
             self?.beginPathEditing()
         }
         breadcrumb.onDropFiles = { [weak self] urls, target, forceCopy in
-            // 拖文件到面包屑分段 = 投进该祖先目录（语义同列表投放，经 coordinator 判卷提交）
+            // Dragging files onto a breadcrumb segment = dropping into that ancestor directory (same semantics as a list drop; the coordinator checks volumes and submits)
             self?.coordinator?.dropTransfer(urls: urls, into: target, forceCopy: forceCopy)
         }
         pathEditor.onCommit = { [weak self] url in
@@ -106,17 +106,17 @@ final class PaneViewController: NSViewController {
             self?.revealFile(url)
         }
         pathEditor.onCancel = { [weak self] in self?.endPathEditing() }
-        // 失焦复位：不夺焦（焦点已在用户刚点的地方），只把编辑框收掉让面包屑回显
+        // Reset on focus loss: don't take focus (it's already where the user just clicked), just dismiss the editor so the breadcrumbs show again
         pathEditor.onReset = { [weak self] in self?.endPathEditing(takeFocus: false) }
-        // 相对路径（"Downloads"、"./x"）按当前浏览目录解析——进程 CWD 对文件管理器没有意义
+        // Relative paths ("Downloads", "./x") resolve against the current browse directory; the process CWD means nothing to a file manager
         pathEditor.baseDirectory = { [weak self] in
             self?.activeTab.browser.current ?? FileManager.default.homeDirectoryForCurrentUser
         }
         pathEditor.onInvalid = { [weak self] message in self?.flashPathHint(message) }
         pathEditor.isHidden = true
 
-        // 窗口级 key 迁移不发 didEndEditing（见 windowDidResignKey 注释），只能靠通知补这条缝。
-        // object: nil + 回调内比对 view.window —— 窗格会随布局重建/会话恢复换窗，绑死 object 会失联。
+        // Window-level key changes don't send didEndEditing (see the windowDidResignKey comment), so a notification has to close this gap.
+        // object: nil + comparing view.window in the callback: panes change windows with layout rebuilds/session restore, so binding object would lose the link.
         NotificationCenter.default.addObserver(
             self, selector: #selector(windowDidResignKey(_:)),
             name: NSWindow.didResignKeyNotification, object: nil)
@@ -125,11 +125,11 @@ final class PaneViewController: NSViewController {
         pathHint.textColor = .systemRed
         pathHint.alignment = .right
         pathHint.lineBreakMode = .byTruncatingHead
-        pathHint.drawsBackground = true                 // 盖住底下的路径文本，短提示才读得清
+        pathHint.drawsBackground = true                 // Covers the path text underneath, so short hints stay readable
         pathHint.backgroundColor = .controlBackgroundColor
         pathHint.isHidden = true
 
-        // 「清倒」钮：先加，面包屑的右缘要挂在它左边
+        // "Empty" button: added first, since the breadcrumb trailing edge hangs off its left
         emptyTrashButton.title = L10n.t("trash.empty.button")
         emptyTrashButton.bezelStyle = .rounded
         emptyTrashButton.controlSize = .small
@@ -156,15 +156,15 @@ final class PaneViewController: NSViewController {
                 sub.leadingAnchor.constraint(equalTo: addressArea.leadingAnchor, constant: 4),
             ])
         }
-        // 面包屑右缘挂「清倒」钮左边：钮宽归零时，右缘落点与原来（addressArea.trailing - 4）一致，
-        // 所以隐藏态下 I-37 的一切宽度数学分毫不变。
+        // Breadcrumb trailing edge hangs off the left of the "Empty" button: at zero button width the edge lands where it used to (addressArea.trailing - 4),
+        // so all of I-37's width math stays exactly the same while hidden.
         breadcrumbTrailing = breadcrumb.trailingAnchor.constraint(
             equalTo: emptyTrashButton.leadingAnchor, constant: 0)
         breadcrumbTrailing.isActive = true
-        // 路径编辑器仍铺满整行（编辑时钮会被收起，不抢位）
+        // The path editor still fills the whole row (the button collapses during editing and doesn't compete for space)
         pathEditor.trailingAnchor.constraint(equalTo: addressArea.trailingAnchor, constant: -4).isActive = true
 
-        // 内联错误提示浮在地址栏右端（最后添加=盖在编辑框之上），不改行高、不挤压面包屑
+        // Inline error hint floats at the right end of the address bar (added last = on top of the editor), without changing row height or squeezing the breadcrumbs
         pathHint.translatesAutoresizingMaskIntoConstraints = false
         addressArea.addSubview(pathHint)
         NSLayoutConstraint.activate([
@@ -183,8 +183,8 @@ final class PaneViewController: NSViewController {
             root.addSubview(sub)
         }
         NSLayoutConstraint.activate([
-            // fullSizeContentView 下内容延伸到标题栏底下：顶部控件必须锚 safeArea 顶，
-            // 否则被工具栏遮住（窗格标签栏退役后这个顶由地址栏接手）
+            // With fullSizeContentView, content extends under the title bar: top controls must anchor to the safeArea top
+            // or the toolbar covers them (the address bar took over this top after the pane tab bar was retired)
             addressArea.topAnchor.constraint(equalTo: root.safeAreaLayoutGuide.topAnchor),
             addressArea.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             addressArea.trailingAnchor.constraint(equalTo: root.trailingAnchor),
@@ -205,14 +205,14 @@ final class PaneViewController: NSViewController {
         refreshChrome()
     }
 
-    // MARK: 浏览上下文
+    // MARK: Browsing context
 
-    /// 装上这个窗格的浏览上下文（替换既有的，旧的彻底拆流）。
+    /// Installs this pane's browsing context (replacing any existing one, fully tearing down the old streams).
     @discardableResult
     private func installTab(at url: URL) -> Tab {
         if let old = tab {
-            old.model.stopWatching()      // 换上下文：不留任何后台监听
-            quiesceContent(of: old)       // 三视图在飞任务全取消
+            old.model.stopWatching()      // Switching context: leave no background watching
+            quiesceContent(of: old)       // Cancel all in-flight tasks of the three views
             for vc in [old.listVC as NSViewController?, old.iconVC, old.columnVC].compactMap({ $0 }) {
                 vc.view.removeFromSuperview()
                 vc.removeFromParent()
@@ -220,7 +220,7 @@ final class PaneViewController: NSViewController {
         }
         let browser = BrowserState(url: url)
         let model = DirectoryViewModel(directory: url)
-        // 外部化默认偏好：按设置初始化（隐藏文件/默认排序键与升降序/文件夹置顶/视图模式）
+        // Externalized default preferences: initialize from settings (hidden files/default sort key and direction/folders first/view mode)
         model.includeHidden = Preferences.showHiddenByDefault
         let defaultSortKey = SortSpec.Key(rawValue: Preferences.defaultSortKey) ?? .name
         model.sort = SortSpec(key: defaultSortKey, ascending: Preferences.defaultSortAscending,
@@ -230,7 +230,7 @@ final class PaneViewController: NSViewController {
         listVC.onNavigate = { [weak self] target in self?.navigate(to: target) }
         listVC.onNavigateBack = { [weak self] in self?.goBack(nil) }
         listVC.onInteract = { [weak self] in self?.onRequestFocus?() }
-        // 状态栏数据源：快照应用/选中变化 → 仅当该上下文仍是当前的才刷新计数
+        // Status bar data source: snapshot applied/selection changed → refresh counts only if this context is still the current one
         listVC.onContentChange = { [weak self, weak listVC] in
             guard let self, self.activeTab.listVC === listVC else { return }
             self.updateStatusCounts()
@@ -245,7 +245,7 @@ final class PaneViewController: NSViewController {
         return fresh
     }
 
-    /// 懒创建图标网格视图（共享同一 model；回调语义与列表一致）
+    /// Lazily creates the icon grid view (shares one model; callback semantics match the list)
     private func ensureIconVC(for tab: Tab) -> FileIconGridViewController {
         if let vc = tab.iconVC { return vc }
         let vc = FileIconGridViewController(model: tab.model)
@@ -264,7 +264,7 @@ final class PaneViewController: NSViewController {
         return vc
     }
 
-    /// 懒创建分栏视图（列加载自管：局部 DirectoryReader；下钻经 onNavigate 回本窗格同步地址栏）
+    /// Lazily creates the column view (columns load themselves: local DirectoryReader; drill-down returns through onNavigate to sync this pane's address bar)
     private func ensureColumnVC(for tab: Tab) -> FileColumnViewController {
         if let vc = tab.columnVC { return vc }
         let vc = FileColumnViewController(model: tab.model)
@@ -279,7 +279,7 @@ final class PaneViewController: NSViewController {
         return vc
     }
 
-    /// 当前模式对应的内容视图控制器（图标/分栏首用才创建）
+    /// Content view controller for the current mode (icons/columns created on first use)
     private func contentVC(for tab: Tab) -> NSViewController {
         switch tab.viewMode {
         case .list: return tab.listVC
@@ -290,14 +290,14 @@ final class PaneViewController: NSViewController {
 
     private func mountActiveTab() {
         contentContainer.subviews.forEach { $0.removeFromSuperview() }
-        // 非当前模式的视图静默（切走的视图不留任何在飞任务）——北极星零后台功耗
+        // Quiesce views not in the current mode (a view switched away leaves no in-flight tasks); north star of zero background power
         quiesceContent(of: activeTab, keep: activeTab.viewMode)
         let vc = contentVC(for: activeTab)
         if vc.parent !== self { addChild(vc) }
         let v = vc.view
         v.translatesAutoresizingMaskIntoConstraints = false
         contentContainer.addSubview(v)
-        // 999 优先级:内容视图(分栏/网格)自身的尺寸诉求绝不外推改变窗口尺寸(用户报告的 bug)
+        // Priority 999: a content view's (columns/grid) own size demands must never push out and change the window size (user-reported bug)
         let edges = [
             v.topAnchor.constraint(equalTo: contentContainer.topAnchor),
             v.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
@@ -306,21 +306,21 @@ final class PaneViewController: NSViewController {
         ]
         for c in edges { c.priority = .init(999) }
         NSLayoutConstraint.activate(edges)
-        // 窗格本身被布局切走时不恢复（由 resumePane 统一恢复）
+        // Don't resume if the pane itself was switched away by the layout (resumePane resumes it)
         if !isPaneSuspended {
             activeTab.model.resume()
             wakeActiveContent()
         }
     }
 
-    /// 停一个标签各内容视图的派生工作（装饰请求/列加载）；keep 指定的活动模式视图不停
+    /// Stops derived work of a tab's content views (decoration requests/column loads); the view of the `keep` mode is left running
     private func quiesceContent(of tab: Tab, keep: PaneViewMode? = nil) {
         if keep != .list { tab.listVC.cancelDecorationWork() }
         if keep != .icons { tab.iconVC?.cancelDecorationWork() }
         if keep != .columns { tab.columnVC?.suspend() }
     }
 
-    /// 唤醒活动标签当前模式的内容视图（各模式的恢复语义）
+    /// Wakes the active tab's content view for its current mode (each mode's resume semantics)
     private func wakeActiveContent() {
         let tab = activeTab
         switch tab.viewMode {
@@ -330,9 +330,9 @@ final class PaneViewController: NSViewController {
         }
     }
 
-    // MARK: 窗格级挂起/恢复（PaneGridController 布局切换时调用——北极星零后台功耗）
+    // MARK: Pane-level suspend/resume (called by PaneGridController on layout switches; north star of zero background power)
 
-    /// 布局切走本窗格：浏览上下文挂起，装饰/列加载请求全取消
+    /// Layout switches away from this pane: suspends the browsing context and cancels all decoration/column load requests
     func suspendPane() {
         guard !isPaneSuspended else { return }
         isPaneSuspended = true
@@ -340,7 +340,7 @@ final class PaneViewController: NSViewController {
         quiesceContent(of: activeTab)
     }
 
-    /// 布局切回本窗格：恢复浏览上下文的 watcher 与当前模式视图
+    /// Layout switches back to this pane: resumes the browsing context's watcher and the current mode's view
     func resumePane() {
         guard isPaneSuspended else { return }
         isPaneSuspended = false
@@ -349,19 +349,19 @@ final class PaneViewController: NSViewController {
     }
 
     private func refreshChrome() {
-        // 任何导航/标签切换都退出地址栏编辑态：面包屑随即回显当前目录。
-        // 修用户报的"刷新/退回上级再重进地址栏不恢复、删空后一直空白"——这些路径不经失焦，
-        // 仅靠 controlTextDidEndEditing 的失焦复位覆盖不到，必须在位置同步处强制收编辑态。
-        // isViewLoaded 守卫不可省：endPathEditing 会摸 self.view，而 refreshChrome 会在
-        // 视图尚未装载时被 applyLocation 调到（新窗口 initialDirectory / 外部打开 reveal 都走这条），
-        // 此时 pathEditor.isHidden 还是 NSView 默认的 false，会误判成"正在编辑"并把 loadView 提前逼出来，
-        // 扰乱新窗口的建窗与焦点时序（I-52 外部打开落错窗即由此确定性复现）。同 restore(from:) 的既有守卫。
+        // Any navigation/tab switch exits address bar editing, so the breadcrumbs show the current directory again.
+        // Fixes the user-reported "refreshing/going up and back doesn't restore the address bar, it stays blank after clearing": these paths involve no focus loss,
+        // so the focus-loss reset in controlTextDidEndEditing can't cover them, and editing must be forced closed where location is synced.
+        // The isViewLoaded guard is essential: endPathEditing touches self.view, and refreshChrome can be reached from applyLocation
+        // before the view loads (new window initialDirectory / external open reveal both take this path), when pathEditor.isHidden is still NSView's default false,
+        // which would be misread as "editing" and force loadView early, disturbing the new window's creation and focus timing
+        // (I-52, external open landing in the wrong window, reproduced deterministically from this). Same as the existing guard in restore(from:).
         if isViewLoaded, !pathEditor.isHidden { endPathEditing() }
         breadcrumb.setURL(activeTab.browser.current)
         syncEmptyTrashButton()
         onLocationChange?(activeTab.browser.current)
         applyActiveTint()
-        // 状态栏：计数即时刷；卷容量只在目录变化/标签切换时读一次（statfs 只读，不轮询）
+        // Status bar: counts refresh at once; volume capacity is read once per directory/tab change (read-only statfs, no polling)
         updateStatusCounts()
         statusBar.updateVolume(for: activeTab.browser.current)
     }
@@ -380,7 +380,7 @@ final class PaneViewController: NSViewController {
             selected = sel.count
             bytes = sel.reduce(0) { $0 + ($1.size ?? 0) }
         case .columns:
-            // 分栏语义：计焦点列（列自管加载，与 model 无关）
+            // Column semantics: count the focused column (columns load themselves, independent of model)
             if let vc = activeTab.columnVC {
                 let counts = vc.statusCounts
                 items = counts.items
@@ -392,7 +392,7 @@ final class PaneViewController: NSViewController {
         onStatusChange?()
     }
 
-    /// 当前活动内容视图的选中数（甲板动作按钮校验用）
+    /// Selection count of the current active content view (for deck action button validation)
     var currentSelectionCount: Int {
         switch activeTab.viewMode {
         case .list: return activeTab.listVC.selectedItems.count
@@ -401,7 +401,7 @@ final class PaneViewController: NSViewController {
         }
     }
 
-    /// UISelfTest（M21）：list 模式选中前 n 项并刷计数，回状态栏选中药丸是否可见
+    /// UISelfTest (M21): selects the first n items in list mode, refreshes counts, returns whether the status bar selection pill is visible
     func uiTestSelectFirstItemsAndPillVisible(_ n: Int) -> Bool {
         let urls = Array(activeTab.model.items.prefix(n)).map(\.url)
         activeTab.listVC.select(urls: urls)
@@ -409,54 +409,54 @@ final class PaneViewController: NSViewController {
         return statusBar.selectionPillVisible
     }
 
-    /// UISelfTest（I-30）：程序化进入路径编辑，暴露编辑框以驱动首键探针
+    /// UISelfTest (I-30): programmatically enters path editing, exposing the editor to drive the first-key probe
     var uiTestPathEditor: PathEditorField { pathEditor }
-    /// UISelfTest（I-37）：暴露面包屑地址栏以驱动截断/折叠/宽度自适应断言
+    /// UISelfTest (I-37): exposes the breadcrumb address bar to drive truncation/folding/width-adaptive assertions
     var uiTestBreadcrumb: BreadcrumbBar { breadcrumb }
-    /// I-30 探针：以指定种子进入编辑（走真实 begin 链，仅替换种子文本便于净首键断言）
+    /// I-30 probe: enters editing with a given seed (through the real begin chain, replacing only the seed text for a clean first-key assertion)
     func uiTestBeginPathEditing(seed: String) {
         beginPathEditing(with: seed)
     }
 
-    /// UISelfTest（I-30 编排收尾）：退出路径编辑恢复面包屑（场景不得把编辑态泄漏给后续截图）
+    /// UISelfTest (I-30 teardown): exits path editing and restores the breadcrumbs (a scenario must not leak edit state into later screenshots)
     func uiTestEndPathEditing() { endPathEditing() }
 
-    /// UISelfTest（I-53）：当前是否处于路径编辑态（失焦复位断言用）
+    /// UISelfTest (I-53): whether path editing is active (for focus-loss reset assertions)
     var uiTestIsPathEditing: Bool { !pathEditor.isHidden }
 
-    /// UISelfTest（I-53）：模拟「点击他处失焦」——直接转移 firstResponder（不经 onCancel）
+    /// UISelfTest (I-53): simulates "click elsewhere and lose focus" by moving firstResponder directly (not through onCancel)
     func uiTestBlurPathEditor() {
         view.window?.makeFirstResponder(focusTarget)
     }
 
-    /// UISelfTest（I-53）：当前目录（地址栏应反映的）
+    /// UISelfTest (I-53): current directory (what the address bar should reflect)
     var uiTestCurrentURL: URL { activeTab.browser.current }
 
-    /// UISelfTest（I-53）：地址栏编辑器的当前文本
+    /// UISelfTest (I-53): current text of the address bar editor
     var uiTestPathEditorText: String { pathEditor.stringValue }
 
-    /// UISelfTest（I-54）：内联错误提示是否正在显示 / 显示的文字
+    /// UISelfTest (I-54): whether the inline error hint is showing / the text shown
     var uiTestPathHintVisible: Bool { !pathHint.isHidden && pathHint.alphaValue > 0 }
     var uiTestPathHintText: String { pathHint.stringValue }
 
-    /// UISelfTest（I-54）：⌘R 刷新走的真实入口（响应链在地址栏获焦时先到本控制器）
+    /// UISelfTest (I-54): the real entry point of ⌘R refresh (the responder chain reaches this controller first when the address bar has focus)
     func uiTestRefresh() { refresh(nil) }
 
-    /// UISelfTest（I-55）：当前标签是否在显示隐藏文件（验证 reveal 隐藏文件时自动打开）
+    /// UISelfTest (I-55): whether the current tab shows hidden files (verifies auto-enabling when revealing a hidden file)
     var uiTestIncludeHidden: Bool { activeTab.model.includeHidden }
 
-    /// UISelfTest（I-55）：设置当前标签的"显示隐藏文件"（场景收尾复原用，不泄漏给后续场景）
+    /// UISelfTest (I-55): sets "show hidden files" on the current tab (for scenario cleanup, so it doesn't leak into later scenarios)
     func uiTestSetIncludeHidden(_ on: Bool) { activeTab.model.includeHidden = on }
 
-    /// UISelfTest（I-58）：列头排序指示器当前显示的 (键, 升序)。
-    /// 「排序状态丢失」的真相是指示器没跟上 model.sort——数据排对了、箭头停在"名称"上，
-    /// 所以必须把指示器和模型分开断言，只验 model.sort 会漏掉这个 bug。
+    /// UISelfTest (I-58): the (key, ascending) currently shown by the column header sort indicator.
+    /// The truth of "sort state lost" was the indicator not following model.sort: data sorted correctly while the arrow stayed on "Name",
+    /// so the indicator and the model must be asserted separately; checking only model.sort would miss this bug.
     var uiTestSortIndicator: (key: String, ascending: Bool)? {
         guard let d = activeTab.listVC.tableView.sortDescriptors.first, let k = d.key else { return nil }
         return (k, d.ascending)
     }
 
-    /// UISelfTest（I-59）：走各视图真实的 copyPath(_:)（空白处快捷键那条路），不走捷径
+    /// UISelfTest (I-59): goes through each view's real copyPath(_:) (the empty-space shortcut path), no shortcuts
     func uiTestCopyPath(to pasteboard: NSPasteboard) {
         switch activeTab.viewMode {
         case .list:    activeTab.listVC.copyPath(to: pasteboard)
@@ -465,9 +465,9 @@ final class PaneViewController: NSViewController {
         }
     }
 
-    /// UISelfTest（I-59）：**视图侧**认为的当前目录（copyPath 空选中时的回落值真源）。
-    /// 分栏的 currentDirectory 取自焦点列，异步建链期间会滞后于 browser.current——
-    /// 断言必须盯这个值，盯 browser.current 会在列链就位前就通过。
+    /// UISelfTest (I-59): the current directory **as the view sees it** (source of truth for copyPath's fallback with no selection).
+    /// In column view currentDirectory comes from the focused column and lags browser.current during async chain building;
+    /// assertions must watch this value, since watching browser.current would pass before the column chain is in place.
     var uiTestViewCurrentDirectory: URL {
         switch activeTab.viewMode {
         case .list:    return activeTab.listVC.currentDirectory
@@ -476,7 +476,7 @@ final class PaneViewController: NSViewController {
         }
     }
 
-    /// UISelfTest（I-59）：清空当前视图的选中（模拟"点击文件夹空白处"）
+    /// UISelfTest (I-59): clears the current view's selection (simulates "clicking empty space in a folder")
     func uiTestClearSelection() {
         switch activeTab.viewMode {
         case .list:    activeTab.listVC.tableView.deselectAll(nil)
@@ -485,57 +485,57 @@ final class PaneViewController: NSViewController {
         }
     }
 
-    /// UISelfTest（I-58）：直接改模型排序（模拟会话恢复那条路——restore 就是这样写的，不经列头）
+    /// UISelfTest (I-58): changes the model sort directly (simulates the session restore path; restore writes it this way, bypassing column headers)
     func uiTestSetSort(key: String, ascending: Bool) {
         guard let k = SortSpec.Key(rawValue: key) else { return }
         activeTab.model.sort = SortSpec(key: k, ascending: ascending,
                                         foldersFirst: activeTab.model.sort.foldersFirst)
     }
 
-    /// UISelfTest（I-58）：模型侧的排序（对照组）
+    /// UISelfTest (I-58): model-side sort (control group)
     var uiTestModelSort: (key: String, ascending: Bool) {
         (activeTab.model.sort.key.rawValue, activeTab.model.sort.ascending)
     }
 
-    /// UISelfTest（I-57）：面包屑当前显示的目录 / 是否可见。
-    /// 「面包屑回显」必须验内容——只验 !isHidden 的断言把 breadcrumb.isHidden=false 删掉照样绿。
+    /// UISelfTest (I-57): the directory the breadcrumbs currently show / whether visible.
+    /// "Breadcrumbs shown again" must verify content: an assertion on !isHidden alone stays green even with breadcrumb.isHidden=false deleted.
     var uiTestBreadcrumbURL: URL { breadcrumb.url }
     var uiTestBreadcrumbVisible: Bool { !breadcrumb.isHidden }
 
-    /// UISelfTest（I-57）：地址栏是否仍持有 field editor（退出编辑后必须已释放；
-    /// 「isHidden=true 但 field editor 还在」这个状态是可达的，光验 isHidden 盖不住）
+    /// UISelfTest (I-57): whether the address bar still holds the field editor (it must be released after exiting editing;
+    /// "isHidden=true but field editor still present" is a reachable state that checking isHidden alone can't cover)
     var uiTestPathEditorHasFocus: Bool { pathEditor.currentEditor() != nil }
 
-    /// UISelfTest（I-32）：刷新状态栏计数并回选中药丸是否可见（删除后选中清空 → 应无"已选"药丸）
+    /// UISelfTest (I-32): refreshes status bar counts and returns whether the selection pill is visible (selection cleared after delete → no "selected" pill)
     func uiTestRefreshAndSelectionPillVisible() -> Bool {
         updateStatusCounts()
         return statusBar.selectionPillVisible
     }
 
-    // MARK: 导航（唯一入口：历史/地址栏/内容三方同步）
+    // MARK: Navigation (single entry point: history/address bar/content stay in sync)
 
     func navigate(to url: URL) {
-        coordinator?.recordAccess(url)   // M28：进入文件夹 = 一次使用记账（搜索按习惯排序用）
+        coordinator?.recordAccess(url)   // M28: entering a folder = one usage record (for search ranking by usage)
         activeTab.browser.navigate(to: url)
         applyLocation()
     }
 
     private func applyLocation() {
         activeTab.model.navigate(to: activeTab.browser.current)
-        // 分栏模式：列链联动（沿当前链下钻原地扩列，跳转则重建列链）
+        // Column mode: keep the column chain in step (drill-down along the chain extends in place; a jump rebuilds the chain)
         if activeTab.viewMode == .columns {
             activeTab.columnVC?.showDirectory(activeTab.browser.current)
         }
         refreshChrome()
     }
 
-    // MARK: 视图模式切换（M9：⌘1 图标 / ⌘2 列表 / ⌘3 分栏；选中按 URL 集迁移）
+    // MARK: View mode switching (M9: ⌘1 icons / ⌘2 list / ⌘3 columns; selection carried over by URL set)
 
     func setViewMode(_ mode: PaneViewMode) {
         guard activeTab.viewMode != mode else { return }
         let carried = currentSelectionURLs()
-        // 读盘途中切视图模式：待定位目标还挂在旧视图上，不搬过去就永久丢失，
-        // 而且会在旧视图里留成日后突然"幽灵跳选"并抢焦点的定时炸弹。先取走，挂到新视图上。
+        // Switching view mode mid-read: the pending reveal is still on the old view; unless moved it is lost for good,
+        // and left in the old view as a time bomb that later "ghost-selects" and steals focus. Take it first, then attach it to the new view.
         let carriedReveal = takePendingReveal()
         activeTab.viewMode = mode
         mountActiveTab()
@@ -545,14 +545,14 @@ final class PaneViewController: NSViewController {
         updateStatusCounts()
     }
 
-    /// 取走当前视图上的待定位目标（切视图模式搬家用）
+    /// Takes the pending reveal from the current view (for relocation on view mode switch)
     private func takePendingReveal() -> (url: URL, rename: Bool)? {
         switch activeTab.viewMode {
         case .list:  return activeTab.listVC.takePendingReveal()
         case .icons: return activeTab.iconVC?.takePendingReveal()
         case .columns:
             guard let url = activeTab.columnVC?.takePendingReveal() else { return nil }
-            return (url, false)   // 分栏无行内重命名语义
+            return (url, false)   // Columns have no inline rename semantics
         }
     }
 
@@ -573,7 +573,7 @@ final class PaneViewController: NSViewController {
         }
     }
 
-    // MARK: 会话快照/恢复（M11；SessionStore 契约）
+    // MARK: Session snapshot/restore (M11; SessionStore contract)
 
     func sessionPane() -> SessionPane {
         SessionPane(tab: SessionTab(path: activeTab.browser.current.path,
@@ -583,7 +583,7 @@ final class PaneViewController: NSViewController {
                                     viewMode: activeTab.viewMode.rawValue))
     }
 
-    /// 按快照重建浏览上下文（路径已消失回退个人目录——容错矩阵）
+    /// Rebuilds the browsing context from a snapshot (a vanished path falls back to the home directory, per the fault-tolerance matrix)
     func restoreSession(_ pane: SessionPane) {
         let fm = FileManager.default
         let st = pane.tab
@@ -606,29 +606,29 @@ final class PaneViewController: NSViewController {
         }
     }
 
-    // MARK: 活动窗格高亮 / 非活动窗格暗化
+    // MARK: Active pane highlight / inactive pane dimming
 
-    /// 非活动窗格内容暗化覆盖层（懒建；alpha=偏好值，0 或活动时隐藏）
+    /// Dimming overlay for inactive pane content (lazily built; alpha = preference value, hidden at 0 or when active)
     private var dimOverlay: NSView?
 
     func setActive(_ active: Bool, dimmed: Bool = false) {
         isActivePane = active
         applyActiveTint()
-        // 非活动窗格暗化（QSpace 外观项）：盖半透明黑覆盖 contentContainer；
-        // dimmed 由 grid 传入（仅多窗格的非活动窗格为真），单窗格恒不暗化
+        // Inactive pane dimming (QSpace appearance option): a translucent black overlay over contentContainer;
+        // dimmed is passed by the grid (true only for inactive panes in multi-pane layouts); a single pane is never dimmed
         let alpha = Preferences.inactivePaneDimming
         if dimmed, alpha > 0 {
             let overlay = ensureDimOverlay()
             overlay.frame = contentContainer.bounds
             overlay.layer?.opacity = Float(alpha)
             overlay.isHidden = false
-            contentContainer.addSubview(overlay)   // 置于内容之上（mountActiveTab 清空后重挂）
+            contentContainer.addSubview(overlay)   // Placed above the content (remounted after mountActiveTab clears)
         } else {
             dimOverlay?.isHidden = true
         }
     }
 
-    /// 懒建暗化覆盖层（autoresizing 随 contentContainer 缩放；不用约束以便随内容视图重挂存活）
+    /// Lazily builds the dimming overlay (autoresizes with contentContainer; no constraints, so it survives content view remounts)
     private func ensureDimOverlay() -> NSView {
         if let overlay = dimOverlay { return overlay }
         let overlay = NSView()
@@ -641,12 +641,12 @@ final class PaneViewController: NSViewController {
     }
 
     private func applyActiveTint() {
-        // 高亮开关（偏好）关时不描色；强调色走 Theme.accent（可自定义主题色）。
-        // 底色解析交给 AddressBarBacking.updateLayer（外观感知、明暗切换自动重解析）。
+        // No tint when the highlight preference is off; accent goes through Theme.accent (customizable theme color).
+        // Background resolution is left to AddressBarBacking.updateLayer (appearance-aware, re-resolved on light/dark switches).
         addressArea.highlighted = isActivePane && Preferences.activePaneHighlight
     }
 
-    /// 焦点落点（PaneGrid 激活窗格时把键盘焦点交给内容视图）
+    /// Focus target (PaneGrid hands keyboard focus to the content view when activating a pane)
     var focusTarget: NSView {
         switch activeTab.viewMode {
         case .list: return activeTab.listVC.focusTarget
@@ -655,13 +655,13 @@ final class PaneViewController: NSViewController {
         }
     }
 
-    /// 操作后重读活动内容（真实 FS 投影刷新；分栏另刷自管列链）
+    /// Re-reads active content after an operation (real FS projection refresh; columns also refresh their own chain)
     func reloadActiveList() {
         activeTab.model.reload()
         if activeTab.viewMode == .columns { activeTab.columnVC?.reloadAllColumns() }
     }
 
-    /// 仅重绘活动内容（剪切灰显变化，无需重新读盘）
+    /// Redraws active content only (cut dimming changed; no need to re-read the disk)
     func redrawActiveList() {
         switch activeTab.viewMode {
         case .list: activeTab.listVC.redraw()
@@ -670,7 +670,7 @@ final class PaneViewController: NSViewController {
         }
     }
 
-    // MARK: 地址栏编辑
+    // MARK: Address bar editing
 
     func beginPathEditing() {
         beginPathEditing(with: activeTab.browser.current.path)
@@ -690,17 +690,17 @@ final class PaneViewController: NSViewController {
         breadcrumb.isHidden = false
         syncEmptyTrashButton()
         hidePathHint()
-        // 失焦复位这条路上 takeFocus=false：焦点此刻已经在别处（可能是另一个窗格、侧边栏、工具栏），
-        // 再 makeFirstResponder 就是把用户刚点过去的焦点抢回来——用户点隔壁窗格却发现光标跳回这边。
+        // takeFocus=false on the focus-loss reset path: focus is already elsewhere (perhaps another pane, the sidebar, the toolbar),
+        // and makeFirstResponder would snatch back the focus the user just moved: they click the next pane and the cursor jumps back here.
         if takeFocus { view.window?.makeFirstResponder(focusTarget) }
     }
 
-    /// 无效路径就地反馈：地址栏右端红字，1.5s 后淡出（不弹窗——spec 做工不变量）
+    /// In-place feedback for an invalid path: red text at the right end of the address bar, fading after 1.5s (no alert; spec craftsmanship invariant)
     private func flashPathHint(_ message: String) {        pathHintFadeWorkItem?.cancel()
         pathHint.stringValue = message
         pathHint.alphaValue = 1
         pathHint.isHidden = false
-        // VoiceOver 播报：否则视障用户只听得到一声 beep，完全不知道错在哪
+        // VoiceOver announcement: otherwise visually impaired users hear only a beep and have no idea what went wrong
         NSAccessibility.post(element: pathHint, notification: .announcementRequested,
                              userInfo: [.announcement: message,
                                         .priority: NSAccessibilityPriorityLevel.high.rawValue])
@@ -723,28 +723,28 @@ final class PaneViewController: NSViewController {
         pathHint.isHidden = true
     }
 
-    /// 窗口失去 key（另开设置窗 / ⌘F 搜索面板 / ⌘Tab 切到别的 App）时，**AppKit 不发**
-    /// `controlTextDidEndEditing`——独立探针实测：resignKey 之后 field editor 仍在、
-    /// pathEditor.isHidden 仍是 false。于是失焦复位这条路对它完全无感知，用户把地址栏删空后
-    /// 去开个设置窗，回头看主窗就是一个空白输入框盖在面包屑上。
+    /// When the window loses key (opening Settings / the ⌘F search panel / ⌘Tab to another app), **AppKit does not send**
+    /// `controlTextDidEndEditing`. Measured with a standalone probe: after resignKey the field editor is still there and
+    /// pathEditor.isHidden is still false. So the focus-loss reset path never notices: a user clears the address bar,
+    /// opens Settings, and comes back to a blank input box covering the breadcrumbs.
     ///
-    /// **只在文本为空时才收**：⌘L 全选后切到 Finder/终端复制一段路径、再切回来 ⌘V 粘贴，
-    /// 正是本轮要服务的头号用例。无条件复位会把编辑框关掉、焦点交回文件列表，那记 ⌘V 就命中
-    /// 列表的 pasteItems，变成「往当前目录粘贴文件」——一个纯浏览动作被升级成写盘操作。
-    /// 空文本意味着用户没有任何待粘贴内容可丢，收掉是纯收益。
+    /// **Dismiss only when the text is empty**: ⌘L select-all, switching to Finder/Terminal to copy a path, then back for ⌘V
+    /// is the top use case served here. An unconditional reset would close the editor and return focus to the file list, so that ⌘V would hit
+    /// the list's pasteItems and become "paste files into the current directory", escalating a pure browsing action into a disk write.
+    /// Empty text means the user has nothing pending to lose, so dismissing is pure gain.
     @objc private func windowDidResignKey(_ note: Notification) {
         guard isViewLoaded, (note.object as? NSWindow) === view.window,
               !pathEditor.isHidden,
               pathEditor.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return }
-        endPathEditing(takeFocus: false)   // 窗口正在失去 key，别去抢焦点
+        endPathEditing(takeFocus: false)   // The window is losing key; don't grab focus
     }
 
-    /// 粘贴文件路径（.apk 等）或包路径（.app）：进入其父目录并选中该项（Finder 语义）
+    /// Pasted file path (.apk etc) or package path (.app): enters its parent and selects the item (Finder semantics)
     private func revealFile(_ fileURL: URL) {
-        // 目标是隐藏文件、而当前又没在显示隐藏文件：用户是**明确点名**要这个文件的，
-        // 不打开显示就只会跳到父目录、什么都不选中，在用户眼里就是"回车了没反应"。
-        // 为该窗格打开显示隐藏（每窗格独立，⌘⇧. 随时可关掉），让用户真看得到自己要的东西。
+        // The target is hidden and hidden files aren't showing: the user **named this file explicitly**.
+        // Without turning them on we'd jump to the parent and select nothing, which to the user looks like "Return did nothing".
+        // Turn on hidden files for this pane (per pane, ⌘⇧. turns it off any time) so the user really sees what they asked for.
         if Self.isHiddenItem(fileURL), !activeTab.model.includeHidden {
             activeTab.model.includeHidden = true
         }
@@ -753,13 +753,13 @@ final class PaneViewController: NSViewController {
         revealAfterLoad(fileURL)
     }
 
-    /// 是否为隐藏项：点开头，或带 macOS 隐藏标志（后者是 UF_HIDDEN，点前缀盖不住）
+    /// Whether this is a hidden item: dot prefix, or the macOS hidden flag (the latter is UF_HIDDEN, which the dot prefix doesn't cover)
     private static func isHiddenItem(_ url: URL) -> Bool {
         if url.lastPathComponent.hasPrefix(".") { return true }
         return (try? url.resourceValues(forKeys: [.isHiddenKey]))?.isHidden ?? false
     }
 
-    // MARK: 菜单命令（响应链，只在活动窗格生效）
+    // MARK: Menu commands (responder chain, active pane only)
 
     @objc func goBack(_ sender: Any?) {
         if activeTab.browser.goBack() != nil { applyLocation() }
@@ -769,7 +769,7 @@ final class PaneViewController: NSViewController {
         if activeTab.browser.goForward() != nil { applyLocation() }
     }
 
-    /// I-39：⌘↑ 上层后自动选中来源子目录（Finder/QSpace 语义）——与 ⌘↓ 互逆闭环的前半
+    /// I-39: after ⌘↑ goes up, auto-select the child directory we came from (Finder/QSpace semantics); the first half of the round trip with ⌘↓
     @objc func goUpFolder(_ sender: Any?) {
         let child = activeTab.browser.current
         if activeTab.browser.goUp() != nil {
@@ -778,8 +778,8 @@ final class PaneViewController: NSViewController {
         }
     }
 
-    /// I-39：⌘↓ 下层——单选文件夹在窗格内进入；有选中交视图打开逻辑（文件默认程序）；
-    /// 无选中时回退最近历史的直接子级（刚 ⌘↑ 上来的情形，历史不膨胀）
+    /// I-39: ⌘↓ goes down: a single selected folder enters in the pane; other selections go to the view's open logic (files to the default app);
+    /// with no selection, returns to the most recent history entry if it's a direct child (the just-⌘↑-ed case, without growing history)
     @objc func goDownFolder(_ sender: Any?) {
         let items = currentSelectedItems()
         if items.count == 1, let only = items.first, only.isDirectory, !only.isPackage {
@@ -797,7 +797,7 @@ final class PaneViewController: NSViewController {
         if canDescendIntoHistory, activeTab.browser.goBack() != nil { applyLocation() }
     }
 
-    /// 最近后退历史是否为当前目录的直接子级（⌘↓ 无选中兜底 + 菜单校验共用）
+    /// Whether the most recent back-history entry is a direct child of the current directory (shared by the ⌘↓ no-selection fallback and menu validation)
     private var canDescendIntoHistory: Bool {
         guard let recent = activeTab.browser.backHistory.first else { return false }
         return recent.deletingLastPathComponent().standardizedFileURL.path
@@ -812,7 +812,7 @@ final class PaneViewController: NSViewController {
         }
     }
 
-    /// 导航落位后选中指定条目（各视图自带"加载完成再选"机制，避开异步读目录竞态）
+    /// Selects the given entry once navigation lands (each view has its own "select after load" mechanism, avoiding the async directory read race)
     private func revealAfterLoad(_ url: URL, rename: Bool = false) {
         switch activeTab.viewMode {
         case .list: activeTab.listVC.prepareReveal(url, rename: rename)
@@ -821,15 +821,15 @@ final class PaneViewController: NSViewController {
         }
     }
 
-    /// 视图模式感知的对外定位入口（外部 reveal / open-in-NSpace / 搜索定位 / 打开新窗选中 共用）：
-    /// 先设目录再调本方法即可——各视图的 pending 机制会在异步读目录完成后落选中（I-44）。
+    /// Public view-mode-aware reveal entry (shared by external reveal / open-in-NSpace / search reveal / open-new-window select):
+    /// set the directory first, then call this; each view's pending mechanism applies the selection after the async read finishes (I-44).
     func reveal(_ url: URL) { revealAfterLoad(url) }
 
-    /// 导航历史（长按历史菜单用）：最近的在前
+    /// Navigation history (for the long-press history menu): most recent first
     var backHistory: [URL] { activeTab.browser.backHistory }
     var forwardHistory: [URL] { activeTab.browser.forwardHistory }
 
-    /// 跳到后退/前进历史第 index 项（0=最近）
+    /// Jumps to back/forward history item `index` (0 = most recent)
     func jumpBackHistory(to index: Int) {
         if activeTab.browser.jumpBack(to: index) != nil { applyLocation() }
     }
@@ -842,17 +842,17 @@ final class PaneViewController: NSViewController {
         beginPathEditing()
     }
 
-    /// ⌘R 刷新：地址栏获焦时响应链先到本控制器（内容区获焦时由各视图 VC 自己的 refresh 处理）。
-    /// 用户报"删空地址栏后刷新也不恢复"——刷新既不经失焦、也不经导航，两条既有复位路径都盖不到，
-    /// 必须在这里显式收编辑态，否则空白编辑框会一直盖在面包屑上。
+    /// ⌘R refresh: the responder chain reaches this controller first when the address bar has focus (with content focused, each view VC's own refresh handles it).
+    /// User report: "refreshing doesn't restore the address bar after clearing it". Refresh involves neither focus loss nor navigation, so neither existing reset path covers it;
+    /// editing must be closed explicitly here, or the blank editor stays on top of the breadcrumbs.
     @objc func refresh(_ sender: Any?) {
         if isViewLoaded, !pathEditor.isHidden { endPathEditing() }
         reloadActiveList()
     }
 
-    /// 「清倒」钮的显隐：只在**废纸篓根**且未在编辑地址时出现。
-    /// 宽度归零而不只是 isHidden——隐藏的视图照样占 Auto Layout 的位，
-    /// 只 hide 会让面包屑白白少一截宽度。
+    /// Visibility of the "Empty" button: shown only at a **Trash root** and while not editing the address.
+    /// Width goes to zero rather than just isHidden: hidden views still take Auto Layout space,
+    /// and hiding alone would needlessly cost the breadcrumbs some width.
     private func syncEmptyTrashButton() {
         guard isViewLoaded else { return }
         let show = TrashLocation.isTrashRoot(activeTab.browser.current) && pathEditor.isHidden
@@ -869,16 +869,16 @@ final class PaneViewController: NSViewController {
         coordinator?.emptyTrash(at: here, in: view.window)
     }
 
-    /// 列表底部留白（I-65）：读真实 scrollView 的 contentInsets，不复刻常量
+    /// List bottom margin (I-65): reads the real scrollView's contentInsets, without copying the constant
     var uiTestListBottomInset: CGFloat { activeTab.listVC.uiTestBottomInset }
-    /// 空白区右键菜单（走 BlankAreaScrollView 真实注入的那个回调）
+    /// Empty-space context menu (through the callback actually injected into BlankAreaScrollView)
     func uiTestBlankAreaMenu() -> NSMenu? { activeTab.listVC.uiTestBlankAreaMenu() }
 
-    // ---- 自测通道（I-64）----
+    // ---- Self-test channel (I-64) ----
     var uiTestEmptyTrashButtonVisible: Bool { isViewLoaded && !emptyTrashButton.isHidden }
     var uiTestEmptyTrashButtonWidth: CGFloat { emptyTrashWidth?.constant ?? -1 }
     var uiTestEmptyTrashButtonTitle: String { emptyTrashButton.title }
-    /// 走钮真实的 action（不复刻），返回是否真的可点
+    /// Goes through the button's real action (no copy); returns whether it was really clickable
     func uiTestClickEmptyTrashButton() -> Bool {
         guard !emptyTrashButton.isHiddenOrHasHiddenAncestor, emptyTrashButton.isEnabled,
               emptyTrashButton.action != nil, emptyTrashButton.target != nil else { return false }
@@ -886,10 +886,10 @@ final class PaneViewController: NSViewController {
         return true
     }
 
-    /// 前往废纸篓（甲板垃圾桶钮 / Go 菜单共用同一出口）
+    /// Go to the Trash (the deck trash button and the Go menu share this exit)
     @objc func goTrash(_ sender: Any?) {
-        // 按**当前所在卷**取废纸篓：在外置盘上浏览时跳该卷的回收站，
-        // 与 fm.trashItem 的实际落点一致（否则按钮说的和做的是两个地方）
+        // Picks the Trash of the **current volume**: browsing an external disk jumps to that volume's trash,
+        // matching where fm.trashItem actually puts things (otherwise the button points somewhere other than where files go)
         navigate(to: TrashLocation.trash(for: activeTab.browser.current))
     }
 
@@ -898,15 +898,15 @@ final class PaneViewController: NSViewController {
     }
 
 
-    // 视图模式菜单（显示 > 为图标/为列表/为分栏）
+    // View mode menu (View > as Icons/as List/as Columns)
     @objc func viewAsIcons(_ sender: Any?) { setViewMode(.icons) }
     @objc func viewAsList(_ sender: Any?) { setViewMode(.list) }
     @objc func viewAsColumns(_ sender: Any?) { setViewMode(.columns) }
 }
 
-/// 地址栏底衬（外观感知）：常态不透明 controlBackgroundColor 基色，活动窗格叠 accent 0.10。
-/// 关键：用 updateLayer 而非一次性 cgColor —— 系统明暗切换与 .nspaceThemeChanged 都会自动重解析，
-/// 杜绝深色下非活动窗格地址栏渲染成白块 / 缓存陈旧（原一次性 cgColor 在浅色时取值、深色下不刷新）。
+/// Address bar backing (appearance-aware): opaque controlBackgroundColor base normally, accent 0.10 layered on for the active pane.
+/// Key point: updateLayer instead of a one-off cgColor, so system light/dark switches and .nspaceThemeChanged re-resolve automatically,
+/// avoiding inactive address bars rendering as white blocks in dark mode / stale caches (the old one-off cgColor was read in light mode and never refreshed in dark).
 private final class AddressBarBacking: NSView {
     var highlighted = false { didSet { needsDisplay = true } }
 
@@ -916,7 +916,7 @@ private final class AddressBarBacking: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("代码构建 UI，无 xib") }
+    required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     override var wantsUpdateLayer: Bool { true }
 

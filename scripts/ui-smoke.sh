@@ -1,310 +1,310 @@
 #!/usr/bin/env bash
-# UI 冒烟：无需任何系统权限的自动化 UX 回归（frame 持久化端到端 + 视图/布局尺寸稳定
-# + 任务窗空态 + 暂存入架 + 搜索面板）。产物 /tmp/nspace-ui/{report.txt,*.png}
+# UI smoke: automated UX regression needing no system permissions (frame persistence end to end + view/layout size stability
+# + empty task window + adding to stash + search panel). Output: /tmp/nspace-ui/{report.txt,*.png}
 set -uo pipefail
 cd "$(dirname "$0")/.."
-./scripts/build-app.sh >/dev/null 2>&1 || { echo "构建失败"; exit 1; }
+./scripts/build-app.sh >/dev/null 2>&1 || { echo "Build failed"; exit 1; }
 pkill -x NSpace 2>/dev/null; sleep 0.5
 rm -rf /tmp/nspace-ui
 
 BIN=build/NSpace.app/Contents/MacOS/NSpace
-# 阶段A：设定 frame 900x520 并退出（触发 autosave）
+# Phase A: set frame 900x520 and exit (triggers autosave)
 NSPACE_UITEST=1 NSPACE_UITEST_SETFRAME="900,520" "$BIN" >/dev/null 2>&1
-# 阶段B：重启断言恢复 + 跑全场景
+# Phase B: relaunch, assert the restore + run all scenarios
 NSPACE_UITEST=1 NSPACE_UITEST_EXPECTFRAME="900,520" "$BIN" >/dev/null 2>&1
 CODE=$?
-echo "==== UI 冒烟报告 (exit=$CODE) ===="
-cat /tmp/nspace-ui/report.txt 2>/dev/null || echo "(无报告)"
-echo "截图: $(ls /tmp/nspace-ui/*.png 2>/dev/null | wc -l | tr -d ' ') 张 → /tmp/nspace-ui/"
+echo "==== UI smoke report (exit=$CODE) ===="
+cat /tmp/nspace-ui/report.txt 2>/dev/null || echo "(no report)"
+echo "Screenshots: $(ls /tmp/nspace-ui/*.png 2>/dev/null | wc -l | tr -d ' ') → /tmp/nspace-ui/"
 
-# M17 新增断言存在性校验（防断言被误删/跑空即"绿"）：报告须含以下 PASS 行
+# M17 assertion presence check (guards against an assertion deleted by mistake or an empty run going "green"): the report must contain these PASS lines
 REPORT=/tmp/nspace-ui/report.txt
 require_pass() {
   if ! grep -qF "PASS $1" "$REPORT" 2>/dev/null; then
-    echo "✗ 缺 M17 断言或未通过: $1"; CODE=1
+    echo "✗ M17 assertion missing or failing: $1"; CODE=1
   fi
 }
-require_pass "无 NSToolbar"
-require_pass "甲板标签行高 40"
-require_pass "甲板工具条行高 36"
-require_pass "工作区标签条存在于甲板"
-require_pass "版本徽章存在于甲板标签条"
-require_pass "版本徽章无更新态文字"
-require_pass "⌘T 新建工作区"
-require_pass "⌘W 关闭工作区"
-require_pass "侧栏列全高贯通"
-require_pass "折叠/展开 3 轮窗口尺寸与右列布局不漂移"
-require_pass "暂存架 contentGroup 居中"
-require_pass "暂存架常态动作条隐藏"
+require_pass "No NSToolbar"
+require_pass "Deck tab row height 40"
+require_pass "Deck toolbar row height 36"
+require_pass "Workspace tab bar exists in the deck"
+require_pass "Version badge exists in the deck tab bar"
+require_pass "Version badge has no update-state text"
+require_pass "⌘T new workspace"
+require_pass "⌘W close workspace"
+require_pass "Sidebar column spans full height"
+require_pass "3 collapse/expand rounds: window size and right column layout do not drift"
+require_pass "Stash shelf contentGroup centered"
+require_pass "Stash shelf action bar hidden at rest"
 
-# I-19/I-21 回归断言（v0.9.3）
-require_pass "全局搜索面板含「包含隐藏文件」开关且可见"
-require_pass "⌘W 分层：先关顶层设置窗"
-require_pass "⌘W 分层：主窗工作区未被误关"
-require_pass "⌘W 关闭后 MRU 回退到上一个活跃工作区"
-require_pass "关最后窗口后 Dock 重开有窗"
-# I-22 回归（v0.10.1）
-require_pass "侧栏按钮折叠后再点可真展开"
-# I-24b 回归（v0.11.0）
-require_pass "分栏首列内容真渲染"
-require_pass "列头排序真生效[name]"
-require_pass "列头排序真生效[dateModified]"
-require_pass "列头排序真生效[size]"
-require_pass "列头排序真生效[kind]"
-require_pass "列头排序真生效[created]"
-require_pass "列头排序真生效[added]"
-require_pass "目录右键打开=App 内导航"
-require_pass "全局热键注册成功"
-require_pass "全局热键呼出/隐藏切换真生效"
+# I-19/I-21 regression assertions (v0.9.3)
+require_pass "Global search panel has a visible 'Include Hidden Files' toggle"
+require_pass "⌘W layering: closes the topmost settings window first"
+require_pass "⌘W layering: main window workspace not closed by mistake"
+require_pass "⌘W close falls back via MRU to the previously active workspace"
+require_pass "Dock reopen gives a window after the last one was closed"
+# I-22 regression (v0.10.1)
+require_pass "Sidebar button really expands after collapsing"
+# I-24b regression (v0.11.0)
+require_pass "First column content really renders"
+require_pass "Column header sort really works [name]"
+require_pass "Column header sort really works [dateModified]"
+require_pass "Column header sort really works [size]"
+require_pass "Column header sort really works [kind]"
+require_pass "Column header sort really works [created]"
+require_pass "Column header sort really works [added]"
+require_pass "Directory context Open = in-app navigation"
+require_pass "Global hotkey registered"
+require_pass "Global hotkey summon/hide toggle really works"
 
-# M23 全功能自测矩阵（v0.11.0）：全部验「真实效果」而非「没崩溃」
-require_pass "视图模式[list]对应视图真在层级且可见"
-require_pass "视图模式[icons]对应视图真在层级且可见"
-require_pass "视图模式[columns]对应视图真在层级且可见"
-require_pass "布局 quad 真实呈现 4 窗格"
-require_pass "布局 single 真实呈现 1 窗格"
-require_pass "导航进入沙箱路径生效"
-require_pass "导航进入子目录路径生效"
-require_pass "导航后退路径真变回上级"
-require_pass "导航前进路径真恢复"
-require_pass "导航上层路径真变父级"
-require_pass "显示隐藏文件开关真实翻转模型状态"
-require_pass "新建文件夹真实落盘"
-require_pass "制作副本真实落盘"
-require_pass "重命名真实生效"
-require_pass "移到废纸篓真实生效"
-require_pass "沙箱守卫: 新建文件夹目标在自建夹具内"
-require_pass "沙箱守卫: 制作副本源在自建夹具内"
-require_pass "沙箱守卫: 重命名目标在自建夹具内"
-require_pass "沙箱守卫: 移废纸篓目标在自建夹具内"
-require_pass "拷贝路径 → 剪贴板内容正确"
-require_pass "条目右键菜单含全部关键项"
-require_pass "条目右键菜单诚实禁用：非归档选中无「解压」项"
-require_pass "右键「复制」enabled 随选中态正确切换"
-require_pass "空白区目录菜单项数=6 且含新建文件夹/新建文件/粘贴/简介/终端"
-require_pass "任务窗手动开→可见"
-require_pass "任务窗手动关→隐藏"
-require_pass "显示简介面板出现"
-require_pass "显示简介面板可关闭"
-require_pass "设置页[settings.tab.archive] makeView 无约束歧义"
-require_pass "设置页[settings.tab.behavior] makeView 无约束歧义"
-require_pass "设置页[settings.tab.permissions] makeView 无约束歧义"
-require_pass "设置页[settings.tab.appearance] makeView 无约束歧义"
-require_pass "快捷键注册表默认绑定读取正确"
-require_pass "侧栏含书签分组且种子书签行"
-# I-31 搜索结果行右键菜单（v0.13.x）
-require_pass "搜索结果右键菜单 items>0 且含「拷贝路径」"
-require_pass "搜索结果右键菜单含定位/加入暂存架/显示简介"
-require_pass "搜索结果右键「拷贝路径」→ 剪贴板内容==该路径"
+# M23 full-feature self-test matrix (v0.11.0): everything checks the "real effect", not "did not crash"
+require_pass "View mode [list] matching view really in hierarchy and visible"
+require_pass "View mode [icons] matching view really in hierarchy and visible"
+require_pass "View mode [columns] matching view really in hierarchy and visible"
+require_pass "Layout quad really shows 4 panes"
+require_pass "Layout single really shows 1 pane"
+require_pass "Navigation into sandbox takes effect"
+require_pass "Navigation into subdirectory takes effect"
+require_pass "Navigation back really returns to parent"
+require_pass "Navigation forward really restores the path"
+require_pass "Navigation up really goes to parent"
+require_pass "Show-hidden-files toggle really flips model state"
+require_pass "New folder really written to disk"
+require_pass "Duplicate really written to disk"
+require_pass "Rename really takes effect"
+require_pass "Move to Trash really takes effect"
+require_pass "Sandbox guard: new folder target inside own fixture"
+require_pass "Sandbox guard: duplicate source inside own fixture"
+require_pass "Sandbox guard: rename target inside own fixture"
+require_pass "Sandbox guard: move-to-Trash target inside own fixture"
+require_pass "Copy Path → clipboard content correct"
+require_pass "Item context menu has all key items"
+require_pass "Item context menu honestly disabled: non-archive selection has no 'Extract' item"
+require_pass "Context 'Copy' enabled state follows selection correctly"
+require_pass "Blank-area directory menu has 6 items including new folder/new file/paste/info/terminal"
+require_pass "Task window manual open → visible"
+require_pass "Task window manual close → hidden"
+require_pass "Get Info panel appears"
+require_pass "Get Info panel can be closed"
+require_pass "Settings page [settings.tab.archive] makeView has no ambiguous constraints"
+require_pass "Settings page [settings.tab.behavior] makeView has no ambiguous constraints"
+require_pass "Settings page [settings.tab.permissions] makeView has no ambiguous constraints"
+require_pass "Settings page [settings.tab.appearance] makeView has no ambiguous constraints"
+require_pass "Shortcut registry default bindings read correctly"
+require_pass "Sidebar has bookmarks group and seeded bookmark rows"
+# I-31 search result row context menu (v0.13.x)
+require_pass "Search result context menu items>0 and has 'Copy Path'"
+require_pass "Search result context menu has reveal/add to stash/Get Info"
+require_pass "Search result context 'Copy Path' → clipboard content == that path"
 
-# I-30 回归：⌘L 路径编辑首键一次生效 + 补全在文本变更事务外触发（首键 popup 不被吞）
-require_pass "I-30 ⌘L 后首键 '/' 字符一次生效"
-require_pass "I-30 首键即触发补全候选"
-require_pass "I-30 补全在文本变更事务之外触发"
+# I-30 regression: ⌘L path editing takes the first key at once + completion fires outside the text change transaction (first key popup not swallowed)
+require_pass "I-30 ⌘L first key '/' lands at once"
+require_pass "I-30 first key triggers completion candidates"
+require_pass "I-30 completion fires outside the text change transaction"
 
-# I-32 回归（多选删除后选中清空，三视图同验；验"真实效果"：视图层选中真空 + 状态栏无"已选"）
-require_pass "多选删除后选中清空[list]"
-require_pass "多选删除后选中清空[icons]"
-require_pass "多选删除后选中清空[columns]"
-require_pass "沙箱守卫[list]: I-32 移废纸篓目标在自建夹具内"
-require_pass "沙箱守卫[icons]: I-32 移废纸篓目标在自建夹具内"
-require_pass "沙箱守卫[columns]: I-32 移废纸篓目标在自建夹具内"
+# I-32 regression (selection clears after multi-select delete, all three views; checks the "real effect": view-layer selection really empty + no "selected" in the status bar)
+require_pass "Selection clears after multi-select delete [list]"
+require_pass "Selection clears after multi-select delete [icons]"
+require_pass "Selection clears after multi-select delete [columns]"
+require_pass "Sandbox guard [list]: I-32 move-to-Trash targets inside own fixture"
+require_pass "Sandbox guard [icons]: I-32 move-to-Trash targets inside own fixture"
+require_pass "Sandbox guard [columns]: I-32 move-to-Trash targets inside own fixture"
 
-# I-37 回归：面包屑地址栏宽度自适应（深层级/长名不溢出 + 中间折叠全层级永远可达；验"真实效果"）
-require_pass "沙箱守卫: I-37 深层链在自建夹具内"
-require_pass "I-37 面包屑不溢出"
-require_pass "I-37 「…」折叠段存在且菜单项数==折叠层级数"
-require_pass "I-37 点折叠菜单项 → 窗格真跳到该层级"
-require_pass "I-37 可见末段 toolTip==完整名"
-require_pass "I-37 窄窗格仍不溢出"
-# M26 列表「年/月」分组（验真实效果：组头/折叠/过滤/跨排序选中/开关）
-require_pass "沙箱守卫[m26]: 分组夹具 6 文件在自建夹具内"
-require_pass "M26 分组组头数==3 相对桶标题正确各组2项"
-require_pass "M26 组头是背景条不可折叠"
-require_pass "M26 仅显示此组表仅剩该组+药丸可见，显示全部还原"
-require_pass "M26 跨组重排序后选中按 URL 仍在"
-require_pass "M26 关闭分组组头数==0 恢复单线"
+# I-37 regression: breadcrumb address bar fits its width (deep paths/long names do not overflow + middle collapse keeps all levels reachable; checks the "real effect")
+require_pass "Sandbox guard: I-37 deep chain inside own fixture"
+require_pass "I-37 breadcrumb does not overflow"
+require_pass "I-37 '…' collapse segment exists and menu item count == collapsed levels"
+require_pass "I-37 clicking a collapse menu item → pane really jumps to that level"
+require_pass "I-37 visible last segment toolTip == full name"
+require_pass "I-37 narrow pane still does not overflow"
+# M26 list "year/month" grouping (checks real effects: headers/collapse/filter/selection across sorts/toggle)
+require_pass "Sandbox guard [m26]: grouping fixture of 6 files inside own fixture"
+require_pass "M26 group header count == 3, relative bucket titles correct, 2 items per group"
+require_pass "M26 group header is a background bar, not collapsible"
+require_pass "M26 show-only-this-group leaves that group + pill visible, show all restores"
+require_pass "M26 selection stays by URL after cross-group re-sort"
+require_pass "M26 grouping off: header count == 0, back to flat list"
 
-# I-39 回归：⌘↑/⌘↓ 互逆导航（上层自动选中来源子目录 / 下层选中驱动优先 / 无选中回退历史 / 守卫吞键）
-require_pass "I-39 ⌘↑ 上层后自动选中来源子目录"
-require_pass "I-39 ⌘↓ 进入所选文件夹（选中驱动，非历史兜底）"
-require_pass "I-39 ⌘↓ 无选中时回退最近历史直接子级"
-require_pass "I-39 ⌘↓ 落表视图被吞不跳选（守卫真实生效）"
+# I-39 regression: ⌘↑/⌘↓ inverse navigation (going up auto-selects the originating child / going down is selection-driven first / no selection falls back to history / guard swallows the key)
+require_pass "I-39 ⌘↑ auto-selects the originating child after going up"
+require_pass "I-39 ⌘↓ enters the selected folder (selection-driven, not history fallback)"
+require_pass "I-39 ⌘↓ with no selection falls back to the most recent direct child in history"
+require_pass "I-39 ⌘↓ reaching the table view is swallowed without jump-select (guard really works)"
 
-# I-38/I-40 回归：搜索结果流不打断选中 + 局部按根近排序（同层字典序/符号链接口径/根外沉底）+ 路径列常驻
-require_pass "I-40 局部搜索按离根近者优先排序（直接子级最先）"
-require_pass "I-40 结果表常驻路径列实渲染父目录路径"
-require_pass "I-40 同层字典序（a.txt 先于 aa.txt，全序核验）"
-require_pass "I-40 解析路径口径命中仍按深度排序（符号链接根不失效）"
-require_pass "I-40 根外命中沉底为最后一行"
-require_pass "I-38 流式新批次到达后选中项不丢不漂（行号位移仍锁同一 URL）"
+# I-38/I-40 regression: result stream does not disturb selection + local search ranks nearest-to-root first (same-level lexicographic/symlink convention/out-of-root sinks) + path column always shown
+require_pass "I-40 local search ranks nearest-to-root first (direct children first)"
+require_pass "I-40 result table always shows a rendered parent path column"
+require_pass "I-40 same-level lexicographic order (a.txt before aa.txt, full order check)"
+require_pass "I-40 resolved-path hits still sort by depth (symlink root does not break it)"
+require_pass "I-40 out-of-root hit sinks to the last row"
+require_pass "I-38 selection neither lost nor drifts when a new streamed batch arrives (row shift, still locked to the same URL)"
 
-# M27 冲突体验（三按钮取消/合并/替换 + 「应用到此文件夹」checkbox 按文件夹批量 + 文件冲突合并禁用）
-require_pass "M27 checkbox 批量一次只作用一个文件夹"
-require_pass "M27 逐文件夹批量：面板出现次数==文件夹数（2 文件夹→2 次）"
-require_pass "M27 未勾 checkbox 只决议当前一条（逐条推进）"
-require_pass "M27 取消 → 决议返回 nil（整体放弃）"
-require_pass "M27 面板四按钮(取消/合并/两者保留/替换)+左下「应用到此文件夹」checkbox（自绘真渲染）"
-require_pass "M27 文件冲突「两者保留」可用"
-require_pass "M27 文件冲突「合并」禁用（仅文件夹可合并，诚实不可点）"
+# M27 conflict experience (three buttons Cancel/Merge/Replace + per-folder batch via the "apply to this folder" checkbox + Merge disabled for file conflicts)
+require_pass "M27 checkbox batch applies to one folder at a time"
+require_pass "M27 per-folder batch: panel appearances == folder count (2 folders → 2 times)"
+require_pass "M27 without the checkbox only the current item is settled (one by one)"
+require_pass "M27 Cancel → resolution returns nil (abandon everything)"
+require_pass "M27 panel has four buttons (Cancel/Merge/Keep Both/Replace) + bottom-left 'apply to this folder' checkbox (custom-drawn, really rendered)"
+require_pass "M27 file conflict 'Keep Both' available"
+require_pass "M27 file conflict 'Merge' disabled (folders only, honestly unclickable)"
 
-# I-34 大小列单行不折行 + M26 v2 图标视图分组（section/折叠/过滤/选中跨 rebuild）
-require_pass "I-34 大小列单行不折行（usesSingleLineMode + 头部截断）"
-require_pass "M26v2 图标视图分组 section==3 相对桶标题正确"
-require_pass "M26v2 图标视图组头是背景条不可折叠"
-require_pass "M26v2 图标视图仅显示此组+药丸，显示全部还原"
-require_pass "M26v2 图标视图选中按 URL 跨 rebuild 保持"
+# I-34 size column stays on one line + M26 v2 icon view grouping (section/collapse/filter/selection across rebuild)
+require_pass "I-34 size column stays on one line (usesSingleLineMode + head truncation)"
+require_pass "M26v2 icon view grouping section==3 relative bucket titles correct"
+require_pass "M26v2 icon view group header is a background bar, not collapsible"
+require_pass "M26v2 icon view show-only-this-group + pill, show all restores"
+require_pass "M26v2 icon view selection stays by URL across rebuild"
 
-# 窗口尺寸持久化根因（用户报告"更新后尺寸回默认"）：自管恢复权威、不与 macOS 原生恢复竞争
-require_pass "窗口尺寸自管恢复：isRestorable=false（不与 macOS 原生恢复竞争）"
+# Window size persistence root cause (user report "size reverts to default after an update"): restore is self-managed, does not compete with macOS native restoration
+require_pass "Window size self-restored: isRestorable=false (does not compete with macOS native restoration)"
 
-# I-42 全局搜索卡死根因：大结果集流式累积 O(n) 不卡 + 达上限截断提示（引擎侧上限见 SearchEngineTests）
-require_pass "I-42 大结果流式累积 O(n) 不卡"
-require_pass "I-42 达结果上限显示「仅显示前 N 条」截断提示"
+# I-42 global search hang root cause: large streamed accumulation stays O(n) without stalling + truncation notice at the cap (engine-side cap: see SearchEngineTests)
+require_pass "I-42 large streamed accumulation is O(n) without stalling"
+require_pass "I-42 at the result cap shows the 'first N only' truncation notice"
 
-# M29 人性化时间：相对分桶（今天/昨天/本周/本月/今年更早/往年）+ 日期列本年隐年份
-require_pass "M29 相对分桶 6 桶 keyTitle 落位正确"
-require_pass "M29 日期列本年隐年份/非本年显年份"
-# I-49 组排序错乱（今天被挤到最底）：foldersFirst 下组仍按相对时间新近排
-require_pass "I-49 foldersFirst 下组仍按新近排：今天(仅文件)在最前不被文件夹桶挤到末尾"
+# M29 humanized time: relative buckets (today/yesterday/this week/this month/earlier this year/prior years) + date column hides the year this year
+require_pass "M29 relative buckets: 6 bucket keyTitle placement correct"
+require_pass "M29 date column hides year this year, shows it otherwise"
+# I-49 wrong group order (today pushed to the bottom): under foldersFirst groups still sort by relative recency
+require_pass "I-49 foldersFirst groups still sort by recency: today (files only) is first, not pushed to the end by folder buckets"
 
-# I-46 窗口尺寸被测试污染根因：UITEST 帧键隔离（不写产品 windowFrame）
-require_pass "I-46 UITEST 帧键隔离（写 windowFrame.uitest 不碰产品 windowFrame）"
-require_pass "I-46 UITEST 侧栏宽键隔离"
-# I-43 点选区内收敛卡顿（AppKit 双击间隔~0.5s 等待）：纯单击已选多选行抢先收敛谓词
-require_pass "I-43 点选区内收敛谓词：纯单击多选已选行=抢先收敛，修饰键/双击/选区外/单选=不介入"
-# M28 搜索智能排序（frecency+匹配融合）：开关开=高频次命中最前 / 关=回退到达序
-require_pass "M28 智能排序开：高 frecency 命中排最前"
-require_pass "M28 智能排序关：回退到达序"
-# I-74 搜索大小写优先 + 带空格查询（用户报告：搜 "override md" 找不到 OVERRIDE.md）
-require_pass "I-74 大小写与查询一致的命中排最前"
-require_pass "I-74 带空格查询在结果排序里同样有效"
-require_pass "M28/I-47 UITEST 存储隔离（frecency/session 写临时目录不碰用户真实数据）"
-# I-47 重启回 home：导航即落盘（非干净退出也不丢），否则位置只在干净退出才保存
-require_pass "I-47 导航即落盘：会话记住导航目录"
-# I-50 排序不持久化：改排序即落盘（非干净退出也不丢）
-require_pass "I-50 改排序即落盘：会话记住排序列/方向"
-# I-52 外部/浏览器 reveal 落点可配：默认现有窗口新标签(不弹新窗)/新窗口
-require_pass "I-52 外部打开默认「新工作区标签」：复用现有窗口不弹新窗"
-require_pass "I-52 外部打开「新窗口」：弹新窗"
-# I-73 外部打开落到工作区标签后的三条新风险（对抗审查抓到）
-require_pass "I-73 外部打开不重建其余窗格：非活动窗格选中保住"
-require_pass "I-73 同目录多文件外部打开只开一个工作区且选中目标文件"
-require_pass "I-73 到工作区上限时外部打开不顶掉最老的"
-# I-44 第三方"打开文件位置"真定位选中（select 参数此前被丢弃）：接通 + 列表 + 图标视图模式感知
-require_pass "I-44 openWindow(selecting:) 真定位选中目标文件"
-require_pass "I-44 列表视图 reveal 真定位选中目标文件"
-require_pass "I-44 图标视图 reveal 真定位选中目标文件（视图模式感知，非硬编码 listVC）"
-# I-48 reveal 定位后选中无蓝色高亮：定位后表格获焦（选中显强调蓝）
-require_pass "I-48 reveal 后表格获焦（选中显蓝色强调，非未强调灰）"
-# I-45 Quick Look 收起淡出（不再缩到图标点）：收起态 sourceFrame=.zero，开启态=图标矩形
-require_pass "I-45 QL 收起 sourceFrame 淡出(.zero)、开启为图标矩形缩放"
+# I-46 window size polluted by tests, root cause: UITEST frame key isolation (does not write the product windowFrame)
+require_pass "I-46 UITEST frame key isolated (writes windowFrame.uitest, leaves the product windowFrame alone)"
+require_pass "I-46 UITEST sidebar width key isolated"
+# I-43 lag when collapsing a click inside the selection (waiting ~0.5s for AppKit's double-click interval): a plain click on a selected row in a multi-selection collapses early via a predicate
+require_pass "I-43 click-inside-selection collapse predicate: plain click on a selected row in a multi-selection = collapse early; modifier/double click/outside selection/single selection = no intervention"
+# M28 smart search ranking (frecency + match blend): on = high-frequency hits first / off = back to arrival order
+require_pass "M28 smart sort on: high frecency hit ranks first"
+require_pass "M28 smart sort off: back to arrival order"
+# I-74 search case priority + queries with spaces (user report: searching "override md" did not find OVERRIDE.md)
+require_pass "I-74 hits matching the query's case rank first"
+require_pass "I-74 query with spaces works in result ranking too"
+require_pass "M28/I-47 UITEST storage isolation (frecency/session written to a temp directory, real user data untouched)"
+# I-47 restart returned to home: navigation persists immediately (an unclean exit loses nothing; before, location was saved only on clean exit)
+require_pass "I-47 navigation persists immediately: session remembers the navigated directory"
+# I-50 sort not persisted: sort changes persist immediately (an unclean exit loses nothing)
+require_pass "I-50 sort change persists immediately: session remembers sort column/direction"
+# I-52 configurable landing spot for external/browser reveal: default new tab in the existing window (no new window) / new window
+require_pass "I-52 external open defaults to a 'new workspace tab': reuses the existing window, no new window"
+require_pass "I-52 external open 'New Window': opens a new window"
+# I-73 three new risks after external open moved to workspace tabs (caught in adversarial review)
+require_pass "I-73 external open does not rebuild other panes: inactive pane selection kept"
+require_pass "I-73 same-directory multi-file external open opens one workspace and selects the target file"
+require_pass "I-73 at the workspace limit external open does not evict the oldest"
+# I-44 third-party "open file location" really locates and selects (the select argument used to be dropped): wired up + list + icon view mode awareness
+require_pass "I-44 openWindow(selecting:) really locates and selects the target file"
+require_pass "I-44 list view reveal really locates and selects the target file"
+require_pass "I-44 icon view reveal really locates and selects the target file (view-mode aware, not a hardcoded listVC)"
+# I-48 no blue highlight on selection after reveal: the table takes focus after locating (selection shows accent blue)
+require_pass "I-48 reveal focuses the table (selection shows blue accent, not unemphasized gray)"
+# I-45 Quick Look dismiss fades (no longer shrinks to an icon point): dismiss state sourceFrame=.zero, open state = icon rect
+require_pass "I-45 QL dismiss sourceFrame fades (.zero), open zooms from icon rect"
 
-# I-53~I-57 地址栏三 bug（⌘L 全选 / 粘贴路径 Enter 跳转 / 失焦后回显）——用户报告
-require_pass "沙箱守卫[I-53]: 地址栏回归夹具在自建临时目录内"
-require_pass "I-53 ⌘L 呼出后地址栏文本全选"
-require_pass "I-53 Enter 文件夹路径 → 导航到该文件夹"
-require_pass "I-53 文件夹导航后编辑框已退出（面包屑回显）"
-require_pass "I-53 Enter 文件路径（.apk）→ 导航父目录并选中该文件"
-require_pass "I-53 文件 reveal 后编辑框已退出（面包屑回显）"
-require_pass "I-53 Enter 不存在路径 → 不跳转（仍在原目录）"
-require_pass "I-53 清空地址栏后失焦 → 编辑框退出，面包屑回显当前路径"
-require_pass "I-53 编辑中退回上级 → 编辑框退出+面包屑回显新目录"
-require_pass "沙箱守卫[I-54]: 路径解析矩阵夹具在自建临时目录内"
-require_pass "I-54 路径解析矩阵 26/26 通过"
-require_pass "I-54 ⌘L 全选后粘贴整段替换（非追加）"
-require_pass "I-54 无效路径 → 不跳转 + 内联提示 + 留在输入框可就地改"
-require_pass "I-54 删空地址栏后 ⌘R 刷新 → 菜单动作经响应链送达且编辑框退出"
-require_pass "I-54 粘贴当前目录内的文件 → 原地选中"
-require_pass "I-54 粘贴不弹补全"
-require_pass "I-54 补全候选是末段而非整条绝对路径"
-require_pass "沙箱守卫[I-55]: 边界修复夹具在自建临时目录内"
-require_pass "I-55 大小写与盘上不一致的路径仍能定位选中"
-require_pass "I-55 粘贴隐藏文件路径 → 自动显示隐藏文件并选中"
-require_pass "I-55 目标目录已载入仍找不到目标 → pending 定位作废"
-require_pass "I-55 Tab 补全唯一候选且仍留在输入框"
-require_pass "I-55 多候选 Tab 补到最长公共前缀"
-require_pass "I-55 地址栏已注册 fileURL 拖放类型"
-require_pass "I-55 拖文件到地址栏 → 填成其路径"
-require_pass "I-55 补全候选 head 对不上时全裁"
-require_pass "I-55 抖动以 layer.position.x 为基准"
-require_pass "I-55 分栏模式粘贴文件路径也能选中"
-require_pass "I-56 编辑地址栏时切布局：焦点仍在某个控件上而非掉回窗口"
-require_pass "I-56 读盘途中切视图模式，待定位目标搬到新视图"
-require_pass "I-57 窗口失 key：空地址栏自收、有内容一律保留"
-require_pass "I-57 退出编辑后面包屑真回显当前目录且 field editor 已释放"
-require_pass "I-57 ⌘L 经真实响应链送达且全选"
-require_pass "I-57 同一目录的不同写法不重复压后退栈"
-# I-58 排序指示器反向同步（模型→列头；此前product代码里根本不存在这条链）——用户报告
-require_pass "I-58 模型改排序后列头指示器同步"
-require_pass "I-58 重建列后指示器仍在"
-# I-59 空白处 ⌘⇧C 回落到当前目录（三视图）——用户报告
-require_pass "沙箱守卫[I-59]: 拷贝路径夹具在自建临时目录内"
-require_pass "I-59 空选中拷贝路径回落到当前目录"
-# I-60 冷启动外部打开排队（Chrome「在访达中显示」开新窗而非新标签）——用户报告
-require_pass "沙箱守卫[I-60]: 外部打开排队夹具在自建临时目录内"
-require_pass "I-60 会话未就绪的外部打开只排队不开窗"
-require_pass "I-60 冲刷后落到现有窗口新工作区标签"
-# I-61 面包屑命中盒（用户报告：地址栏要点到文件夹正中心才跳转，偏一点变成输入模式）
-require_pass "沙箱守卫[I-61]: 命中盒夹具在自建临时目录内"
-require_pass "I-61 段命中盒占满地址栏全高"
-require_pass "I-61 箭头命中盒占满地址栏全高"
-require_pass "I-61 段名左右留命中余量"
-require_pass "I-61 全高命中点触发导航（非编辑模式）"
-require_pass "I-61 内容右缘之右仍是空白点击进编辑"
-require_pass "I-61 极窄栏仍不溢出且层级全可达"
-require_pass "I-61 每级总宽与改前一致"
-require_pass "I-61 点非活动窗格地址栏 → 该窗格被激活"
-# I-62 废纸篓（用户报告：缺少废纸篓功能，右上角垃圾桶钮点了没用/常灰）
-require_pass "沙箱守卫[I-62]: 废纸篓夹具在自建临时目录内"
-require_pass "I-62 空选中时甲板垃圾桶钮仍可用"
-require_pass "I-62 点垃圾桶钮 → 应用内跳到废纸篓"
-require_pass "I-62 废纸篓内容真被列出"
-require_pass "I-62 拖到垃圾桶钮 → 真移到废纸篓"
-require_pass "I-62 前往菜单含「废纸篓」项并接 goTrash"
-require_pass "I-62 按窗口反查控制器"
-# I-63 清空废纸篓（不可逆，Eraser 胶囊）+ 放回原处（TrashLedger 胶囊）
-require_pass "沙箱守卫[I-63]: 清空夹具在自建临时目录内"
-require_pass "I-63 垃圾桶钮右键菜单含「清空废纸篓」"
-require_pass "I-63 清空废纸篓真删内容且保留篓本身"
-require_pass "I-63 清倒确认回车不触发清空"
-require_pass "I-63 放回原处闭环"
-require_pass "I-63 无台账记录的项不许假装能放回"
-require_pass "I-63 条目菜单按位置切换放回/移入"
-# I-64 地址栏右端的「清倒」按钮（用户报告：藏在右键菜单里等于没有）
-require_pass "I-64 「清倒」钮只在废纸篓出现"
-require_pass "I-64 真点「清倒」打开本窗确认，回车不触发清空"
-require_pass "I-64 取消清倒不删除任何项目"
-require_pass "I-64 编辑地址时「清倒」钮收起、退出编辑后回来"
-require_pass "I-64 废纸篓子文件夹里不显示「清倒」"
-# I-65 ⌘V 粘成新文件 / 单击已选中项重命名 / 底部空白区 / 新建文件快捷键（五条用户报告）
-require_pass "沙箱守卫[I-65]: 粘贴/重命名夹具在自建临时目录内"
-require_pass "I-65 剪贴板推导：图片优先于文本、空内容不成文件"
-require_pass "I-65 ⌘V 把剪贴板内容粘成新文件"
-require_pass "I-65 单击重命名谓词：仅「单选+点已选中行+无修饰+单击」为真"
-require_pass "I-65 列表底部留白可右键出新建菜单"
-require_pass "I-65 新建文件有快捷键且不与新建文件夹冲突"
-# I-66 设置项搜索框（用户要：所有配置都能搜索并跳转到对应配置项）
-require_pass "I-66 设置项索引从真实视图树建起"
-require_pass "I-66 输入即出结果"
-require_pass "I-66 点结果跳到对应页签"
-require_pass "I-66 清空搜索后结果区收起"
-# I-67 复制/剪切不许清掉选中（用户报告：⌘C 之后选中框不见了）
-require_pass "沙箱守卫[I-67]: 剪贴板选中夹具在自建临时目录内"
-require_pass "I-67 复制/剪切后选中不丢"
-# I-68 侧栏点一次就跳 + 高亮跟随窗格（用户报告：点「下载」没反应，得先点别的再点回来）
-require_pass "I-68 换目录后侧栏高亮不再指着旧位置"
-require_pass "I-68 点已高亮的侧栏行仍然跳转"
-require_pass "I-68 停在书签目录时侧栏高亮指向它"
-# I-70/71/72 ⌘T 新工作区继承 / ⌥⌘T 标签栏可见 / 工作区标签条可点（用户报告，从真实菜单键等价物进）
-require_pass "沙箱守卫[I-70]: 工作区夹具在自建临时目录内"
-require_pass "I-70 ⌘T 新工作区复制当前工作区"
-require_pass "I-72 工作区标签条点文字即切换且整行可点"
-require_pass "I-71 窗格内多标签已退役"
-require_pass "I-64 子目录夹具放回原处"
+# I-53~I-57 three address bar bugs (⌘L select all / paste path + Enter navigates / restored after blur): user report
+require_pass "Sandbox guard [I-53]: address bar regression fixture inside own temp directory"
+require_pass "I-53 ⌘L selects all address bar text"
+require_pass "I-53 Enter on folder path → navigates to that folder"
+require_pass "I-53 edit field exits after folder navigation (breadcrumb shown again)"
+require_pass "I-53 Enter on file path (.apk) → navigates to parent and selects the file"
+require_pass "I-53 edit field exits after file reveal (breadcrumb shown again)"
+require_pass "I-53 Enter on nonexistent path → no navigation (stays in place)"
+require_pass "I-53 clearing address bar then blur → edit field exits, breadcrumb shows current path"
+require_pass "I-53 going up while editing → edit field exits + breadcrumb shows new directory"
+require_pass "Sandbox guard [I-54]: path resolution matrix fixture inside own temp directory"
+require_pass "I-54 path resolution matrix 26/26 passed"
+require_pass "I-54 ⌘L select-all then paste replaces everything (no append)"
+require_pass "I-54 invalid path → no navigation + inline hint + stays in the field for in-place edits"
+require_pass "I-54 emptied address bar then ⌘R refresh → menu action delivered via responder chain and edit field exits"
+require_pass "I-54 pasting a file from the current directory → selected in place"
+require_pass "I-54 paste does not pop up completion"
+require_pass "I-54 completion candidates are the last segment, not the whole absolute path"
+require_pass "Sandbox guard [I-55]: edge-case fixture inside own temp directory"
+require_pass "I-55 path with case differing from disk still locates and selects"
+require_pass "I-55 pasting a hidden file path → auto-shows hidden files and selects"
+require_pass "I-55 target directory loaded but target still missing → pending reveal cancelled"
+require_pass "I-55 Tab completes the sole candidate and stays in the field"
+require_pass "I-55 multi-candidate Tab completes to longest common prefix"
+require_pass "I-55 address bar registered the fileURL drag type"
+require_pass "I-55 dragging a file onto the address bar → fills in its path"
+require_pass "I-55 completion candidates with mismatched head all trimmed"
+require_pass "I-55 shake is based on layer.position.x"
+require_pass "I-55 pasting a file path in column mode also selects"
+require_pass "I-56 layout switch while editing the address bar: focus stays on a control instead of falling back to the window"
+require_pass "I-56 view mode switch during disk read moves the pending reveal target to the new view"
+require_pass "I-57 window loses key: empty address bar collapses, any content is kept"
+require_pass "I-57 after editing, breadcrumb really shows the current directory and field editor is released"
+require_pass "I-57 ⌘L delivered via the real responder chain and selects all"
+require_pass "I-57 different spellings of one directory do not stack in back history"
+# I-58 sort indicator reverse sync (model → column header; this chain did not exist in product code before): user report
+require_pass "I-58 model sort change syncs the column header indicator"
+require_pass "I-58 indicator survives column rebuild"
+# I-59 ⌘⇧C on blank area falls back to the current directory (three views): user report
+require_pass "Sandbox guard [I-59]: copy-path fixture inside own temp directory"
+require_pass "I-59 empty selection copy path falls back to the current directory"
+# I-60 cold start external open queueing (Chrome "Show in Finder" opened a new window rather than a new tab): user report
+require_pass "Sandbox guard [I-60]: external open queue fixture inside own temp directory"
+require_pass "I-60 external open before session ready only queues, opens no window"
+require_pass "I-60 after flush lands in a new workspace tab of the existing window"
+# I-61 breadcrumb hit boxes (user report: you had to click the dead center of a folder to navigate; a little off and it went into typing mode)
+require_pass "Sandbox guard [I-61]: hit box fixture inside own temp directory"
+require_pass "I-61 segment hit box fills address bar height"
+require_pass "I-61 chevron hit box fills address bar height"
+require_pass "I-61 segment name keeps hit margin"
+require_pass "I-61 full-height hit point triggers navigation (not edit mode)"
+require_pass "I-61 right of the content edge is still blank and click enters editing"
+require_pass "I-61 very narrow bar still does not overflow and all levels are reachable"
+require_pass "I-61 total width per level matches the pre-change value"
+require_pass "I-61 clicking an inactive pane's address bar → that pane activates"
+# I-62 Trash (user report: no Trash feature, the trash button at top right did nothing/was always gray)
+require_pass "Sandbox guard [I-62]: Trash fixture inside own temp directory"
+require_pass "I-62 deck trash button usable with empty selection"
+require_pass "I-62 clicking trash button → navigates to Trash in-app"
+require_pass "I-62 Trash contents really listed"
+require_pass "I-62 drag onto trash button → really moved to Trash"
+require_pass "I-62 Go menu has a 'Trash' item wired to goTrash"
+require_pass "I-62 controller lookup by window"
+# I-63 Empty Trash (irreversible, Eraser pod) + Put Back (TrashLedger pod)
+require_pass "Sandbox guard [I-63]: empty fixture inside own temp directory"
+require_pass "I-63 trash button context menu has 'Empty Trash'"
+require_pass "I-63 Empty Trash really deletes content and keeps the Trash itself"
+require_pass "I-63 Return on the empty confirmation does not trigger emptying"
+require_pass "I-63 Put Back round trip"
+require_pass "I-63 items with no ledger record must not pretend they can be put back"
+require_pass "I-63 item menu switches between Put Back and Move to Trash by location"
+# I-64 'Empty' button at the right end of the address bar (user report: hidden in a context menu it might as well not exist)
+require_pass "I-64 'Empty' button appears only in the Trash"
+require_pass "I-64 really clicking 'Empty' opens the in-window confirmation, Return does not trigger emptying"
+require_pass "I-64 cancelling Empty deletes nothing"
+require_pass "I-64 'Empty' button hides while editing the address and returns after"
+require_pass "I-64 Trash subfolder does not show 'Empty'"
+# I-65 ⌘V pastes as a new file / click on selected item renames / blank bottom area / new-file shortcut (five user reports)
+require_pass "Sandbox guard [I-65]: paste/rename fixture inside own temp directory"
+require_pass "I-65 clipboard derivation: image before text, empty content makes no file"
+require_pass "I-65 ⌘V pastes clipboard content as a new file"
+require_pass "I-65 click-to-rename predicate: true only for 'single selection + click on selected row + no modifier + single click'"
+require_pass "I-65 list bottom blank area right-clicks to the New menu"
+require_pass "I-65 New File has a shortcut with no New Folder conflict"
+# I-66 settings search box (user request: every setting searchable, jumping to its item)
+require_pass "I-66 settings index built from the real view tree"
+require_pass "I-66 results appear on input"
+require_pass "I-66 clicking a result jumps to its tab"
+require_pass "I-66 results area collapses after clearing search"
+# I-67 copy/cut must not clear the selection (user report: the selection box vanished after ⌘C)
+require_pass "Sandbox guard [I-67]: clipboard selection fixture inside own temp directory"
+require_pass "I-67 selection survives copy/cut"
+# I-68 sidebar navigates on one click + highlight follows the pane (user report: clicking "Downloads" did nothing until clicking something else and back)
+require_pass "I-68 after a directory change the sidebar highlight no longer points at the old location"
+require_pass "I-68 clicking the already highlighted sidebar row still navigates"
+require_pass "I-68 sidebar highlight points to the bookmark directory while there"
+# I-70/71/72 ⌘T new workspace inherits / ⌥⌘T tab bar visible / workspace tab bar clickable (user reports, entered from real menu key equivalents)
+require_pass "Sandbox guard [I-70]: workspace fixture inside own temp directory"
+require_pass "I-70 ⌘T new workspace copies the current workspace"
+require_pass "I-72 workspace tab bar switches on text click and the full row is clickable"
+require_pass "I-71 in-pane tabs retired"
+require_pass "I-64 subfolder fixture put back"
 
-echo "==== M17 断言校验完毕 (exit=$CODE) ===="
-# 测试沙箱铁律收尾（I-46 / M28 / I-47）：清理 UITEST 隔离态，绝不留测试残留在用户真实域
+echo "==== M17 assertion check complete (exit=$CODE) ===="
+# Test sandbox hard rule wrap-up (I-46 / M28 / I-47): clear UITEST isolated state, never leave test residue in the user's real domain
 defaults delete com.nspace.NSpace "windowFrame.uitest" 2>/dev/null || true
 rm -rf "$TMPDIR/nspace-uitest-support" /tmp/nspace-uitest-support "$TMPDIR/nspace-uitest-frecency" /tmp/nspace-uitest-frecency 2>/dev/null || true
 exit $CODE

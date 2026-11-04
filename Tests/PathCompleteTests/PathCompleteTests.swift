@@ -2,7 +2,7 @@ import Testing
 import Foundation
 import PathComplete
 
-/// 纯逻辑 Oracle：注入内存夹具，零文件系统依赖
+/// Pure logic Oracle: injected in-memory fixture, zero file system dependency
 @Suite struct PathCompleteTests {
     static let fixture: @Sendable (String) -> [String] = { dir in
         switch dir {
@@ -24,7 +24,7 @@ import PathComplete
     }
 
     @Test func tildeExpandsToHome() {
-        // 补全大小写不敏感（"D" 同样命中 dev）；排序按 localizedStandardCompare
+        // Completion is case-insensitive ("D" also hits dev); sorted by localizedStandardCompare
         #expect(completer.complete("~/D") == ["/home/me/Desktop/", "/home/me/dev/", "/home/me/Downloads/"])
         #expect(completer.complete("~") == ["/home/me/Desktop/", "/home/me/dev/", "/home/me/Downloads/"])
     }

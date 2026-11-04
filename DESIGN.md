@@ -1,17 +1,17 @@
 ---
 name: NSpace
-description: 原生 macOS 多窗格文件管理器——Finder 的材质语言 × QSpace 的密度，特色走结构与做工、不走色彩
+description: A native macOS multi-pane file manager. Finder's material language × QSpace's density, with character coming from structure and craftsmanship, not color
 colors:
-  # 值 = AppKit 语义色标识符（唯一权威、随明暗动态解析）；无硬编码 hex 品牌色。
-  ink-primary: "labelColor"          # 墨色一级（正文/活动态）
-  ink-secondary: "secondaryLabelColor"  # 墨色二级（副信息/图标默认）
-  ink-muted: "tertiaryLabelColor"    # 墨色三级（占位/丢失/单位）
-  hairline: "separatorColor"         # 发丝分隔线
+  # Values = AppKit semantic color identifiers (the sole authority, resolved dynamically for light/dark); no hardcoded hex brand colors.
+  ink-primary: "labelColor"          # first-level ink (body text/active state)
+  ink-secondary: "secondaryLabelColor"  # second-level ink (secondary info/default icon tint)
+  ink-muted: "tertiaryLabelColor"    # third-level ink (placeholder/missing/units)
+  hairline: "separatorColor"         # hairline separator
   surface-window: "windowBackgroundColor"
   surface-control: "controlBackgroundColor"
-  surface-selected: "selectedContentBackgroundColor"  # 列表选中行（系统态）
-  accent: "controlAccentColor"       # = Theme.accent 默认值；用户可经 8 色调色板覆盖
-  error: "systemRed"                 # 原位错误横幅
+  surface-selected: "selectedContentBackgroundColor"  # selected list row (system state)
+  accent: "controlAccentColor"       # = Theme.accent default; users can override it from an 8-color palette
+  error: "systemRed"                 # in-place error banner
 typography:
   title:
     fontFamily: "system (-apple-system / SF Pro)"
@@ -19,36 +19,36 @@ typography:
     fontWeight: 400
   body:
     fontFamily: "system (-apple-system / SF Pro)"
-    fontSize: "12px"          # 列表/单元格默认；Preferences.listFontSize 可配 11–14
+    fontSize: "12px"          # list/cell default; Preferences.listFontSize configurable 11–14
     fontWeight: 400
   label:
     fontFamily: "system (-apple-system / SF Pro)"
-    fontSize: "11px"          # 甲板/状态栏/标签/分组标题等 chrome
+    fontSize: "11px"          # chrome such as deck/status bar/tabs/group headers
     fontWeight: 400
   caption:
     fontFamily: "system (-apple-system / SF Pro)"
-    fontSize: "10px"          # 侧栏行副标题（容量）
+    fontSize: "10px"          # sidebar row subtitle (capacity)
     fontWeight: 400
   numeric:
     fontFamily: "system monospaced-digit"
     fontSize: "12px"
-    fontWeight: 500           # 暂存架计数药丸（tabular-nums 不跳字）
+    fontWeight: 500           # stash shelf count pill (tabular-nums, digits don't jump)
 rounded:
-  tab: "5px"      # 工作区标签胶囊
-  pill: "8px"     # 计数药丸 / hover 浮条 / 投放环
+  tab: "5px"      # workspace tab capsule
+  pill: "8px"     # count pill / hover float bar / drop ring
 spacing:
-  optical: "2px"  # 视错觉/发丝微调（豁免项，非 4pt 阶梯）
+  optical: "2px"  # optical/hairline fine-tuning (exempt, not on the 4pt scale)
   xs: "4px"
   sm: "8px"
   md: "12px"
   lg: "16px"
   xl: "20px"
-  row: "24px"       # 地址栏/状态栏/侧栏行
-  tab-row: "28px"   # 工作区标签条 / 红绿灯行
-  toolbar-row: "36px"  # 图标工具条
+  row: "24px"       # address bar/status bar/sidebar row
+  tab-row: "28px"   # workspace tab bar / traffic-light row
+  toolbar-row: "36px"  # icon toolbar
 components:
   workspace-tab-active:
-    backgroundColor: "{colors.accent}"   # @ 18% alpha（见 Colors 强调色阶梯）
+    backgroundColor: "{colors.accent}"   # @ 18% alpha (see the accent ladder under Colors)
     textColor: "{colors.ink-primary}"
     rounded: "{rounded.tab}"
     height: "20px"
@@ -57,7 +57,7 @@ components:
     rounded: "{rounded.tab}"
     height: "20px"
   icon-button:
-    textColor: "{colors.ink-secondary}"  # contentTintColor；SF Symbol pointSize 13 / .regular
+    textColor: "{colors.ink-secondary}"  # contentTintColor; SF Symbol pointSize 13 / .regular
     size: "24px"
   count-pill:
     backgroundColor: "{colors.accent}"   # @ 10% alpha
@@ -66,7 +66,7 @@ components:
     rounded: "{rounded.pill}"
     height: "16px"
   pane-address-active:
-    backgroundColor: "{colors.accent}"   # controlBackgroundColor 混入 10% accent
+    backgroundColor: "{colors.accent}"   # controlBackgroundColor blended with 10% accent
     height: "24px"
   status-bar:
     backgroundColor: "{colors.surface-window}"
@@ -77,212 +77,211 @@ components:
 
 # Design System: NSpace
 
-> 面向未来贡献者与开源读者的视觉系统记录。**以真实代码为准（ground truth over intention）**：凡代码实测与
-> `docs/design/M17-deck-spec.md` 规格或 `docs/design/mockup-m17.html` 版式稿不一致处，本文件如实记录代码事实，并在相应处标注差异。
-> 新增 UI 必须同时满足本文件的原则与 `scripts/grid-lint.sh` 机械门禁（见 Do's and Don'ts）。
+> A record of the visual system for future contributors and open-source readers. **The real code wins (ground truth over intention)**: wherever measured code differs from the `docs/design/M17-deck-spec.md` spec or the `docs/design/mockup-m17.html` layout mockup, this file records the code as it is and marks the difference at that point.
+> New UI must satisfy both the principles in this file and the mechanical `scripts/grid-lint.sh` gate (see Do's and Don'ts).
 
 ## Overview
 
-**Creative North Star: "外科手术刀 · 实体透视工作台"（The Surgical Instrument / Structural Worktable）**
+**Creative North Star: "The Surgical Instrument / Structural Worktable"**
 
-NSpace 是一台原生 macOS 专业文件工具，视觉标准 = **Finder 的材质语言 × QSpace 的信息密度**。它的身份不来自颜色，而来自**结构、密度与做工**：一条从窗口顶贯通到底的发丝分割线、左列压顶的暂存牌堆、右列的三层甲板——去掉全部内容后，仅凭这套拓扑就能认出是 NSpace。用户已明确否决"花里胡哨的 web 配色"（永久生效的品牌承诺，见 PRODUCT.md）：整套系统零新增品牌色，全部取现有主题系统（`Theme.accent`）与 macOS 语义色/系统材质。
+NSpace is a native professional macOS file tool, with a visual standard of **Finder's material language × QSpace's information density**. Its identity comes not from color but from **structure, density and craftsmanship**: a hairline running from the top of the window to the bottom, a stash stack pressed against the top of the left column, a three-layer deck in the right column. Strip out all the content and you can still recognize NSpace from this topology alone. The user has explicitly vetoed "flashy web color schemes" (a permanent brand commitment, see PRODUCT.md): the whole system adds zero brand colors and draws entirely on the existing theme system (`Theme.accent`) and macOS semantic colors and system materials.
 
-性格是**克制、密集、原生**。密度即对 power user 时间的尊重：列表行 22pt、字号 12、发丝线代替边框、以留白距离代替卡片套娃。装饰服从北极星——四窗格闲置 CPU 0.0%，甲板全部是静态控件，禁止常驻动画或定时器。表达绝不遮蔽任务/状态/惯用可供性：哪个窗格有焦点、路径在哪、暂存架里有什么、任务跑到哪，打开即四件事同屏可扫。
+The character is **restrained, dense, native**. Density is respect for a power user's time: 22pt list rows, font size 12, hairlines instead of borders, distance instead of nested cards. Decoration obeys the north star (0.0% idle CPU with four panes): the deck is entirely static controls, and persistent animations or timers are forbidden. Expression never obscures tasks, status or familiar affordances: which pane has focus, where the path is, what's on the stash shelf, how far a task has got. All four can be scanned on one screen the moment the app opens.
 
-明确的反参照（anti-reference）：**不做 web 风格的彩色世界、不做圆角卡片套娃、不做常驻重绘的炫技动效**。QSpace 是密度/功能基准，不是视觉模仿对象。自绘身份集中在日常主画面（甲板/窗格/暂存架/侧栏）；搜索面板、设置窗、系统对话框、Quick Look、右键菜单等原生组件保持原生不动（**混合原则**）。
+Explicit anti-references: **no web-style colorful world, no nested rounded cards, no constantly redrawing showpiece motion**. QSpace is a density and feature benchmark, not an object of visual imitation. Custom-drawn identity concentrates on the everyday main view (deck/panes/stash shelf/sidebar); native components such as the search panel, settings window, system dialogs, Quick Look and context menus stay native (the **hybrid principle**).
 
 **Key Characteristics:**
-- **零新增色**：语义色 + 单一强调色（`Theme.accent`，用户可改），无一处硬编码品牌 hex。
-- **确定性 4pt 网格**：一切尺寸收敛 4pt 阶梯，`grid-lint.sh` 机械执法（pre-commit）。
-- **发丝线为界**：1px `separatorColor` 与留白距离取代边框和阴影。
-- **系统材质分层**：`NSVisualEffectView`（`.sidebar` / `.titlebar`）提供深度，界面本身扁平。
-- **隐性语义直达**：官方 SF Symbols + tooltip 承载操作，文字只在不可图标化处出现。
-- **hover-reveal 纪律**：常态零杂质，动作在悬停/需要时才浮现（150ms 原位反馈）。
+- **Zero added colors**: semantic colors + a single accent (`Theme.accent`, user-changeable), with no hardcoded brand hex anywhere.
+- **Deterministic 4pt grid**: all sizes converge on a 4pt scale, mechanically enforced by `grid-lint.sh` (pre-commit).
+- **Hairlines as boundaries**: 1px `separatorColor` and whitespace distance replace borders and shadows.
+- **System material layering**: `NSVisualEffectView` (`.sidebar` / `.titlebar`) provides depth; the interface itself is flat.
+- **Implicit semantics, direct access**: official SF Symbols + tooltips carry operations; text appears only where an icon cannot.
+- **hover-reveal discipline**: zero clutter at rest, actions surface only on hover or when needed (150ms in-place feedback).
 
 ## Colors
 
-调色板是**系统语义色 + 单一动态强调色**——没有静态品牌 hex；所有颜色随明暗外观自动解析。深浅两色都是一等公民（跟随系统）。
+The palette is **system semantic colors + a single dynamic accent**: there is no static brand hex, and every color resolves automatically for light and dark appearance. Both light and dark are first-class citizens (following the system).
 
 ### Primary
-- **强调色 Accent**（`{colors.accent}` = `controlAccentColor`）：唯一的品牌色声音。默认取系统强调色；用户可在设置里从 8 色调色板（`Theme.accentPalette`：红 `FF3B30` / 橙 `FF9500` / 黄 `FFCC00` / 绿 `28CD41` / 蓝 `007AFF` / 靛 `5E5CE6` / 紫 `AF52DE` / 粉 `FF2D55`）覆盖，或回落系统色。用于：活动工作区标签、计数药丸底、活动窗格地址栏、暂存投放高亮环、侧栏图标着色。**运行期改强调色/切明暗时，凡用 `cgColor` 缓存的 accent 处必须经 `.nspaceThemeChanged` 广播或 `viewDidChangeEffectiveAppearance` 重解析**（否则深色下渲染陈旧，见 `StashShelfView.applyAccentColors`）。
+- **Accent** (`{colors.accent}` = `controlAccentColor`): the only brand color voice. Defaults to the system accent; users can override it in Settings from an 8-color palette (`Theme.accentPalette`: red `FF3B30` / orange `FF9500` / yellow `FFCC00` / green `28CD41` / blue `007AFF` / indigo `5E5CE6` / purple `AF52DE` / pink `FF2D55`) or fall back to the system color. Used for: active workspace tab, count pill background, active pane address bar, stash drop highlight ring, sidebar icon tint. **When the accent or appearance changes at runtime, every place that caches accent via `cgColor` must re-resolve through the `.nspaceThemeChanged` broadcast or `viewDidChangeEffectiveAppearance`** (otherwise it renders stale in dark mode, see `StashShelfView.applyAccentColors`).
 
-### Neutral（墨色三级 + 表面 + 发丝）
-- **墨色一级**（`{colors.ink-primary}` = `labelColor`）：正文、活动标签文字、活动/存在的条目。
-- **墨色二级**（`{colors.ink-secondary}` = `secondaryLabelColor`）：图标钮默认着色、副信息、非活动标签、状态栏文字。
-- **墨色三级**（`{colors.ink-muted}` = `tertiaryLabelColor`）：空态图标与文案、目标丢失条目、侧栏容量副标题。
-- **发丝线**（`{colors.hairline}` = `separatorColor`）：所有分隔（甲板两行间、窗格间、状态栏顶、簇间竖线、浮条边框）。
-- **表面**：窗口底 `windowBackgroundColor`（状态栏/标签底衬）、控件底 `controlBackgroundColor`（地址栏底衬）；侧栏与甲板不是纯色而是**系统材质**（见 Elevation & Depth）。
-- **选中行**（`{colors.surface-selected}` = `selectedContentBackgroundColor`）：列表/图标/分栏的选中态，走系统默认高亮（未自绘 accent-28%——与 mockup 的 `--surface-sel` 近似值不同，代码用系统态）。
-- **错误红**（`{colors.error}` = `systemRed`）：侧栏原位错误横幅（3s 自退，严禁模态弹窗）。
+### Neutral (three inks + surfaces + hairline)
+- **First-level ink** (`{colors.ink-primary}` = `labelColor`): body text, active tab text, active/existing items.
+- **Second-level ink** (`{colors.ink-secondary}` = `secondaryLabelColor`): default icon button tint, secondary info, inactive tabs, status bar text.
+- **Third-level ink** (`{colors.ink-muted}` = `tertiaryLabelColor`): empty-state icons and copy, missing-target items, sidebar capacity subtitle.
+- **Hairline** (`{colors.hairline}` = `separatorColor`): all separation (between the two deck rows, between panes, top of the status bar, vertical lines between clusters, float bar border).
+- **Surfaces**: window background `windowBackgroundColor` (status bar/tab backing), control background `controlBackgroundColor` (address bar backing); the sidebar and deck are not solid colors but **system materials** (see Elevation & Depth).
+- **Selected row** (`{colors.surface-selected}` = `selectedContentBackgroundColor`): selected state in list/icon/column views, using the system default highlight (no custom accent-28%; this differs from the mockup's `--surface-sel` approximation, and the code uses the system state).
+- **Error red** (`{colors.error}` = `systemRed`): sidebar in-place error banner (dismisses itself after 3s, modal dialogs strictly forbidden).
 
 ### Named Rules
 
-**零硬编码色规则（The Zero-Hex Rule）.** 展示层不得出现品牌 hex 字面量。唯一允许的 `NSColor(hex:)` 是渲染 `Theme.accentPalette` 的调色板色点（`AppearanceSettingsPage`）。其余一律语义色或 `Theme.accent`。结构性用色（`.black`/`.white`/`.clear`）只用于暗化覆盖层、浮条阴影、透明底——不承载品牌。
+**The Zero-Hex Rule.** The presentation layer may not contain brand hex literals. The only allowed `NSColor(hex:)` renders the palette dots of `Theme.accentPalette` (`AppearanceSettingsPage`). Everything else is a semantic color or `Theme.accent`. Structural colors (`.black`/`.white`/`.clear`) are used only for dimming overlays, float bar shadows and transparent backgrounds, and carry no brand.
 
-**强调色阶梯规则（The Accent-Alpha Rule）.** 强调色只以固定透明度阶梯出现，从不满铺大面积：**18%** = 活动工作区标签底；**10%** = 计数药丸底、状态栏选中药丸底、活动窗格地址栏混入；**6%** = 拖拽投放环填充；**100%** = 投放环描边、侧栏条目图标着色。稀少与低饱和是重点——它标记状态，不做装饰。
+**The Accent-Alpha Rule.** The accent appears only at a fixed alpha ladder, never filling large areas: **18%** = active workspace tab background; **10%** = count pill background, status bar selection pill background, active pane address bar blend; **6%** = drag drop ring fill; **100%** = drop ring stroke, sidebar item icon tint. Scarcity and low saturation are the point: it marks state, it doesn't decorate.
 
 ## Typography
 
-**字体家族：** 全系统字体（`.systemFont` / `-apple-system`，即 SF Pro / PingFang SC 回退），不引入自带字体。等宽数字用 `.monospacedDigitSystemFont`。
+**Font family:** system font throughout (`.systemFont` / `-apple-system`, i.e. SF Pro with PingFang SC fallback), no bundled fonts. Monospaced digits use `.monospacedDigitSystemFont`.
 
-**性格：** 系统原生、紧凑、克制。字阶只有四档常规尺寸 + 一档等宽数字，靠字号与墨色三级建立层级，不靠字重堆叠。
+**Character:** system-native, compact, restrained. The scale has only four regular sizes plus one monospaced-digit tier; hierarchy comes from font size and the three inks, not from stacked weights.
 
 ### Hierarchy
-- **Title**（regular, 13px）：侧栏条目标题、甲板图标 SF Symbol 的 `pointSize`（13 / `.regular`）。
-- **Body**（regular, 12px，可配 11–14）：文件列表/图标/分栏单元格。经 `Preferences.listFontSize`（`Formatters.listFontSize`）外部化；字号 ≥13 时列表行高 24pt，否则 22pt（`FileListViewController.rowHeight(for:)`）。
-- **Label**（regular, 11px）：甲板/状态栏/工作区标签文字、暂存空态文案、侧栏分组标题（此处 `.semibold`）、错误横幅。是界面里出现最多的尺寸。
-- **Caption**（regular, 10px）：侧栏叶子行的容量副标题（`tertiaryLabelColor`）。
-- **Numeric**（medium/regular, monospaced-digit）：所有高频跳动的数字位——暂存架计数药丸（12px medium）、状态栏计数/选中药丸/可用容量（11px）、列表的大小/日期列（`Formatters.listFontSize`）。统一走 `.monospacedDigitSystemFont`，刷新时数字不横向抖动。
+- **Title** (regular, 13px): sidebar item titles, deck icon SF Symbol `pointSize` (13 / `.regular`).
+- **Body** (regular, 12px, configurable 11–14): file list/icon/column cells. Externalized through `Preferences.listFontSize` (`Formatters.listFontSize`); at font size ≥13 list rows are 24pt, otherwise 22pt (`FileListViewController.rowHeight(for:)`).
+- **Label** (regular, 11px): deck/status bar/workspace tab text, stash empty-state copy, sidebar group headers (`.semibold` here), error banners. The most common size in the interface.
+- **Caption** (regular, 10px): capacity subtitle on sidebar leaf rows (`tertiaryLabelColor`).
+- **Numeric** (medium/regular, monospaced-digit): all frequently changing digits: stash count pill (12px medium), status bar count/selection pill/available capacity (11px), list size/date columns (`Formatters.listFontSize`). All go through `.monospacedDigitSystemFont`, so digits don't jitter horizontally on refresh.
 
 ### Named Rules
 
-**墨色三级规则（The Three-Ink Rule）.** 文本颜色只在三级墨色间选择：`labelColor`（存在/活动）→ `secondaryLabelColor`（次要/静默）→ `tertiaryLabelColor`（占位/丢失/单位）。层级靠墨色与字号，不靠彩色文字。大小列即此规则的一次落地：数值 `labelColor` + 单位 `secondaryLabelColor`（`TextCellView.configureSize`），单位灰阶退后。
+**The Three-Ink Rule.** Text color is chosen only among three inks: `labelColor` (present/active) → `secondaryLabelColor` (secondary/quiet) → `tertiaryLabelColor` (placeholder/missing/units). Hierarchy comes from ink and font size, not colored text. The size column is one application of this rule: value in `labelColor` + unit in `secondaryLabelColor` (`TextCellView.configureSize`), with the unit receding in gray.
 
-**等宽数字克制规则（The Tabular-Where-It-Counts Rule）.** tabular 数字用于会随刷新/选择跳动的数字位：暂存计数药丸、状态栏（计数 / "已选 N 项 · 大小"药丸 / 可用容量）、列表的大小/修改/创建/添加日期列。全部经 `.monospacedDigitSystemFont`（M21 收敛，先前状态栏与大小/日期列误用普通 `systemFont` 已修正，与 mockup 版式稿 `font-variant-numeric: tabular-nums` 对齐）。非数字文本（名称/种类/路径）仍用常规 `systemFont`。
+**The Tabular-Where-It-Counts Rule.** Tabular digits are used for digits that change with refresh or selection: stash count pill, status bar (count / "N selected · size" pill / available capacity), and the list's size/modified/created/added date columns. All go through `.monospacedDigitSystemFont` (converged in M21; the status bar and size/date columns previously used plain `systemFont` by mistake, which has been fixed to match the mockup's `font-variant-numeric: tabular-nums`). Non-numeric text (name/kind/path) still uses regular `systemFont`.
 
 ## Layout
 
-**拓扑（不可动摇，属结构不属可变视觉方向）：** 一条从窗口顶贯通到底的垂直发丝分割线，把窗口分成两列——这是 NSpace 的骨架。
+**Topology (immovable, part of the structure and not of the variable visual direction):** a vertical hairline running from the top of the window to the bottom splits the window into two columns. This is NSpace's skeleton.
 
 ```
-┌───────────────┬────────────────────────────────────────────────┐
-│ ●●●      (28) │ [工作区1][工作区2]                    [＋] (28) │ 工作区标签条
-│───────────────│──────────────────发丝线─────────────────────────│
-│   暂存架      │ [◫] │ [◀ ▶ ⌃] │ [⊞ ≡ ▥] ——留白—— [⤴ ⌘ ⇅ 🗑] │ [▭▯▯▤⊞] (36) │ 图标工具条
-│   (148)       │──────────────────发丝线─────────────────────────│
-│──────发丝──────│                                                │
-│ 书签           │        窗格矩阵（每窗格自带地址栏(24)）          │
-│ iCloud        │                                                │
-│ 位置           │──────────────────发丝线─────────────────────────│
-│               │ 287 项 · 已选 3 项 · 可用 42.21 GB        (24) │ 状态栏
-└───────────────┴────────────────────────────────────────────────┘
-                ↑ 唯一一条垂直分割线，全高贯通（sidebarColumn.height == contentView.height）
+┌───────────────┬────────────────────────────────────────────────────────────────┐
+│ ●●●      (28) │ [Workspace 1][Workspace 2]                            [+] (28) │ workspace tab bar
+│───────────────│─────────────────────────hairline───────────────────────────────│
+│  Stash shelf  │ [◫] │ [◀ ▶ ⌃] │ [⊞ ≡ ▥] ──space── [⤴ ⌘ ⇅ 🗑] │ [▭▯▯▤⊞] (36)    │ icon toolbar
+│  (148)        │─────────────────────────hairline───────────────────────────────│
+│───hairline────│                                                                │
+│ Bookmarks     │     pane matrix (each pane has its own address bar (24))       │
+│ iCloud        │                                                                │
+│ Locations     │─────────────────────────hairline───────────────────────────────│
+│               │ 287 items · 3 selected · 42.21 GB available               (24) │ status bar
+└───────────────┴────────────────────────────────────────────────────────────────┘
+                ↑ the only vertical divider, full height (sidebarColumn.height == contentView.height)
 ```
 
-- **左列（全高侧栏）**：`NSVisualEffectView(.sidebar)`，顶部让出 36pt（红绿灯行 + 顶距，`stashView.top = 36`）→ 暂存架专区 148pt（恒高，空/满不跳变）→ 发丝分隔 → 书签/iCloud/位置的 source-list outline（行高 `.small`，QSpace 式紧凑）。宽度经手写 `NSSplitView` 管理（min 160 / max 320 / 可折叠）。
-- **右列（内容列）**：顶部自绘甲板 `TopDeckView` = `NSVisualEffectView(.titlebar)` 内**两行**——工作区标签条 28pt + 发丝线 + 图标工具条 36pt + 发丝线；甲板下是窗格矩阵（`PaneGridController`），最底状态栏。**弃用 `NSToolbar`** 整条顶栏自绘（M17 决策）。
-- **每窗格自带地址栏**：窗格 = 地址栏 24pt（面包屑⟷路径编辑）+ 发丝分隔 + 内容视图 + 底部状态栏 24pt。标签只有一层，在甲板上（工作区标签条）。
-- **窗口结构**：无标题栏（`titleVisibility=.hidden`、`titlebarAppearsTransparent`、`.fullSizeContentView`、`toolbar=nil`）；红绿灯保持系统默认位置（左列顶部行内）。**侧栏折叠时**标签行 leading 让位 80pt 给红绿灯（`trafficLightInset`，仅折叠态）。甲板空白处 `performDrag` 拖窗、双击按系统 `AppleActionOnDoubleClick` 缩放。
+- **Left column (full-height sidebar)**: `NSVisualEffectView(.sidebar)`, reserving 36pt at the top (traffic-light row + top gap, `stashView.top = 36`) → stash shelf area 148pt (constant height, no jump between empty and full) → hairline → source-list outline of bookmarks/iCloud/locations (row size `.small`, QSpace-style compact). Width is managed by a handwritten `NSSplitView` (min 160 / max 320 / collapsible).
+- **Right column (content column)**: at the top, the custom-drawn deck `TopDeckView` = **two rows** inside `NSVisualEffectView(.titlebar)`: workspace tab bar 28pt + hairline + icon toolbar 36pt + hairline. Below the deck is the pane matrix (`PaneGridController`), with the status bar at the very bottom. **`NSToolbar` is dropped** and the entire top bar is custom-drawn (M17 decision).
+- **Each pane has its own address bar**: pane = address bar 24pt (breadcrumbs ⟷ path editing) + hairline + content view + bottom status bar 24pt. There is only one layer of tabs, on the deck (the workspace tab bar).
+- **Window structure**: no title bar (`titleVisibility=.hidden`, `titlebarAppearsTransparent`, `.fullSizeContentView`, `toolbar=nil`); traffic lights stay at the system default position (inline at the top of the left column). **When the sidebar is collapsed**, the tab row's leading edge yields 80pt to the traffic lights (`trafficLightInset`, collapsed state only). Blank deck areas drag the window with `performDrag`; double-click zooms according to the system `AppleActionOnDoubleClick`.
 
-### 4pt 网格阶梯（确定性网格）
+### 4pt grid scale (deterministic grid)
 
-一切新增 UI 尺寸（约束常量 / spacing / `NSEdgeInsets` 四边）**严格收敛 4pt 阶梯**。实测在用阶梯值：`4 · 8 · 12 · 16 · 20 · 24 · 28 · 36 · 80 · 100 · 112 · 148`。
+All new UI sizes (constraint constants / spacing / the four `NSEdgeInsets` sides) **strictly converge on the 4pt scale**. Scale values measured in use: `4 · 8 · 12 · 16 · 20 · 24 · 28 · 36 · 80 · 100 · 112 · 148`.
 
-**豁免规则**（`scripts/grid-lint.sh`）：
-1. **4 的倍数**——在阶梯上，直接放行。
-2. **|值| ≤ 2**——发丝线与视错觉/重心微调（如标签栈 `spacing=2`、标题 `centerY` 常量 `-1`、地址栏内边距 `2`）。
-3. **带小数**——0.5 发丝线。
-4. **遗留/有意例外**登记 `scripts/grid-lint-allow.txt`（格式 `文件名:数值`，行内 `#` 写理由），不登记即红。
+**Exemption rules** (`scripts/grid-lint.sh`):
+1. **Multiples of 4**: on the scale, pass straight through.
+2. **|value| ≤ 2**: hairlines and optical/center-of-gravity fine-tuning (such as tab stack `spacing=2`, title `centerY` constant `-1`, address bar inset `2`).
+3. **Fractional values**: 0.5 hairlines.
+4. **Legacy/intentional exceptions** are registered in `scripts/grid-lint-allow.txt` (format `filename:value`, with the reason in an inline `#`); anything unregistered fails.
 
-`grid-lint.sh` 默认**增量模式**（只查本次暂存的 `Sources/*.swift`，pre-commit 语义）；`GRID_LINT_ALL=1` 为全量审计（CI/验收门）。当前基线（`grid-lint-allow.txt`）只剩设置页（`*SettingsPage.swift`、`SettingsWindowController.swift`）、`Toast.swift`、`FileCellViews.swift:6` 等存量偏离，计划 M18 清零；**M17 范围文件（甲板/侧栏/暂存/标签/状态栏）已全量收敛，不靠基线**。
+`grid-lint.sh` defaults to **incremental mode** (checks only the `Sources/*.swift` staged this time, with pre-commit semantics); `GRID_LINT_ALL=1` is a full audit (CI/acceptance gate). The current baseline (`grid-lint-allow.txt`) has only existing deviations left in the settings pages (`*SettingsPage.swift`, `SettingsWindowController.swift`), `Toast.swift`, `FileCellViews.swift:6` and the like, planned to reach zero in M18; **files in M17 scope (deck/sidebar/stash/tabs/status bar) have fully converged and don't rely on the baseline**.
 
-### 间距节奏（示例）
-- 图标网格：item 间距/行距 8，section inset 12。
-- 侧栏分组：以距离代边框——组间 16、组内 4（mockup 版式稿语义）。
-- 甲板工具条：左簇 leading 8、右簇 trailing -8、左右簇最小间隙 8。
+### Spacing rhythm (examples)
+- Icon grid: item spacing/line spacing 8, section inset 12.
+- Sidebar groups: distance instead of borders, 16 between groups and 4 within a group (mockup layout semantics).
+- Deck toolbar: left cluster leading 8, right cluster trailing -8, minimum gap between left and right clusters 8.
 
 ## Elevation & Depth
 
-**基本扁平 + 系统材质分层**。深度不靠投影，靠三件事：(1) `NSVisualEffectView` 震动材质区分层级——侧栏 `.sidebar`、甲板 `.titlebar`、暂存浮条 `.menu`；(2) 1px 发丝线划界；(3) 强调色低透明度背景标记活动/选中态。界面在静止时是平的。
+**Essentially flat + system material layering.** Depth comes not from drop shadows but from three things: (1) `NSVisualEffectView` vibrant materials separate levels: sidebar `.sidebar`, deck `.titlebar`, stash float bar `.menu`; (2) 1px hairlines draw boundaries; (3) low-alpha accent backgrounds mark active/selected state. The interface is flat at rest.
 
-### Shadow Vocabulary（唯一一处真实阴影）
-- **暂存 hover 浮条**（`StashShelfView.floatBar`）：`NSShadow` — 色 `black @ 28%`、`blurRadius 8`、`offset (0, -1)`，配 `.menu` 材质 + 1px `separatorColor` 边框 + 8pt 圆角。这是全系统唯一的结构性阴影，且只在悬停浮出时短暂出现。
+### Shadow Vocabulary (the one real shadow)
+- **Stash hover float bar** (`StashShelfView.floatBar`): `NSShadow` with color `black @ 28%`, `blurRadius 8`, `offset (0, -1)`, paired with the `.menu` material + 1px `separatorColor` border + 8pt corner radius. This is the only structural shadow in the whole system, and it appears only briefly while the bar is floated on hover.
 
 ### Named Rules
 
-**静止即扁平规则（The Flat-At-Rest Rule）.** 表面静止时无阴影。深度来自系统材质与发丝线；阴影仅作为**状态响应**出现（暂存浮条 hover）。不要给甲板、窗格、卡片、按钮加常驻投影。
+**The Flat-At-Rest Rule.** Surfaces have no shadow at rest. Depth comes from system materials and hairlines; shadow appears only as a **state response** (stash float bar on hover). Do not add persistent drop shadows to the deck, panes, cards or buttons.
 
-**材质而非填色规则（The Material-Not-Fill Rule）.** 侧栏与甲板用 `NSVisualEffectView` 材质（`blendingMode=.behindWindow`、`state=.followsWindowActiveState`），不是纯色填充——这样窗口失活时会自然去饱和，与系统一致。
+**The Material-Not-Fill Rule.** The sidebar and deck use `NSVisualEffectView` materials (`blendingMode=.behindWindow`, `state=.followsWindowActiveState`), not solid fills, so they desaturate naturally when the window deactivates, consistent with the system.
 
 ## Shapes
 
-**发丝线 + 极简圆角**的形语言。
+A shape language of **hairlines + minimal corner radii**.
 
-- **发丝线**：水平分隔一律 `NSBox(boxType: .separator)`（系统语义色，自动明暗）；簇间竖线为 1px 宽 × 20pt 高的 `separatorColor` layer。宽度恒 1px。
-- **圆角**：只有两档——工作区标签胶囊 **5px**（`{rounded.tab}`）；计数药丸 / hover 浮条 / 投放环 **8px**（`{rounded.pill}`）。
-- **系统 bezel**：图标钮（`.accessoryBarAction`、`isBordered=false`、`.momentaryChange`）与分段控件（`.separated`）用系统外观，不自定义圆角/描边。
-- **投放高亮**：拖拽悬停暂存区时显示 accent 发丝内圈（`ringView`，1px 边框 + 6% 填充 + 8pt 圆角，内缩 4pt），原位反馈、不改布局。
-- **暂存牌堆**：最多 3 层图标错位堆叠（每层偏移 6pt，最新在顶），容器 112×100、图标 80×80。
+- **Hairlines**: horizontal separators are always `NSBox(boxType: .separator)` (system semantic color, automatic light/dark); vertical lines between clusters are 1px wide × 20pt tall `separatorColor` layers. Width is always 1px.
+- **Corner radii**: only two tiers: workspace tab capsule **5px** (`{rounded.tab}`); count pill / hover float bar / drop ring **8px** (`{rounded.pill}`).
+- **System bezels**: icon buttons (`.accessoryBarAction`, `isBordered=false`, `.momentaryChange`) and segmented controls (`.separated`) use the system appearance, with no custom radius or stroke.
+- **Drop highlight**: when dragging over the stash area, an accent hairline inner ring is shown (`ringView`, 1px border + 6% fill + 8pt radius, inset 4pt), giving in-place feedback without changing layout.
+- **Stash stack**: up to 3 icon layers stacked with an offset (6pt per layer, newest on top), container 112×100, icon 80×80.
 
 ## Components
 
-按官方 SF Symbols 与语义色约束，逐个记录代码实测的形/色/态。
+Constrained by official SF Symbols and semantic colors, each component's shape, color and state are recorded as measured in code.
 
-### 图标语汇（SF Symbols）
-- **只用官方原版 SF Symbols**：实现仅允许 `NSImage(systemSymbolName:)`（经 `NSImage.officialSymbol(_:fallback:accessibility:)`），**严禁自绘 path、严禁 emoji/文字充当图标**。系统无此符号时用括号内回退。
-- 甲板图标 `pointSize 13 / .regular`；暂存浮条 `12 / .medium`；侧栏推出 `10`；计数箭头 `8`；标签关闭 `7`。
-- **定稿符号表（M17 §6.1，权威）：**
+### Icon vocabulary (SF Symbols)
+- **Only original official SF Symbols**: implementations may only use `NSImage(systemSymbolName:)` (via `NSImage.officialSymbol(_:fallback:accessibility:)`). **Custom-drawn paths are strictly forbidden, as are emoji or text standing in for icons.** When the system lacks a symbol, use the fallback in parentheses.
+- Deck icons `pointSize 13 / .regular`; stash float bar `12 / .medium`; sidebar eject `10`; count arrow `8`; tab close `7`.
+- **Final symbol table (M17 §6.1, authoritative):**
 
-| 动作 | 官方符号（回退） |
+| Action | Official symbol (fallback) |
 |---|---|
-| 后退 / 前进 / 上层 | `chevron.backward` / `chevron.forward` / `arrow.up` |
-| 显示类型三段 | `square.grid.2x2` / `list.bullet` / `rectangle.split.3x1` |
-| AirDrop | `airdrop`（回退 `dot.radiowaves.left.and.right`） |
-| 在终端打开 | `apple.terminal`（回退 `terminal`） |
-| 文件操作任务 | `arrow.up.arrow.down`（双向传输箭头，弃循环箭头以消除"刷新"误读） |
-| 布局五段（同族） | `rectangle` / `rectangle.split.2x1` / `rectangle.split.1x2` / `rectangle.split.3x1` / `rectangle.split.2x2` |
-| 侧栏开关 | `sidebar.leading`（回退 `sidebar.left`） |
-| 暂存架五钮 | `doc.on.doc` / `arrow.forward.square` / `airdrop` / `trash` / `ellipsis.circle` |
-| 暂存空态 | `tray.and.arrow.down` |
-| 侧栏条目 | `folder.fill` / `icloud` / `internaldrive` + accent 着色 |
+| Back / Forward / Up | `chevron.backward` / `chevron.forward` / `arrow.up` |
+| View type (3 segments) | `square.grid.2x2` / `list.bullet` / `rectangle.split.3x1` |
+| AirDrop | `airdrop` (fallback `dot.radiowaves.left.and.right`) |
+| Open in Terminal | `apple.terminal` (fallback `terminal`) |
+| File operation tasks | `arrow.up.arrow.down` (two-way transfer arrows; the circular arrow was dropped to remove the "refresh" misreading) |
+| Layout (5 segments, same family) | `rectangle` / `rectangle.split.2x1` / `rectangle.split.1x2` / `rectangle.split.3x1` / `rectangle.split.2x2` |
+| Sidebar toggle | `sidebar.leading` (fallback `sidebar.left`) |
+| Stash shelf five buttons | `doc.on.doc` / `arrow.forward.square` / `airdrop` / `trash` / `ellipsis.circle` |
+| Stash empty state | `tray.and.arrow.down` |
+| Sidebar items | `folder.fill` / `icloud` / `internaldrive` + accent tint |
 
-### 图标工具条（甲板第二行）
-- **A1 左右分野**：`[侧栏开关] │ [◀ ▶ ⌃] │ [视图三段] —— 弹性留白（兼窗口拖动把手）—— [AirDrop 终端 任务 废纸篓] │ [布局五段]`。左 = 高频导航/视图（就近内容），右 = 全局动作/布局。
-- **钮**：`icon-button` 24×24，`contentTintColor = secondaryLabelColor`，SF13。⚠️ **簇距实测**：不是字面 16pt——是 `NSStackView spacing=8` + 1px×20pt 发丝竖线，视觉≈16pt；右簇动作四钮内部 `spacing=4`。
-- **分段控件**：导航 `.separated`/`.momentary`（段宽 26，长按后退/前进段 0.4s 弹历史菜单）；视图 `.selectOne`（段宽 28）；布局 `.separated`/`.selectOne`（段宽 28，段数 = `PaneLayout.allCases`）。
-- **动作校验（FG-1，无假按钮）**：AirDrop/废纸篓需有选中才 enabled；终端/任务恒可用。响应链动作 `target=nil` 上抛活动窗格。
+### Icon toolbar (second deck row)
+- **A1 left/right split**: `[sidebar toggle] │ [◀ ▶ ⌃] │ [view 3 segments] ── flexible space (doubles as window drag handle) ── [AirDrop Terminal Tasks Trash] │ [layout 5 segments]`. Left = high-frequency navigation/view (close to the content), right = global actions/layout.
+- **Buttons**: `icon-button` 24×24, `contentTintColor = secondaryLabelColor`, SF13. ⚠️ **Cluster gap as measured**: not a literal 16pt, but `NSStackView spacing=8` + a 1px×20pt hairline vertical, visually ≈16pt; the four action buttons in the right cluster use `spacing=4` internally.
+- **Segmented controls**: navigation `.separated`/`.momentary` (segment width 26, long-press on back/forward segments pops the history menu after 0.4s); view `.selectOne` (segment width 28); layout `.separated`/`.selectOne` (segment width 28, segment count = `PaneLayout.allCases`).
+- **Action validation (FG-1, no fake buttons)**: AirDrop/Trash are enabled only with a selection; Terminal/Tasks are always available. Responder-chain actions use `target=nil` to bubble up to the active pane.
 
-### 工作区标签（`TabBarView` / `TabItemView`）
-- **胶囊**：圆角 5px，高 20pt，最大宽 160pt。**活动** = `Theme.accent @ 18%` 底 + `labelColor` 文字；**非活动** = 透明底 + `secondaryLabelColor`。字号 11。
-- **hover-reveal 关闭钮**（`xmark`，SF7）：常态隐藏，鼠标进入才显示（仅当可关闭 `titles.count > 1`）；中键直接关闭。
-- 甲板内复用时 `useTransparentBackground()` 透出 `.titlebar` 材质；末端 `＋` 新建。
+### Workspace tabs (`TabBarView` / `TabItemView`)
+- **Capsule**: 5px radius, 20pt tall, 160pt max width. **Active** = `Theme.accent @ 18%` background + `labelColor` text; **inactive** = transparent background + `secondaryLabelColor`. Font size 11.
+- **hover-reveal close button** (`xmark`, SF7): hidden at rest, shown only on mouse enter (and only when closable, `titles.count > 1`); middle-click closes directly.
+- When reused inside the deck, `useTransparentBackground()` lets the `.titlebar` material show through; the trailing `+` creates a new one.
 
-### 计数药丸（暂存架，`count-pill`）
-- 圆角 8px，高 16pt，`Theme.accent @ 10%` 底，文字 `labelColor`（⚠️ 非 accent 色文字——与 mockup 的 accent 文字不同），字体 12pt monospaced-digit medium，尾随 `chevron.down`（SF8）。
-- 内容：单项显示文件名、多项显示数量。点击 = 逐项管理菜单（移除/清空）。
+### Count pill (stash shelf, `count-pill`)
+- 8px radius, 16pt tall, `Theme.accent @ 10%` background, `labelColor` text (⚠️ not accent-colored text, unlike the mockup), font 12pt monospaced-digit medium, trailing `chevron.down` (SF8).
+- Content: the file name for one item, the count for several. Click = per-item management menu (remove/clear).
 
-### 暂存架（`StashShelfView`，签名组件 · B2 hover-reveal）
-- **常态**：148pt 区内只见牌堆 + 计数药丸，整组居中（`|center 偏移| ≤ 2pt`，I-07 回归）。牌堆 3 层错位堆叠。
-- **悬停 150ms**：底部浮出动作条 `floatBar`（`.menu` 材质 + 发丝框 + 阴影，五钮 20×20 间距 4：拷贝/移动/AirDrop/清空/更多）。**浮条是 overlay（`frame` 定位，不入 Auto Layout 主链，不改布局——FG-4 空间防抖）**；移出即隐。
-- **拖拽悬停**：隐浮条，显 accent 发丝内圈投放高亮（原位反馈）。
-- **空态**：`tray.and.arrow.down`（`tertiaryLabelColor`）+ "拖入文件暂存" 11pt muted 文案。
+### Stash shelf (`StashShelfView`, signature component · B2 hover-reveal)
+- **At rest**: within the 148pt area only the stack + count pill are visible, centered as a group (`|center offset| ≤ 2pt`, I-07 regression). The stack has 3 offset layers.
+- **After 150ms of hover**: the action bar `floatBar` floats up from the bottom (`.menu` material + hairline border + shadow, five 20×20 buttons at spacing 4: copy/move/AirDrop/clear/more). **The float bar is an overlay (positioned by `frame`, not in the main Auto Layout chain, no layout change; FG-4 spatial stability)**; it hides on mouse exit.
+- **Drag hover**: hides the float bar and shows the accent hairline inner ring as a drop highlight (in-place feedback).
+- **Empty state**: `tray.and.arrow.down` (`tertiaryLabelColor`) + "Drop files here to stash" in 11pt muted copy.
 
-### 窗格地址栏（`PaneViewController` / `AddressBarBacking`，`pane-address-active`）
-- 高 24pt，面包屑 ⟷ 路径编辑器切换。底衬用 `updateLayer`（外观感知，明暗/主题广播自动重解析）。
-- **活动窗格高亮**：⚠️ 实测为**整条底衬** `controlBackgroundColor` 混入 **10% accent**（`blended(withFraction:0.10)`），受 `Preferences.activePaneHighlight` 开关控制——**不是** mockup 的"2px accent 底缘光"。非活动窗格可选内容暗化（`inactivePaneDimming`，0~0.3，默认 0）。
+### Pane address bar (`PaneViewController` / `AddressBarBacking`, `pane-address-active`)
+- 24pt tall, switching between breadcrumbs ⟷ path editor. The backing uses `updateLayer` (appearance-aware, re-resolved automatically on light/dark and theme broadcasts).
+- **Active pane highlight**: ⚠️ as measured, the **entire backing** is `controlBackgroundColor` blended with **10% accent** (`blended(withFraction:0.10)`), controlled by the `Preferences.activePaneHighlight` switch. It is **not** the mockup's "2px accent bottom glow". Inactive panes can optionally dim their content (`inactivePaneDimming`, 0~0.3, default 0).
 
-### 文件列表 / 图标 / 分栏
-- 列表行高 22pt（字号 <13）或 24pt（≥13）；`usesAlternatingRowBackgroundColors`（系统斑马）；选中走系统 `selectedContentBackgroundColor`。单元格字体 `Formatters.listFontSize`（默认 12），文字 `labelColor`/次要 `secondaryLabelColor`。
-- 图标网格：item 间距/行距 8，section inset 12，`itemSize = 图标边长 + 32`。
+### File list / icons / columns
+- List row height 22pt (font size <13) or 24pt (≥13); `usesAlternatingRowBackgroundColors` (system zebra); selection uses the system `selectedContentBackgroundColor`. Cell font `Formatters.listFontSize` (default 12), text `labelColor`/secondary `secondaryLabelColor`.
+- Icon grid: item spacing/line spacing 8, section inset 12, `itemSize = icon edge + 32`.
 
-### 状态栏（`StatusBarView`，`status-bar`）
-- 高 24pt，`windowBackgroundColor` 底衬 + 顶部发丝线，两枚 11pt `secondaryLabelColor` 标签：左"N 项（已选 M 项）"、右"可用 X GB"。⚠️ 无药丸、无 tabular-nums（与 mockup 不同）。容量只在目录变化/标签切换时读一次（`statfs` 级只读），绝不轮询——北极星零空闲功耗。
+### Status bar (`StatusBarView`, `status-bar`)
+- 24pt tall, `windowBackgroundColor` backing + top hairline, two 11pt `secondaryLabelColor` labels: left "N items (M selected)", right "X GB available". ⚠️ No pills, no tabular-nums (unlike the mockup). Capacity is read only once on directory change or tab switch (`statfs`-level read-only), never polled, per the north star of zero idle power.
 
-### 侧栏（`SidebarViewController` / `SidebarLeafCell`）
-- source-list outline，行高 `.small`；分组标题 11pt `.semibold` `secondaryLabelColor`。
-- 叶子行：图标 16×16（accent 着色，Finder 蓝风格）+ 标题 13pt + 可选容量副标题 10pt `tertiaryLabelColor` + 推出钮（`eject.fill`，SF10，仅可推出卷显示）。目标丢失置灰 `tertiaryLabelColor`。
-- 错误走原位横幅（3s 自退），非模态。
+### Sidebar (`SidebarViewController` / `SidebarLeafCell`)
+- source-list outline, row size `.small`; group headers 11pt `.semibold` `secondaryLabelColor`.
+- Leaf rows: 16×16 icon (accent tint, Finder-blue style) + 13pt title + optional 10pt `tertiaryLabelColor` capacity subtitle + eject button (`eject.fill`, SF10, shown only for ejectable volumes). Missing targets are grayed to `tertiaryLabelColor`.
+- Errors use an in-place banner (dismisses after 3s), never a modal.
 
 ## Do's and Don'ts
 
-面向新增 UI 的贡献者须知。**任何新 UI 必须同时过 `grid-lint` 与以下原则。**
+Notes for contributors adding UI. **Any new UI must pass both `grid-lint` and the principles below.**
 
 ### Do:
-- **Do** 只用 macOS 语义色（`labelColor` 族 / `separatorColor` / `windowBackgroundColor` / `controlBackgroundColor`）与 `Theme.accent`；颜色随明暗动态解析。
-- **Do** 把一切尺寸收敛 4pt 阶梯；发丝线/视错觉微调保持 |值|≤2 或 0.5 小数；提交前跑 `GRID_LINT_ALL=1 ./scripts/grid-lint.sh` 退出 0。
-- **Do** 图标只用官方 SF Symbols，经 `NSImage.officialSymbol(...)` 取像并给 fallback + accessibility；每个图标配 tooltip。
-- **Do** 用发丝线（`NSBox .separator`）和留白距离划界；深度交给 `NSVisualEffectView` 材质。
-- **Do** accent 只以透明度阶梯出现（18% / 10% / 6% / 100%），标记状态而非铺装饰。
-- **Do** 让动作 hover-reveal、150ms 原位反馈、浮层用 `frame` 定位不改主链布局（FG-4 空间防抖）。
-- **Do** 缓存 accent `cgColor` 时监听 `.nspaceThemeChanged` 并 override `viewDidChangeEffectiveAppearance` 重解析。
-- **Do** 每个新按钮接真动作 + `validate`（FG-1 无假按钮）；新可配项进 `Preferences`（外部化）；快捷键走 `KeyBindings` 注册表。
+- **Do** use only macOS semantic colors (the `labelColor` family / `separatorColor` / `windowBackgroundColor` / `controlBackgroundColor`) and `Theme.accent`; colors resolve dynamically for light and dark.
+- **Do** converge all sizes on the 4pt scale; keep hairline/optical fine-tuning at |value|≤2 or the 0.5 fraction; before committing, run `GRID_LINT_ALL=1 ./scripts/grid-lint.sh` and get exit 0.
+- **Do** use only official SF Symbols for icons, obtained through `NSImage.officialSymbol(...)` with fallback + accessibility; give every icon a tooltip.
+- **Do** draw boundaries with hairlines (`NSBox .separator`) and whitespace distance; leave depth to `NSVisualEffectView` materials.
+- **Do** use accent only at the alpha ladder (18% / 10% / 6% / 100%), to mark state rather than decorate.
+- **Do** make actions hover-reveal with 150ms in-place feedback, and position overlays by `frame` without changing the main chain layout (FG-4 spatial stability).
+- **Do** listen for `.nspaceThemeChanged` and override `viewDidChangeEffectiveAppearance` to re-resolve when caching accent `cgColor`.
+- **Do** wire every new button to a real action + `validate` (FG-1 no fake buttons); put new configurable items in `Preferences` (externalized); route shortcuts through the `KeyBindings` registry.
 
 ### Don't:
-- **Don't** 写死品牌 hex 或 web 花哨配色；除渲染 `Theme.accentPalette` 色点外，展示层不得出现 `NSColor(hex:)`/`srgbRed:` 字面量。
-- **Don't** 用非 4pt 尺寸而不登记 `grid-lint-allow.txt`——**M17 范围文件禁止新增登记**（pre-commit 会拦）。
-- **Don't** 自绘图标 path、用 emoji/文字充当图标、或先摆图标后补功能。
-- **Don't** 给静止表面加常驻投影/边框/圆角卡片套娃；唯一结构性阴影是暂存 hover 浮条。
-- **Don't** 引入常驻动画/定时器或轮询（北极星：四窗格闲置 CPU 0.0%）。
-- **Don't** 触碰原生已好用的组件（全局搜索/设置窗/系统对话框/Quick Look/右键菜单）——混合原则只重做主画面顶部结构。
-- **Don't** 大面积满铺强调色或用彩色文字建立层级；层级靠墨色三级 + 字号。
-- **Don't** 用 `--no-verify` 绕过 pre-commit（meta-doctor / pod-lint / grid-lint / tests）。
+- **Don't** hardcode brand hex or flashy web color schemes; apart from rendering `Theme.accentPalette` dots, the presentation layer may not contain `NSColor(hex:)`/`srgbRed:` literals.
+- **Don't** use non-4pt sizes without registering them in `grid-lint-allow.txt`. **Files in M17 scope may not add new entries** (pre-commit will block them).
+- **Don't** custom-draw icon paths, use emoji or text as icons, or place icons first and add the function later.
+- **Don't** add persistent shadows, borders or nested rounded cards to surfaces at rest; the only structural shadow is the stash hover float bar.
+- **Don't** introduce persistent animations, timers or polling (north star: 0.0% idle CPU with four panes).
+- **Don't** touch components that already work well natively (global search/settings window/system dialogs/Quick Look/context menus); the hybrid principle only redoes the top structure of the main view.
+- **Don't** fill large areas with accent or use colored text to build hierarchy; hierarchy comes from the three inks + font size.
+- **Don't** bypass pre-commit with `--no-verify` (meta-doctor / pod-lint / grid-lint / tests).

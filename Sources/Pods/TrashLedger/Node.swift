@@ -1,11 +1,11 @@
 import Foundation
 import NSpaceContracts
 
-/// 「放回原处」台账的唯一 Commit Owner（actor 串行提交 + 原子落盘，BG-5/BG-8）。
-/// 存储目录构造注入（Axiom 2）：App 传 Application Support，测试传临时目录。
+/// Sole Commit Owner of the "Put Back" ledger (actor serial commits + atomic persistence, BG-5/BG-8).
+/// Storage directory is constructor-injected (Axiom 2): the app passes Application Support, tests pass a temp directory.
 ///
-/// 自净：读取时丢弃「废纸篓里已经不存在那一项」的陈旧条目，落盘随之收缩。
-/// 一份不会发现自己过期的台账，比没有台账更坏——它会把后来被推翻的事当既成事实交出去。
+/// Self-pruning: on read, drops stale entries whose item no longer exists in Trash, shrinking the file accordingly.
+/// A ledger that cannot notice it is out of date is worse than no ledger: it hands out overturned facts as established ones.
 public actor TrashLedger {
     private let fileURL: URL
     private var entries: [String: TrashLedgerEntry] = [:]   // trashedPath → entry
@@ -15,16 +15,16 @@ public actor TrashLedger {
         self.fileURL = directory.appendingPathComponent("trash-ledger.json")
     }
 
-    // MARK: 查询
+    // MARK: Queries
 
-    /// 该废纸篓项的原路径（无记录 = nil，调用方据此置灰菜单）
+    /// Original path of this Trash item (no record = nil; the caller grays out the menu item)
     public func origin(of trashedURL: URL) async -> URL? {
         await ensureLoaded()
         guard let e = entries[Self.key(trashedURL)] else { return nil }
         return URL(fileURLWithPath: e.originalPath)
     }
 
-    /// 批量查（菜单校验用：全部有记录才允许「放回原处」）
+    /// Batch lookup (for menu validation: "Put Back" is allowed only when every item has a record)
     public func origins(of trashedURLs: [URL]) async -> [URL: URL] {
         await ensureLoaded()
         var out: [URL: URL] = [:]
@@ -39,9 +39,9 @@ public actor TrashLedger {
         return entries.count
     }
 
-    // MARK: 变更
+    // MARK: Mutations
 
-    /// 记一批「原路径 → 废纸篓落点」。同落点重复记账以最新为准。
+    /// Records a batch of "original path → Trash location" pairs. Repeat records for the same location keep the latest.
     public func record(_ pairs: [(original: URL, trashed: URL)], now: Date = Date()) async {
         guard !pairs.isEmpty else { return }
         await ensureLoaded()
@@ -54,7 +54,7 @@ public actor TrashLedger {
         persist()
     }
 
-    /// 忘掉这些落点（放回成功、或被永久删除后调用）
+    /// Forgets these locations (call after a successful put-back or a permanent delete)
     public func forget(_ trashedURLs: [URL]) async {
         guard !trashedURLs.isEmpty else { return }
         await ensureLoaded()
@@ -63,7 +63,7 @@ public actor TrashLedger {
         if changed { persist() }
     }
 
-    // MARK: 内部
+    // MARK: Internals
 
     private static func key(_ url: URL) -> String { url.standardizedFileURL.path }
 
@@ -76,14 +76,14 @@ public actor TrashLedger {
         var kept: [String: TrashLedgerEntry] = [:]
         var dropped = false
         for e in list {
-            // 自净：废纸篓里已经没有这一项了（被清空/被别的应用删掉/被放回过），条目作废
+            // Self-pruning: the item is no longer in Trash (emptied / deleted by another app / already put back), so the entry is void
             if fm.fileExists(atPath: e.trashedPath) { kept[e.trashedPath] = e } else { dropped = true }
         }
         entries = kept
         if dropped { persist() }
     }
 
-    /// 原子落盘（先写临时文件再替换；写失败不伤内存态，下次变更再试）
+    /// Atomic persistence (write a temp file, then replace; a write failure leaves in-memory state intact, retried on the next mutation)
     private func persist() {
         let list = entries.values.sorted { $0.recordedAt < $1.recordedAt }
         guard let data = try? JSONEncoder().encode(list) else { return }
@@ -92,7 +92,7 @@ public actor TrashLedger {
         let tmp = fileURL.appendingPathExtension("tmp-\(UUID().uuidString)")
         guard (try? data.write(to: tmp, options: .atomic)) != nil else { return }
         if (try? FileManager.default.replaceItemAt(fileURL, withItemAt: tmp)) == nil {
-            // 目标还不存在时 replaceItemAt 会失败，退化为直接搬过去
+            // replaceItemAt fails when the target does not exist yet; fall back to moving it over directly
             try? FileManager.default.moveItem(at: tmp, to: fileURL)
         }
     }
