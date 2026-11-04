@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // ArchiveEngine pod's sole public contract surface (Axiom 3):
 // Archiving: compress / extract, driven via Process through system tools (zip/tar/unzip/gunzip…),

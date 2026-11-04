@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 /// Local operations node (rename / newFolder / newFile / trash). Zero-argument construction injection (Axiom 2: no global mutable state).
 public struct LocalOpsNode: OperationNode {

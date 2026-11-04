@@ -1,6 +1,6 @@
 name: Release
 
-# tag vX.Y.Z push → build NSpace.app → zip → create a GitHub Release with the assets
+# tag vX.Y.Z push → build HSpace.app → zip → create a GitHub Release with the assets
 on:
   push:
     tags: ['v*']
@@ -22,8 +22,8 @@ jobs:
       - name: Build and package .app (version from VERSION, build number from the git count)
         run: |
           ./scripts/build-app.sh
-          ditto -c -k --keepParent build/NSpace.app "NSpace-${GITHUB_REF_NAME}.zip"
-          shasum -a 256 "NSpace-${GITHUB_REF_NAME}.zip" | tee checksums.txt
+          ditto -c -k --keepParent build/HSpace.app "HSpace-${GITHUB_REF_NAME}.zip"
+          shasum -a 256 "HSpace-${GITHUB_REF_NAME}.zip" | tee checksums.txt
 
       - name: Extract this version's CHANGELOG as the release notes
         run: |
@@ -37,5 +37,5 @@ jobs:
         with:
           body_path: release-body.md
           files: |
-            NSpace-*.zip
+            HSpace-*.zip
             checksums.txt

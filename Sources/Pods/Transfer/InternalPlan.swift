@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // Private concern: operation plan building + pre-scan + conflict detection and decision application
 

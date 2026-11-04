@@ -7,7 +7,7 @@ import StashStore
     /// Builds a temp fixture: storage directory + two real files + one real subdirectory
     func makeFixture() throws -> (StashStore, dir: URL, fileA: URL, fileB: URL, folder: URL) {
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-stash-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-stash-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let fileA = dir.appendingPathComponent("a.txt")
         let fileB = dir.appendingPathComponent("b.txt")

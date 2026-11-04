@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 /// Sole Commit Owner of authoritative stash shelf state (actor serial commits, BG-5/BG-8 scoped to a single process).
 /// Storage directory is constructor-injected (Axiom 2): the app passes Application Support, tests pass a temp directory.

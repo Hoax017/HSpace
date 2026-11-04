@@ -6,7 +6,7 @@ import SessionStore
 @Suite struct SessionStoreTests {
     func makeStore() throws -> (SessionStore, URL) {
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-ss-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-ss-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return (SessionStore(directory: dir), dir)
     }

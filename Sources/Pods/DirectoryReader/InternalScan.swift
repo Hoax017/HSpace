@@ -1,6 +1,6 @@
 import Foundation
 import UniformTypeIdentifiers
-import NSpaceContracts
+import HSpaceContracts
 
 // Private concern: contentsOfDirectory + resource key prefetch (one system call fetches all metadata needed for display)
 

@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // SessionStore pod's sole public contract surface (Axiom 3): sole Commit Owner of the window/layout/pane/tab session snapshot
 

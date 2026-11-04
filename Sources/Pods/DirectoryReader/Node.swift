@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 /// Construction factory + entry point (Axiom 2: no global state, dependencies are constructor-injected)
 public actor DirectoryReader: DirectoryReading {

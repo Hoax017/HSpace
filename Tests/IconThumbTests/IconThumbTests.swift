@@ -11,7 +11,7 @@ import IconThumb
     /// Writes a solid-color PNG with CoreGraphics + ImageIO and returns its URL.
     private func makePNG(width: Int, height: Int) throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-it-\(UUID().uuidString).png")
+            .appendingPathComponent("hspace-it-\(UUID().uuidString).png")
         let cs = CGColorSpaceCreateDeviceRGB()
         guard let ctx = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,

@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 /// Sole Commit Owner of authoritative session state (actor): 1s debounced atomic persistence of session.json (spec section 5, data contract).
 /// Storage directory is constructor-injected (Axiom 2).

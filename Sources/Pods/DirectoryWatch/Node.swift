@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 /// Construction factory (Axiom 2: no global state, handles are produced by construction).
 public struct DirectoryWatch: DirectoryWatching {

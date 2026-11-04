@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // Private concern: physical implementation of the four local operations (real FileManager side effects; errors classified on the spot into the three classes)
 

@@ -1,14 +1,14 @@
 import Testing
 import Foundation
 import FolderSize
-import NSpaceContracts
+import HSpaceContracts
 
 /// Black-box acceptance: only through the Contract public surface, asserting on real temp fixture trees (no fakes or mocks).
 /// Assertion basis: totalFileAllocatedSize is the block-aligned real allocation >= logical bytes, so lower bounds are used rather than equality.
 @Suite struct FolderSizeTests {
     static func tempDir() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-fs-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-fs-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

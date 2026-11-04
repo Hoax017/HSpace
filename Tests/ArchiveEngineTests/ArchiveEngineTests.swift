@@ -1,14 +1,14 @@
 import Testing
 import Foundation
 import ArchiveEngine
-import NSpaceContracts
+import HSpaceContracts
 
 /// Black-box acceptance: only through the Contract public surface; real physical I/O on temp fixture trees (real system tools zip/tar/unzip/gunzip).
 /// Paths needing a missing tool are not faked (honest skip); this machine has all four tools, so the round-trip tests all run.
 @Suite struct ArchiveEngineTests {
     static func tempDir() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-ar-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-ar-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
@@ -95,7 +95,7 @@ import NSpaceContracts
         #expect(big == payload)   // physical evidence: byte-for-byte identical
         let inner = try Data(contentsOf: out.appendingPathComponent("tree/nested/inner.txt"))
         #expect(inner == Data("inner".utf8))
-        // Staging directory cleaned up (no .nspace-* leftovers)
+        // Staging directory cleaned up (no .hspace-* leftovers)
         try Self.assertNoStaging(in: out)
     }
 
@@ -230,6 +230,6 @@ import NSpaceContracts
 
     static func assertNoStaging(in dir: URL) throws {
         let children = try FileManager.default.contentsOfDirectory(atPath: dir.path)
-        #expect(!children.contains { $0.hasPrefix(".nspace-") })
+        #expect(!children.contains { $0.hasPrefix(".hspace-") })
     }
 }

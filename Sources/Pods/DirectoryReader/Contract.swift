@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // DirectoryReader pod's sole public contract surface (Axiom 3): directory URL → immutable DirectorySnapshot
 

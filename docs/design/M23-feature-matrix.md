@@ -6,7 +6,7 @@ Condensed from the original per-feature tables. Origin: on 2026-08-26 the owner 
 
 **Rule 1: automated tests never touch real user files.**
 
-1. All mutating file operations happen in a self-made sandbox, `nspace-uitest-<UUID>` under `FileManager.default.temporaryDirectory`. Fixtures are created by the test and always cleaned up, including on failure.
+1. All mutating file operations happen in a self-made sandbox, `hspace-uitest-<UUID>` under `FileManager.default.temporaryDirectory`. Fixtures are created by the test and always cleaned up, including on failure.
 2. `UISelfTest.assertSandboxed(_:)` is the mechanical guard: a mutating target outside the sandbox fails the guard assertion and the operation is skipped.
 3. Navigation, screenshot and selection scenarios may read real folders but never mutate them.
 
@@ -14,7 +14,7 @@ Condensed from the original per-feature tables. Origin: on 2026-08-26 the owner 
 
 ## Sources of truth
 
-The matrix is derived from `MainMenu.swift`, `KeyBindings.swift`, `TopDeckView.swift`, `FileContextMenuBuilder.swift` (all in `Sources/NSpaceApp/`), the settings pages, and the sidebar, stash shelf, search panel, progress window and info panel interactions.
+The matrix is derived from `MainMenu.swift`, `KeyBindings.swift`, `TopDeckView.swift`, `FileContextMenuBuilder.swift` (all in `Sources/HSpaceApp/`), the settings pages, and the sidebar, stash shelf, search panel, progress window and info panel interactions.
 
 ## Numbers at M23
 
@@ -59,4 +59,4 @@ The sixteenth original item, self-update download and install, no longer applies
 
 ## Where the assertions live
 
-Scenario M23 in `Sources/NSpaceApp/UISelfTest.swift`, before search scenario 5 so the main window survives, with `require_pass` presence checks in `scripts/ui-smoke.sh`.
+Scenario M23 in `Sources/HSpaceApp/UISelfTest.swift`, before search scenario 5 so the main window survives, with `require_pass` presence checks in `scripts/ui-smoke.sh`.

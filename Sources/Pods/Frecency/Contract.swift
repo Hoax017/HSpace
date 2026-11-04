@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // Frecency pod's sole public contract surface (Axiom 3): vocabulary of usage-habit learning sort (frecency + match quality fusion).
 // frecency = frequency (open count) × recency (exponential decay): search sorts by this automatically (M28, Listary style).

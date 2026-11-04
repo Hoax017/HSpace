@@ -8,7 +8,7 @@ import DirectoryWatch
 
     private func makeTempDir() throws -> URL {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-dw-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-dw-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root
     }

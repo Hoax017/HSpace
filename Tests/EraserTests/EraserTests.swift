@@ -1,14 +1,14 @@
 import Testing
 import Foundation
 import Eraser
-import NSpaceContracts
+import HSpaceContracts
 
 /// Black-box acceptance: real physical I/O on temp fixtures (no fakes or mocks).
 /// Permanent deletion is the only irreversible operation in this repo, so tests of the **guards** matter more than tests that it "can delete".
 @Suite struct EraserTests {
     static func tempDir() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nspace-er-\(UUID().uuidString)")
+            .appendingPathComponent("hspace-er-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

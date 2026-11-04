@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // StashStore pod's sole public contract surface (Axiom 3): sole Commit Owner of stash shelf contents
 

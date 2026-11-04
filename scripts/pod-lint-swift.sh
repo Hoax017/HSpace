@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# NSpace project-local enforcement: the Swift-stack instance of the pod four axioms (replaces META's Go reference pod-lint.sh).
+# HSpace project-local enforcement: the Swift-stack instance of the pod four axioms (replaces META's Go reference pod-lint.sh).
 # Also machine-checks BG-1, no writes to authoritative state from the presentation layer. Runs on pre-commit; violations exit 1.
 set -uo pipefail
 ROOT="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 PODS="$ROOT/Sources/Pods"
-APP="$ROOT/Sources/NSpaceApp"
+APP="$ROOT/Sources/HSpaceApp"
 rc=0
 
 # ---- Pod four axioms (Swift adaptation, deviations registered in META_COMPLIANCE.json) ----
@@ -39,13 +39,13 @@ if [ -d "$PODS" ]; then
   done
 fi
 
-# ---- BG-1: presentation layer must not write authoritative state (no write-type FileManager APIs or direct JSON saves in NSpaceApp) ----
+# ---- BG-1: presentation layer must not write authoritative state (no write-type FileManager APIs or direct JSON saves in HSpaceApp) ----
 if [ -d "$APP" ]; then
-  # UISelfTest.swift is exempt: the UI self-test channel (gated by the NSPACE_UITEST env var, not a product path) needs to
+  # UISelfTest.swift is exempt: the UI self-test channel (gated by the HSPACE_UITEST env var, not a product path) needs to
   # create/delete temp fixture files; it is a test harness, like Tests/, and is not the presentation layer writing authoritative state
   whits="$(grep -rnE 'FileManager\.[a-zA-Z]*\.(copyItem|moveItem|removeItem|trashItem|createDirectory|createFile)|copyfile\(' "$APP" 2>/dev/null | grep -v 'UISelfTest.swift' | grep -vE ':[0-9]+:\s*//')"
   if [ -n "$whits" ]; then
-    echo "✗ [NSpaceApp] presentation layer calls a write-type file API directly (BG-1, must go through an OperationSpec Command):"
+    echo "✗ [HSpaceApp] presentation layer calls a write-type file API directly (BG-1, must go through an OperationSpec Command):"
     echo "$whits" | sed 's/^/      /'; rc=1
   fi
 fi

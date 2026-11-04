@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // FolderSize pod's sole public contract surface (Axiom 3): directory URL → recursive allocated bytes (backfills FileItem.size on demand).
 

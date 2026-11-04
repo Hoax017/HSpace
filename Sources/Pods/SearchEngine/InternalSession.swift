@@ -1,6 +1,6 @@
 import Foundation
 import UniformTypeIdentifiers
-import NSpaceContracts
+import HSpaceContracts
 
 /// One search session: channel A (Spotlight/NSMetadataQuery) + channel B (recursive hidden file scan) → merged and deduped by url, pushed in batches.
 ///

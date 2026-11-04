@@ -1,5 +1,5 @@
 ---
-name: NSpace
+name: HSpace
 description: A native macOS multi-pane file manager. Finder's material language × QSpace's density, with character coming from structure and craftsmanship, not color
 colors:
   # Values = AppKit semantic color identifiers (the sole authority, resolved dynamically for light/dark); no hardcoded hex brand colors.
@@ -75,7 +75,7 @@ components:
     height: "24px"
 ---
 
-# Design System: NSpace
+# Design System: HSpace
 
 > A record of the visual system for future contributors and open-source readers. **The real code wins (ground truth over intention)**: wherever measured code differs from the `docs/design/M17-deck-spec.md` spec or the `docs/design/mockup-m17.html` layout mockup, this file records the code as it is and marks the difference at that point.
 > New UI must satisfy both the principles in this file and the mechanical `scripts/grid-lint.sh` gate (see Do's and Don'ts).
@@ -84,7 +84,7 @@ components:
 
 **Creative North Star: "The Surgical Instrument / Structural Worktable"**
 
-NSpace is a native professional macOS file tool, with a visual standard of **Finder's material language × QSpace's information density**. Its identity comes not from color but from **structure, density and craftsmanship**: a hairline running from the top of the window to the bottom, a stash stack pressed against the top of the left column, a three-layer deck in the right column. Strip out all the content and you can still recognize NSpace from this topology alone. The user has explicitly vetoed "flashy web color schemes" (a permanent brand commitment, see PRODUCT.md): the whole system adds zero brand colors and draws entirely on the existing theme system (`Theme.accent`) and macOS semantic colors and system materials.
+HSpace is a native professional macOS file tool, with a visual standard of **Finder's material language × QSpace's information density**. Its identity comes not from color but from **structure, density and craftsmanship**: a hairline running from the top of the window to the bottom, a stash stack pressed against the top of the left column, a three-layer deck in the right column. Strip out all the content and you can still recognize HSpace from this topology alone. The user has explicitly vetoed "flashy web color schemes" (a permanent brand commitment, see PRODUCT.md): the whole system adds zero brand colors and draws entirely on the existing theme system (`Theme.accent`) and macOS semantic colors and system materials.
 
 The character is **restrained, dense, native**. Density is respect for a power user's time: 22pt list rows, font size 12, hairlines instead of borders, distance instead of nested cards. Decoration obeys the north star (0.0% idle CPU with four panes): the deck is entirely static controls, and persistent animations or timers are forbidden. Expression never obscures tasks, status or familiar affordances: which pane has focus, where the path is, what's on the stash shelf, how far a task has got. All four can be scanned on one screen the moment the app opens.
 
@@ -103,7 +103,7 @@ Explicit anti-references: **no web-style colorful world, no nested rounded cards
 The palette is **system semantic colors + a single dynamic accent**: there is no static brand hex, and every color resolves automatically for light and dark appearance. Both light and dark are first-class citizens (following the system).
 
 ### Primary
-- **Accent** (`{colors.accent}` = `controlAccentColor`): the only brand color voice. Defaults to the system accent; users can override it in Settings from an 8-color palette (`Theme.accentPalette`: red `FF3B30` / orange `FF9500` / yellow `FFCC00` / green `28CD41` / blue `007AFF` / indigo `5E5CE6` / purple `AF52DE` / pink `FF2D55`) or fall back to the system color. Used for: active workspace tab, count pill background, active pane address bar, stash drop highlight ring, sidebar icon tint. **When the accent or appearance changes at runtime, every place that caches accent via `cgColor` must re-resolve through the `.nspaceThemeChanged` broadcast or `viewDidChangeEffectiveAppearance`** (otherwise it renders stale in dark mode, see `StashShelfView.applyAccentColors`).
+- **Accent** (`{colors.accent}` = `controlAccentColor`): the only brand color voice. Defaults to the system accent; users can override it in Settings from an 8-color palette (`Theme.accentPalette`: red `FF3B30` / orange `FF9500` / yellow `FFCC00` / green `28CD41` / blue `007AFF` / indigo `5E5CE6` / purple `AF52DE` / pink `FF2D55`) or fall back to the system color. Used for: active workspace tab, count pill background, active pane address bar, stash drop highlight ring, sidebar icon tint. **When the accent or appearance changes at runtime, every place that caches accent via `cgColor` must re-resolve through the `.hspaceThemeChanged` broadcast or `viewDidChangeEffectiveAppearance`** (otherwise it renders stale in dark mode, see `StashShelfView.applyAccentColors`).
 
 ### Neutral (three inks + surfaces + hairline)
 - **First-level ink** (`{colors.ink-primary}` = `labelColor`): body text, active tab text, active/existing items.
@@ -141,7 +141,7 @@ The palette is **system semantic colors + a single dynamic accent**: there is no
 
 ## Layout
 
-**Topology (immovable, part of the structure and not of the variable visual direction):** a vertical hairline running from the top of the window to the bottom splits the window into two columns. This is NSpace's skeleton.
+**Topology (immovable, part of the structure and not of the variable visual direction):** a vertical hairline running from the top of the window to the bottom splits the window into two columns. This is HSpace's skeleton.
 
 ```
 ┌───────────────┬────────────────────────────────────────────────────────────────┐
@@ -273,7 +273,7 @@ Notes for contributors adding UI. **Any new UI must pass both `grid-lint` and th
 - **Do** draw boundaries with hairlines (`NSBox .separator`) and whitespace distance; leave depth to `NSVisualEffectView` materials.
 - **Do** use accent only at the alpha ladder (18% / 10% / 6% / 100%), to mark state rather than decorate.
 - **Do** make actions hover-reveal with 150ms in-place feedback, and position overlays by `frame` without changing the main chain layout (FG-4 spatial stability).
-- **Do** listen for `.nspaceThemeChanged` and override `viewDidChangeEffectiveAppearance` to re-resolve when caching accent `cgColor`.
+- **Do** listen for `.hspaceThemeChanged` and override `viewDidChangeEffectiveAppearance` to re-resolve when caching accent `cgColor`.
 - **Do** wire every new button to a real action + `validate` (FG-1 no fake buttons); put new configurable items in `Preferences` (externalized); route shortcuts through the `KeyBindings` registry.
 
 ### Don't:

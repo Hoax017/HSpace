@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 import Darwin
 
 // Private concern: physical transfer engine: copyfile(3) byte-level progress + cooperative cancellation + same-volume rename fast path
@@ -61,7 +61,7 @@ final class ProgressAggregator: @unchecked Sendable {
 }
 
 /// Dedicated I/O queue: blocking copyfile calls stay off the Swift concurrency cooperative pool
-private let ioQueue = DispatchQueue(label: "com.nspace.transfer.io", qos: .userInitiated)
+private let ioQueue = DispatchQueue(label: "com.hoax017.hspace.transfer.io", qos: .userInitiated)
 
 extension TransferNode {
     func transferEntry(_ entry: TransferPlan.Entry, mode: TransferPlan.Mode,

@@ -1,4 +1,4 @@
-# NSpace TODO
+# HSpace TODO
 
 New requests go here first. Nothing is in progress right now. History and the detail behind each item are in `CHANGELOG.md`.
 
@@ -6,7 +6,7 @@ New requests go here first. Nothing is in progress right now. History and the de
 
 - ⬜ **I-63** Emptying the Trash on several volumes at once: each volume is emptied separately today (v0.19.19). Deferred until a real failure calls for it.
 - ⬜ **M17** Drag a workspace tab out into its own window: deferred to v2 when native tabbing was dropped (see Workspace tabs in the M17 spec). Drag-to-reorder for workspace tabs was optional and is also not built.
-- ⬜ **I-06** Optional setting for what double-clicking an archive does (system default app, or extract in NSpace). Today it always opens with the system default.
+- ⬜ **I-06** Optional setting for what double-clicking an archive does (system default app, or extract in HSpace). Today it always opens with the system default.
 - ⬜ **I-56** Accessibility labels: the codebase has none. Only path errors are announced to VoiceOver; broader work should be planned as a project, not as isolated fixes (v0.19.10).
 
 ## v2 backlog
@@ -29,13 +29,13 @@ The architecture leaves pod slots for these:
 - Front-end method: surgical-instrument metaphor (full keyboard reach, hairline borders, hover-reveal, 4pt grid, in-place resolution, no fake buttons, FG-1).
 - Versioning: `VERSION`, `CHANGELOG.md` and a git tag per milestone, with the version injected at build time.
 - Every milestone: meta-doctor exits 0, tests are green, real-machine screenshots are checked, then a green commit.
-- Public asset hard rule (after I-35): screenshots, sample data and docs entering the public repository pass `scripts/sanitize-check.sh` (forced at pre-push; the `.sanitize-terms` list stays local) and a human check. Real folder content is only shown through the `NSPACE_UITEST_DEMO` fixture.
-- Test sandbox hard rule: automated tests never touch real user files. Mutations happen only in self-made temporary fixtures (`temporaryDirectory/nspace-uitest-*`, always cleaned up), enforced by `UISelfTest.assertSandboxed`.
+- Public asset hard rule (after I-35): screenshots, sample data and docs entering the public repository pass `scripts/sanitize-check.sh` (forced at pre-push; the `.sanitize-terms` list stays local) and a human check. Real folder content is only shown through the `HSPACE_UITEST_DEMO` fixture.
+- Test sandbox hard rule: automated tests never touch real user files. Mutations happen only in self-made temporary fixtures (`temporaryDirectory/hspace-uitest-*`, always cleaned up), enforced by `UISelfTest.assertSandboxed`.
 
 ## Completed milestones
 
 - ✅ M0 Meta-architecture compliance and the Xcode-free SwiftPM build
-- ✅ M1 Engine slice: OperationKernel, DirectoryReader, Transfer, `nspace-probe`
+- ✅ M1 Engine slice: OperationKernel, DirectoryReader, Transfer, `hspace-probe`
 - ✅ M2 Single-pane list view
 - ✅ M3 Address bar and history
 - ✅ M4 Multi-pane layouts and pane focus cycling

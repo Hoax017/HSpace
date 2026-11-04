@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 // Private concern: physical implementation of compress / extract.
 // Key design, the "staging directory" landing: all output is first written to a hidden staging directory inside the target directory (same volume → atomic rename),
@@ -46,7 +46,7 @@ extension ArchiveEngineNode {
         context.report(.progress(filesDone: 0, bytesDone: 0, currentPath: finalName))
 
         // Staging directory (hidden inside the target directory, same volume); output lands here first, then moves out atomically on success
-        let staging = outputDir.appendingPathComponent(".nspace-archive-\(UUID().uuidString)")
+        let staging = outputDir.appendingPathComponent(".hspace-archive-\(UUID().uuidString)")
         try Self.makeDir(staging)
         defer { try? fm.removeItem(at: staging) }
         let stagedArchive = staging.appendingPathComponent(finalName)
@@ -128,7 +128,7 @@ extension ArchiveEngineNode {
         let targetBaseDir = options.extractInto ?? archive.deletingLastPathComponent()
         try Self.makeDir(targetBaseDir)  // extractInto may not exist yet
 
-        let staging = targetBaseDir.appendingPathComponent(".nspace-extract-\(UUID().uuidString)")
+        let staging = targetBaseDir.appendingPathComponent(".hspace-extract-\(UUID().uuidString)")
         try Self.makeDir(staging)
         var stagingAlive = true
         defer { if stagingAlive { try? fm.removeItem(at: staging) } }

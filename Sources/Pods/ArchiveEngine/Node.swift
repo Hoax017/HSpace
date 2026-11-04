@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 /// Archive node (compress / extract). Zero-argument construction injection (Axiom 2: no global mutable state).
 public struct ArchiveEngineNode: OperationNode {

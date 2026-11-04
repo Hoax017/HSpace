@@ -1,5 +1,5 @@
 import Foundation
-import NSpaceContracts
+import HSpaceContracts
 
 /// Focused search engine (Axiom 2: no global mutable state; each search produces an independent session, no interference).
 public struct SearchEngine: Sendable {
