@@ -8,7 +8,7 @@ let podTargets: [Target] = pods.map {
     .target(name: $0, dependencies: ["HSpaceContracts"], path: "Sources/Pods/\($0)")
 }
 let podTestTargets: [Target] = pods.map {
-    .testTarget(name: "\($0)Tests", dependencies: [.target(name: $0), "HSpaceContracts"])
+    .testTarget(name: "\($0)Tests", dependencies: [.target(name: $0), "HSpaceContracts", "HSpaceTestSupport"])
 }
 let podDeps: [Target.Dependency] = pods.map { .target(name: $0) }
 
@@ -30,6 +30,8 @@ let package = Package(
             name: "HSpaceProbe",
             dependencies: ["HSpaceKernel", "HSpaceContracts"] + podDeps
         ),
+        .target(name: "HSpaceTestSupport", path: "Tests/HSpaceTestSupport"),
+        .testTarget(name: "HSpaceTestSupportTests", dependencies: ["HSpaceTestSupport"]),
         .testTarget(name: "HSpaceKernelTests", dependencies: ["HSpaceKernel", "HSpaceContracts"]),
     ] + podTargets + podTestTargets
 )

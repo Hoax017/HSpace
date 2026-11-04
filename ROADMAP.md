@@ -154,7 +154,7 @@ Owns `.github`, `scripts`, docs.
 - [ ] **G4** (S) `ui-smoke.sh` must not kill a running HSpace. `ui-smoke.sh:7`
 - [ ] **G5** (S) Fix `build-app.sh` path handling and `run.sh` install order. `build-app.sh:48`, `run.sh:8`
 - [ ] **G6** (S) Correct the docs where they disagree with the code: `spec.md`, `PRODUCT.md`, `DESIGN.md`, `README.md`.
-- [ ] **G7** (S) Add a failure-injection test helper shared by tracks A to D. Do this first.
+- [x] **G7** (S) Add a failure-injection test helper shared by tracks A to D. Do this first.
 
 **Gate 0:** tracks A to F closed and G1 in place. No Phase 1 work merges before this.
 
