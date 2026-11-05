@@ -45,7 +45,8 @@ echo "✓ Built and signed $APP (v$VERSION build $BUILD_NUM, sign=${SIGN_IDENTIT
 # and registration means nothing for CI artifacts, so this runs only in a local dev environment.
 if [ -z "${CI:-}" ]; then
   LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-  { "$LSREG" -dump 2>/dev/null | grep -E "^path:" | grep -i hspace | awk '{print $2}' | sort -u || true; } | while read -r p; do
+  # A dump line reads "path:   /some dir/HSpace.app (0x1a2b)": keep the whole path, spaces included.
+  { "$LSREG" -dump 2>/dev/null | grep -E "^path:" | grep -i hspace | sed -E 's/^path:[[:space:]]+//; s/ \(0x[0-9a-f]+\)$//' | sort -u || true; } | while IFS= read -r p; do
     [ -d "$p" ] || "$LSREG" -u "$p" >/dev/null 2>&1 || true
   done
   "$LSREG" -f "$APP" >/dev/null 2>&1 || true
