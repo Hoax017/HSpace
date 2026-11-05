@@ -166,6 +166,12 @@ enum FileContextMenuBuilder {
             symbol: "arrow.up.bin")
         add(menu, "menu.extractTo", #selector(FileListViewController.extractItemsTo(_:)), target,
             symbol: "arrow.up.bin.fill")
+        if let single, ArchiveEngineNode.isBrowsable(single.url) {
+            // No target: the responder chain reaches MainWindowController in any view mode
+            let browse = menu.addItem(withTitle: L10n.t("menu.browseArchive"),
+                                      action: #selector(MainWindowController.showArchiveBrowser(_:)), keyEquivalent: "")
+            browse.image = NSImage(systemSymbolName: "archivebox", accessibilityDescription: nil)
+        }
     }
 
     // MARK: Construction helpers

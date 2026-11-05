@@ -68,6 +68,9 @@ enum MainMenu {
         KeyBindings.apply("moveToTrash", to: trashItem)
         fileMenu.addItem(.separator())
         fileMenu.addItem(BatchToolsMenu.item())
+        let browseArchive = fileMenu.addItem(withTitle: L10n.t("menu.browseArchive"),
+                                             action: #selector(MainWindowController.showArchiveBrowser(_:)), keyEquivalent: "")
+        KeyBindings.apply("browseArchive", to: browseArchive)
         fileMenu.addItem(.separator())
         // F5 copy / F6 move to the other pane (QSpace muscle memory; defaults F5/F6, rebindable in settings)
         let f5 = fileMenu.addItem(withTitle: L10n.t("menu.copyToOtherPane"),

@@ -239,7 +239,7 @@ Owns a new `Scheduler` pod and `ProgressWindowController.swift`. Depends on trac
 
 Owns `Sources/Pods/ArchiveEngine`. Depends on track B.
 
-- [ ] **L50** (L) Browse inside archives without extracting
+- [x] **L50** (L) Browse inside archives without extracting
 - [ ] **L51** (M) Quick Look inside archives
 - [ ] **L52** (L) 7z and RAR extraction, after a license and dependency review
 - [ ] **L53** (M) Compression settings and password list stored in Keychain
@@ -341,6 +341,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Extract over an existing folder: it asks first, and nothing is overwritten silently
 - [ ] Compress files from one folder, then from search results across folders
 - [ ] Confirm no password field offers zip encryption for now
+- [ ] Right-click a zip and a tar.gz, Browse Archive: the tree, sizes and dates match the content, and the file on disk does not change
+- [ ] In the browser, select a file and a folder, Extract To: only those land, and a name already taken asks first
+- [ ] Extract To with nothing selected extracts the whole archive
+- [ ] Open a large tar.gz in the browser and press Cancel or Escape: reading stops
+- [ ] The browser works with VoiceOver and the keyboard, in light and dark mode
 
 ### App behaviour
 

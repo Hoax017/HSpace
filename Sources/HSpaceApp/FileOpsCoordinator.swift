@@ -315,6 +315,23 @@ final class FileOpsCoordinator {
         }
     }
 
+    /// Moves what the archive browser took out of an archive to its destination, through Transfer: conflicts ask as for any move.
+    /// `onComplete` runs on every outcome, so the temporary folder always goes away.
+    func landExtracted(_ urls: [URL], into directory: URL, onComplete: @escaping @MainActor () -> Void) {
+        let destination = directory.standardizedFileURL
+        guard !Self.isTrashDestination(destination) else {
+            Toast.show(L10n.t("toast.notIntoTrash"), in: grid?.view.window)
+            onComplete()
+            return
+        }
+        run(OperationSpec(kind: .move, sources: urls, destination: destination)) { [weak self] receipt in
+            if receipt != nil {
+                Toast.show(L10n.f("toast.extracted", urls.count), in: self?.grid?.view.window)
+            }
+            onComplete()
+        }
+    }
+
     func newFolder(in directory: URL, revealIn list: FileRevealTarget?) {
         run(OperationSpec(kind: .newFolder, sources: [], destination: directory,
                           newName: L10n.t("newItem.folder"))) { receipt in

@@ -32,6 +32,7 @@ enum KeyBindings {
         Entry(id: "batchRename", titleKey: "menu.batchRename", defaultKey: "r", defaultMods: [.command, .shift]),
         Entry(id: "quickRename", titleKey: "menu.quickRename", defaultKey: "", defaultMods: []),
         Entry(id: "selectByPattern", titleKey: "menu.selectByPattern", defaultKey: "", defaultMods: []),
+        Entry(id: "browseArchive", titleKey: "menu.browseArchive", defaultKey: "", defaultMods: []),
         Entry(id: "moveToTrash", titleKey: "menu.moveToTrash", defaultKey: "\u{8}", defaultMods: [.command]),
         Entry(id: "editTags", titleKey: "menu.editTags", defaultKey: "", defaultMods: []),
         Entry(id: "editComment", titleKey: "menu.editComment", defaultKey: "", defaultMods: []),

@@ -182,7 +182,7 @@ extension ArchiveEngineNode {
     }
 
     /// Single-stream compression (.gz/.bz2/.xz/.Z): extracts to a single output file inside staging (stdout redirected)
-    private func extractSingleStream(_ archive: URL, format: ArchiveFormat, into staging: URL) async throws {
+    func extractSingleStream(_ archive: URL, format: ArchiveFormat, into staging: URL) async throws {
         let fm = FileManager.default
         let outName = ArchiveFormat.singleStreamOutputName(for: archive)
         let outURL = staging.appendingPathComponent(outName)
@@ -202,9 +202,9 @@ extension ArchiveEngineNode {
     // MARK: Tool invocation (exit code classification)
 
     /// Runs an archive tool and classifies its exit code: 0 = success; cancelled = CancellationError; non-zero = external (with stderr summary)
-    private func runArchiveTool(_ tool: String, _ args: [String], cwd: URL? = nil,
-                               stdoutTo: FileHandle? = nil) async throws {
-        let result = try await runTool(tool, args, cwd: cwd, stdoutTo: stdoutTo)
+    func runArchiveTool(_ tool: String, _ args: [String], cwd: URL? = nil,
+                        stdoutTo: FileHandle? = nil, utf8Locale: Bool = false) async throws {
+        let result = try await runTool(tool, args, cwd: cwd, stdoutTo: stdoutTo, utf8Locale: utf8Locale)
         if Task.isCancelled { throw CancellationError() }
         if result.status != 0 {
             let summary = Self.stderrSummary(result.stderr)
