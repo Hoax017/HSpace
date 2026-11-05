@@ -134,6 +134,7 @@ enum MainMenu {
                                            action: #selector(MainWindowController.toggleSidebar(_:)),
                                            keyEquivalent: "")
         KeyBindings.apply("toggleSidebar", to: sidebarItem)
+        DetailPanelMenu.addItems(to: viewMenu)
         viewMenu.addItem(.separator())
         let hiddenItem = viewMenu.addItem(withTitle: L10n.t("menu.toggleHidden"),
                                           action: #selector(FileListViewController.toggleHiddenFiles(_:)),

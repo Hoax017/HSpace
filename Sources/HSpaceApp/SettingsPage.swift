@@ -17,5 +17,6 @@ enum SettingsPages {
         AppearanceSettingsPage(),
         FileColorsSettingsPage(),
         KindGroupsSettingsPage(),
+        SidePanelSettingsPage(),
     ]
 }

@@ -744,3 +744,15 @@
 "menu.saveAsTemplate" = "Save Selection as Template";
 "menu.openTemplates" = "Open Templates Folder";
 "templates.none" = "No templates yet";
+
+/* Side panel (L20) */
+"menu.togglePreviewPanel" = "Preview Panel";
+"panel.preview.nothing" = "No selection";
+"panel.preview.count" = "%d items";
+"panel.preview.countSize" = "%1$d items, %2$@";
+"panel.preview.countFilesSize" = "%1$d items, %2$@ in files";
+"settings.tab.sidePanel" = "Side Panel";
+"settings.sidePanel.note" = "Choose which actions the preview panel offers, and their order.";
+"settings.sidePanel.reset" = "Reset";
+"settings.sidePanel.up" = "Move %@ up";
+"settings.sidePanel.down" = "Move %@ down";

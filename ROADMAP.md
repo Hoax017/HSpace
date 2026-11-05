@@ -205,7 +205,7 @@ New pods `BatchRename`, `FileHash`, `ImageConvert`.
 
 Owns the view controllers and `Sources/Pods/IconThumb`.
 
-- [ ] **L20** (L) Side preview panel, with configurable actions
+- [x] **L20** (L) Side preview panel, with configurable actions
 - [ ] **L21** (L) File inspector panel
 - [ ] **L22** (M) View options per folder, and saved view styles with a manager
 - [ ] **L23** (M) Custom hidden items and exclusion rules
@@ -442,6 +442,17 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] New from Template twice in one folder: the second gets "2", with no panel. A folder template copies whole
 - [ ] New from Template in list, icon and column views, from the File menu and the right-click menu; grayed out in the Trash
 - [ ] The task list works in light and dark mode, and with VoiceOver: Pause, Priority and Cancel are named
+
+### Viewing
+
+- [ ] View > Preview Panel (⌥⌘P): the panel opens right of the panes and previews the selection in list, icon and column views; the window size stays
+- [ ] Arrow quickly through a folder of large files: the preview keeps up and nothing stutters
+- [ ] Preview a video: it waits for play. Hide the panel while it plays: the sound stops
+- [ ] Select several items: a count and size show. Clear the selection: "No selection"
+- [ ] Drag the panel's left edge: it stops at its limits, and the width survives a restart
+- [ ] Settings > Side Panel: turn actions off, reorder them; the panel follows at once. Reset brings the defaults back
+- [ ] Panel buttons act on the selection of the active pane, and gray out in the Trash where the menus do. Move to Trash can be undone
+- [ ] The panel looks right in light and dark mode, and VoiceOver names each button
 
 ### Overall feel
 

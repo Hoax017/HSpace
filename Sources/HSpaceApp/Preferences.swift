@@ -219,6 +219,26 @@ enum Preferences {
         set { d.set(min(0.3, max(0, newValue)), forKey: "inactivePaneDimming") }
     }
 
+    // MARK: Side panel
+
+    static var previewPanelVisible: Bool {
+        get { d.bool(forKey: "previewPanelVisible") }
+        set { d.set(newValue, forKey: "previewPanelVisible") }
+    }
+
+    static var detailPanelWidth: CGFloat {
+        get { (d.object(forKey: "detailPanelWidth") as? Double).map { CGFloat($0) } ?? 280 }
+        set { d.set(Double(newValue), forKey: "detailPanelWidth") }
+    }
+
+    /// The side panel's actions, in order. nil = never chosen, so the defaults apply.
+    static var panelActions: [String]? {
+        get { d.stringArray(forKey: "panelActions") }
+        set {
+            if let newValue { d.set(newValue, forKey: "panelActions") } else { d.removeObject(forKey: "panelActions") }
+        }
+    }
+
     /// Terminal choices (bundle id; auto is a special value)
     static let terminalOptions: [(id: String, nameKey: String)] = [
         ("auto", "settings.terminal.auto"),

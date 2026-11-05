@@ -827,12 +827,25 @@ final class PaneViewController: NSViewController {
             == activeTab.browser.current.standardizedFileURL.path
     }
 
-    private func currentSelectedItems() -> [FileItem] {
+    func currentSelectedItems() -> [FileItem] {
         switch activeTab.viewMode {
         case .list: return activeTab.listVC.selectedItems
         case .icons: return activeTab.iconVC?.selectedItems ?? []
         case .columns: return activeTab.columnVC?.selectedItems ?? []
         }
+    }
+
+    /// Runs a selection command on the active content view, the one that owns the selection
+    func performContentAction(_ selector: Selector, from sender: Any?) {
+        onRequestFocus?()
+        NSApp.sendAction(selector, to: contentVC(for: activeTab), from: sender)
+    }
+
+    /// Whether the active content view would accept the command now, by the same rules as its menus
+    func canPerformContentAction(_ selector: Selector) -> Bool {
+        guard !currentSelectedItems().isEmpty else { return false }
+        let probe = NSMenuItem(title: "", action: selector, keyEquivalent: "")
+        return (contentVC(for: activeTab) as? NSMenuItemValidation)?.validateMenuItem(probe) ?? true
     }
 
     /// Selects the given entry once navigation lands (each view has its own "select after load" mechanism, avoiding the async directory read race)
