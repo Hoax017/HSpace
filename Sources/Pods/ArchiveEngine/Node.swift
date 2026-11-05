@@ -7,6 +7,9 @@ public struct ArchiveEngineNode: OperationNode {
 
     public func execute(_ spec: OperationSpec, context: NodeContext) async throws -> OperationReceipt {
         let started = Date()
+        if let password = spec.archiveOptions?.password, !password.isEmpty {
+            throw ArchiveError(.logic, "Password-protected archives are not supported")
+        }
         switch spec.kind {
         case .compress:
             return try await compress(spec, context: context, started: started)

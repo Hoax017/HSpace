@@ -362,6 +362,56 @@ import HSpaceTestSupport
         try Self.assertNoStaging(in: work)
     }
 
+    // MARK: B4 a password never reaches a process argument list
+
+    @Test(arguments: ["zip", "tar.gz"])
+    func compressRefusesAPassword(format: String) async throws {
+        let work = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work) }
+        let file = work.appendingPathComponent("a.txt")
+        try FaultFixture.write(to: file)
+
+        do {
+            _ = try await ArchiveEngineNode().execute(
+                OperationSpec(kind: .compress, sources: [file], archiveOptions: ArchiveOptions(format: format, password: "secret")),
+                context: Arbiter(answer: nil).context)
+            Issue.record("Expected the password to be refused")
+        } catch let error as any ClassifiedError {
+            #expect(error.errorClass == .logic)
+        }
+        #expect(try Self.entries(work) == ["a.txt"])
+    }
+
+    @Test func extractRefusesAPassword() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let archive = try Self.zipFixture(["a.txt": "new"], in: work)
+
+        do {
+            _ = try await ArchiveEngineNode().execute(
+                OperationSpec(kind: .extract, sources: [archive],
+                              archiveOptions: ArchiveOptions(password: "secret", extractInto: out)),
+                context: Arbiter(answer: nil).context)
+            Issue.record("Expected the password to be refused")
+        } catch let error as any ClassifiedError {
+            #expect(error.errorClass == .logic)
+        }
+        #expect(try Self.entries(out) == [])
+    }
+
+    @Test func emptyPasswordMeansNoPassword() async throws {
+        let work = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work) }
+        let file = work.appendingPathComponent("a.txt")
+        try FaultFixture.write(to: file)
+
+        let receipt = try await ArchiveEngineNode().execute(
+            OperationSpec(kind: .compress, sources: [file], archiveOptions: ArchiveOptions(password: "")),
+            context: Arbiter(answer: nil).context)
+
+        #expect(receipt.createdURLs.map(\.lastPathComponent) == ["a.zip"])
+    }
+
     @Test func archiveNameStartingWithADashExtracts() async throws {
         let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
         defer { FaultFixture.remove(work); FaultFixture.remove(out) }

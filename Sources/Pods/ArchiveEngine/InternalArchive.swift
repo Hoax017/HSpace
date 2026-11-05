@@ -56,15 +56,11 @@ extension ArchiveEngineNode {
         let names = spec.sources.map { "./" + $0.lastPathComponent }
         do {
             if isTarGz {
-                // tar has no built-in encryption: the password is ignored (noted in Contract)
                 try await runArchiveTool(Tools.tar,
                     ["-czf", stagedArchive.path, "-C", sourcesParent.path] + names)
             } else {
-                var args = ["-r", "-q"]
-                if let pw = options.password, !pw.isEmpty { args += ["-P", pw] }  // ZipCrypto weak encryption
-                args += [stagedArchive.path] + names
                 // cwd = common parent → relative paths inside the archive (no absolute prefix)
-                try await runArchiveTool(Tools.zip, args, cwd: sourcesParent)
+                try await runArchiveTool(Tools.zip, ["-r", "-q", stagedArchive.path] + names, cwd: sourcesParent)
             }
         } catch is CancellationError {
             throw CancellationError()   // defer cleans up the staging directory (including zip's zi* temp files); the final name never appeared
@@ -139,10 +135,7 @@ extension ArchiveEngineNode {
         do {
             switch format {
             case .zip:
-                var args = ["-o", "-q"]
-                if let pw = options.password, !pw.isEmpty { args += ["-P", pw] }
-                args += [archive.path, "-d", staging.path]
-                try await runArchiveTool(Tools.unzip, args)
+                try await runArchiveTool(Tools.unzip, ["-o", "-q", archive.path, "-d", staging.path])
             case .tarGz:
                 try await runArchiveTool(Tools.tar, ["-xzf", archive.path, "-C", staging.path])
             case .tarBz2:
