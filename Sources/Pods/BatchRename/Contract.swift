@@ -165,6 +165,17 @@ public enum BatchRenamePlanner {
         }
         return checkedPlan(sources: sources, names: names)
     }
+
+    /// Checks one new name per line of `text`, in source order. Lines are not trimmed: a space is part of a name.
+    /// Blank lines after the last name are ignored, since a text box easily ends with a few.
+    public static func plan(sources: [URL], text: String) throws -> RenamePlan {
+        var lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
+        while lines.count > sources.count, lines.last?.isEmpty == true { lines.removeLast() }
+        guard lines.count == sources.count else {
+            throw BatchRenameError(.external, "Expected \(sources.count) lines, one per item, but found \(lines.count).")
+        }
+        return checkedPlan(sources: sources, names: lines)
+    }
 }
 
 // MARK: - Apply and undo

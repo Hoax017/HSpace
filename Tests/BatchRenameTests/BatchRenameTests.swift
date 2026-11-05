@@ -369,3 +369,27 @@ private final class Seen: @unchecked Sendable {
     func add(_ done: Int, _ total: Int) { lock.lock(); stored.append([done, total]); lock.unlock() }
     var values: [[Int]] { lock.lock(); defer { lock.unlock() }; return stored }
 }
+
+@Suite struct TextPlanTests {
+    @Test func oneLinePerItem() throws {
+        let (dir, urls) = try fixture(["a", "b"])
+        defer { FaultFixture.remove(dir) }
+        let plan = try BatchRenamePlanner.plan(sources: urls, text: "x\r\ny\n\n")
+        #expect(plan.rows.map(\.newName) == ["x", "y"])
+        #expect(plan.canApply)
+    }
+
+    @Test func aMissingOrExtraLineIsRefused() throws {
+        let (dir, urls) = try fixture(["a", "b"])
+        defer { FaultFixture.remove(dir) }
+        #expect(throws: BatchRenameError.self) { try BatchRenamePlanner.plan(sources: urls, text: "x") }
+        #expect(throws: BatchRenameError.self) { try BatchRenamePlanner.plan(sources: urls, text: "x\ny\nz") }
+    }
+
+    @Test func aBlankLineInTheMiddleIsAnEmptyName() throws {
+        let (dir, urls) = try fixture(["a", "b"])
+        defer { FaultFixture.remove(dir) }
+        let plan = try BatchRenamePlanner.plan(sources: urls, text: "\ny")
+        #expect(plan.rows[0].status == .blocked(.emptyName))
+    }
+}

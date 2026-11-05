@@ -441,3 +441,8 @@
 "renameLog.state.done" = "Renamed";
 "renameLog.state.undo" = "Undo of a batch";
 "renameLog.state.reversed" = "Reversed";
+"common.close" = "Close";
+"menu.quickRename" = "Quick Rename…";
+"quickRename.title" = "Quick Rename";
+"quickRename.hint" = "One name per line, in the same order.";
+"quickRename.names" = "New names, one per line";

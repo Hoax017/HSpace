@@ -13,6 +13,9 @@ enum BatchToolsMenu {
         let rename = menu.addItem(withTitle: L10n.t("menu.batchRename"),
                                   action: #selector(MainWindowController.showBatchRename(_:)), keyEquivalent: "")
         KeyBindings.apply("batchRename", to: rename)
+        let quick = menu.addItem(withTitle: L10n.t("menu.quickRename"),
+                                 action: #selector(MainWindowController.showQuickRename(_:)), keyEquivalent: "")
+        KeyBindings.apply("quickRename", to: quick)
         menu.addItem(withTitle: L10n.t("menu.renameLog"),
                      action: #selector(MainWindowController.showRenameLog(_:)), keyEquivalent: "")
         item.submenu = menu
@@ -21,8 +24,14 @@ enum BatchToolsMenu {
 
     /// nil = not a batch tool, the caller decides
     static func validate(_ item: NSMenuItem, in window: MainWindowController) -> Bool? {
-        guard item.action == #selector(MainWindowController.showBatchRename(_:)) else { return nil }
-        return window.renamableSelection != nil
+        switch item.action {
+        case #selector(MainWindowController.showBatchRename(_:)):
+            return window.renamableSelection != nil
+        case #selector(MainWindowController.showQuickRename(_:)):
+            return (window.renamableSelection?.count ?? .max) <= QuickRenameSheetController.itemLimit
+        default:
+            return nil
+        }
     }
 }
 
@@ -48,6 +57,14 @@ extension MainWindowController {
     @objc func showBatchRename(_ sender: Any?) {
         guard let items = renamableSelection, let window else { NSSound.beep(); return }
         BatchRenameSheetController.present(items: items, ops: renameOps, store: renameStore, in: window)
+    }
+
+    @objc func showQuickRename(_ sender: Any?) {
+        guard let items = renamableSelection, items.count <= QuickRenameSheetController.itemLimit, let window else {
+            NSSound.beep()
+            return
+        }
+        QuickRenameSheetController.present(items: items, ops: renameOps, in: window)
     }
 
     @objc func showRenameLog(_ sender: Any?) {

@@ -171,3 +171,35 @@ import Testing
         #expect(sheet.model.items.count == 1)
     }
 }
+
+@MainActor @Suite struct QuickRenameTests {
+    @Test func theTextStartsAsTheCurrentNames() {
+        let model = QuickRenameModel(sources: ["/x/a", "/x/b"].map { URL(fileURLWithPath: $0) })
+        #expect(model.initialText == "a\nb")
+    }
+
+    @Test func aLineCountMismatchAndACollisionAreShownInPlace() throws {
+        let dir = try FaultFixture.tempDir("hspace-quick-rename")
+        defer { FaultFixture.remove(dir) }
+        let a = dir.appendingPathComponent("a"), b = dir.appendingPathComponent("b")
+        try FaultFixture.write(to: a)
+        try FaultFixture.write(to: b)
+        let model = QuickRenameModel(sources: [a])
+        model.update(text: "x\ny")
+        #expect(!model.canApply)
+        #expect(model.problem != nil)
+        model.update(text: "b")
+        #expect(!model.canApply)
+        #expect(model.problem?.contains("b:") == true)
+        model.update(text: "c")
+        #expect(model.canApply)
+        #expect(model.problem == nil)
+    }
+
+    @Test func theSheetBuilds() {
+        let grid = PaneGridController(initialDirectory: URL(fileURLWithPath: "/"))
+        let ops = BatchRenameOps(coordinator: FileOpsCoordinator(kernel: OperationKernel(), grid: grid), store: nil)
+        let sheet = QuickRenameSheetController(sources: [URL(fileURLWithPath: "/a")], ops: ops, host: NSWindow())
+        #expect(sheet.model.sources.count == 1)
+    }
+}
