@@ -2,10 +2,25 @@ import AppKit
 import HSpaceContracts
 import FileMetadata
 
-/// Undo of a restore is registered before its outcome is known, so the closure reads the outcome through this.
+/// Undo of a restore is registered before its outcome is known, so the closure waits for the outcome through this.
+/// A redo pressed while the undo still runs has to wait, or it would find nothing to put back.
 @MainActor
 private final class MetadataRecord {
-    var changes: [MetadataChange] = []
+    private var changes: [MetadataChange] = []
+    private var isFinished = false
+    private var waiters: [CheckedContinuation<[MetadataChange], Never>] = []
+
+    func finish(_ changes: [MetadataChange]) {
+        self.changes = changes
+        isFinished = true
+        waiters.forEach { $0.resume(returning: changes) }
+        waiters = []
+    }
+
+    func settled() async -> [MetadataChange] {
+        if isFinished { return changes }
+        return await withCheckedContinuation { waiters.append($0) }
+    }
 }
 
 /// Metadata changes. Not kernel operations: they change no file's contents or location, and `OperationSpec` has no kind for them.
@@ -24,23 +39,30 @@ extension FileOpsCoordinator {
 
     private func registerMetadataUndo(_ changes: [MetadataChange], actionName: String) {
         undoManager.registerUndo(withTarget: self) { coord in
-            MainActor.assumeIsolated { coord.restoreMetadata(changes, actionName: actionName) }
+            MainActor.assumeIsolated {
+                coord.restoreMetadata(count: changes.count, actionName: actionName) { changes }
+            }
         }
         undoManager.setActionName(actionName)
     }
 
     /// Undo and redo. The opposite step must be registered here, while UndoManager is undoing, or it lands on the wrong stack.
-    private func restoreMetadata(_ changes: [MetadataChange], actionName: String) {
+    private func restoreMetadata(count: Int, actionName: String,
+                                 changes: @escaping @MainActor @Sendable () async -> [MetadataChange]) {
         let record = MetadataRecord()
         undoManager.registerUndo(withTarget: self) { coord in
-            MainActor.assumeIsolated { coord.restoreMetadata(record.changes, actionName: actionName) }
+            MainActor.assumeIsolated {
+                coord.restoreMetadata(count: count, actionName: actionName) { await record.settled() }
+            }
         }
         undoManager.setActionName(actionName)
-        runMetadata(title: actionName, count: changes.count) { progress in
-            try await Engines.metadata.restore(changes, progress: progress)
+        runMetadata(title: actionName, count: count) { progress in
+            let before = await changes()
+            return try await Engines.metadata.restore(before, progress: progress)
         } onChanged: { [weak self] changes in
-            record.changes = changes
             self?.pushComments(changes)
+        } onFinished: { changes in
+            record.finish(changes)
         }
     }
 
@@ -62,7 +84,8 @@ extension FileOpsCoordinator {
     /// Runs a batch and reports it. The progress sheet appears only if the batch lasts, so a quick tag change shows nothing.
     private func runMetadata(title: String, count: Int,
                              work: @escaping @Sendable (@escaping MetadataProgress) async throws -> MetadataBatchResult,
-                             onChanged: @escaping @MainActor ([MetadataChange]) -> Void) {
+                             onChanged: @escaping @MainActor ([MetadataChange]) -> Void,
+                             onFinished: @escaping @MainActor ([MetadataChange]) -> Void = { _ in }) {
         let window = grid?.view.window
         let sheet = BatchProgressSheet(title: title, total: count)
         let task = Task { () -> MetadataBatchResult in
@@ -80,6 +103,7 @@ extension FileOpsCoordinator {
             reveal.cancel()
             sheet.close()
             Formatters.forgetCustomIcons()
+            onFinished((try? outcome.get())?.changed ?? [])     // A failed run changed nothing to restore
             switch outcome {
             case .success(let result):
                 if !result.changed.isEmpty { onChanged(result.changed) }

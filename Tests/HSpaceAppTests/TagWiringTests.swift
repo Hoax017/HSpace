@@ -13,7 +13,9 @@ private let work = FinderTag(name: "Work")
 /// Waits for something the app does asynchronously, failing the test instead of hanging.
 @MainActor
 func eventually(_ what: Comment, _ condition: () throws -> Bool) async rethrows {
-    for _ in 0..<300 {
+    // Generous, because a busy CI runner can stall the whole test process for seconds
+    let deadline = ContinuousClock.now + .seconds(30)
+    while ContinuousClock.now < deadline {
         if try condition() { return }
         try? await Task.sleep(for: .milliseconds(10))
     }
@@ -210,8 +212,7 @@ func eventually(_ what: Comment, _ condition: () throws -> Bool) async rethrows 
         undo.undo()
         try await eventually("undone") { try Engines.metadata.tags(of: file) == [blue] }
         #expect(undo.canRedo)
-        // The redo reads what the restore replaced, which arrives a moment after the tags do
-        try? await Task.sleep(for: .milliseconds(50))
+        // Straight away on purpose: the redo has to wait for what the restore replaced
         undo.redo()
         try await eventually("redone") { try Engines.metadata.tags(of: file) == [blue, red] }
     }
