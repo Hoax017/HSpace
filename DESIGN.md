@@ -284,4 +284,4 @@ Notes for contributors adding UI. **Any new UI must pass both `grid-lint` and th
 - **Don't** introduce persistent animations, timers or polling (north star: 0.0% idle CPU with four panes).
 - **Don't** touch components that already work well natively (global search/settings window/system dialogs/Quick Look/context menus); the hybrid principle only redoes the top structure of the main view.
 - **Don't** fill large areas with accent or use colored text to build hierarchy; hierarchy comes from the three inks + font size.
-- **Don't** bypass pre-commit with `--no-verify` (meta-doctor / pod-lint / grid-lint / tests).
+- **Don't** bypass pre-commit with `--no-verify` (pod-lint / grid-lint / tests).

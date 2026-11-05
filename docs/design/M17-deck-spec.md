@@ -106,4 +106,4 @@ Icons come only from `NSImage(systemSymbolName:)`, never custom paths, emoji or 
 
 ## Acceptance gates
 
-Build, tests and meta-doctor pass; `GRID_LINT_ALL=1 ./scripts/grid-lint.sh` exits 0; ui-smoke covers no NSToolbar, deck heights, ⌘T and ⌘W, the full-height divider, three collapse rounds without drift, and a centred stash group (within 2pt). Also required: screenshots of single, dual, quad and collapsed layouts in both appearances; four idle panes at 0.0% CPU over at least 6 samples; end-to-end persistence of frame, sidebar width and session; and every former toolbar action present and validated on the deck.
+Build, tests and pod-lint pass; `GRID_LINT_ALL=1 ./scripts/grid-lint.sh` exits 0; ui-smoke covers no NSToolbar, deck heights, ⌘T and ⌘W, the full-height divider, three collapse rounds without drift, and a centred stash group (within 2pt). Also required: screenshots of single, dual, quad and collapsed layouts in both appearances; four idle panes at 0.0% CPU over at least 6 samples; end-to-end persistence of frame, sidebar width and session; and every former toolbar action present and validated on the deck.

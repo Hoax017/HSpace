@@ -30,7 +30,7 @@ The architecture leaves pod slots for these:
 - Icons are SF Symbols and NSWorkspace file icons only, never emoji or text. Each has a 150ms tooltip.
 - Front-end method: surgical-instrument metaphor (full keyboard reach, hairline borders, hover-reveal, 4pt grid, in-place resolution, no fake buttons, FG-1).
 - Versioning: `VERSION`, `CHANGELOG.md` and a git tag per milestone, with the version injected at build time.
-- Every milestone: meta-doctor exits 0, tests are green, real-machine screenshots are checked, then a green commit.
+- Every milestone: lints and tests are green, real-machine screenshots are checked, then a green commit.
 - Public asset hard rule (after I-35): screenshots, sample data and docs entering the public repository pass `scripts/sanitize-check.sh` (forced at pre-push; the `.sanitize-terms` list stays local) and a human check. Real folder content is only shown through the `HSPACE_UITEST_DEMO` fixture.
 - Test sandbox hard rule: automated tests never touch real user files. Mutations happen only in self-made temporary fixtures (`temporaryDirectory/hspace-uitest-*`, always cleaned up), enforced by `UISelfTest.assertSandboxed`.
 

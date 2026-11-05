@@ -8,7 +8,7 @@ macos-native (AppKit code-only UI; not among the web/ios/android enum values, re
 
 ## Stack
 
-Swift 6 + AppKit pure programmatic UI, SwiftPM build without Xcode (CLT), composable execution meta-architecture (pods + META_COMPLIANCE + meta-doctor gate). UI rendering may only use AppKit view-layer capabilities (layer-backed NSView / Core Animation / NSVisualEffectView / SF Symbols / NSWorkspace file icons); there is no web stack.
+Swift 6 + AppKit pure programmatic UI, SwiftPM build without Xcode (CLT), composable execution meta-architecture (pods + META_COMPLIANCE + pod-lint gate). UI rendering may only use AppKit view-layer capabilities (layer-backed NSView / Core Animation / NSVisualEffectView / SF Symbols / NSWorkspace file icons); there is no web stack.
 
 ## Users
 

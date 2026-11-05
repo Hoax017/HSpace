@@ -167,7 +167,6 @@ Guards that must hold before an operation is submitted (if not met, reject with 
 
 ## 7. Acceptance Checklist
 
-- [ ] `meta-doctor ~/development/HSpace` exits 0 (always on in pre-commit)
 - [ ] `swift test` all green (L-plan); each pod has an `hspace-probe` subcommand that can drive it alone (L-readonly / L-irreversible against a fixture tree in /tmp)
 - [ ] `./scripts/run.sh` launches: browsing the home directory and /usr/bin with tens of thousands of entries opens instantly and scrolls smoothly
 - [ ] Double-click a zip → Bandizip (system default app); double-click a folder navigates within the pane

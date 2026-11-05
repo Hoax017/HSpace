@@ -19,17 +19,17 @@
   "enforcement_map": [
     {
       "module": "universal",
-      "mechanism": "This file exists + meta-doctor exits 0 (completion criterion, hooked to .git/hooks/pre-commit)",
+      "mechanism": "This file exists. meta-doctor is an external tool, not in this repository and not run by the hooks; run it by hand where it is installed",
       "proof": "meta-doctor exits 0 @ M0 2026-08-25: 'active modules 5 (auto-passed 3/failed 0) | conclusion: all active modules passed → exit 0'"
     },
     {
       "module": "always-on",
-      "mechanism": "pre-commit runs meta-doctor (.env.example/.gitignore/plaintext credentials) + scripts/pod-lint-swift.sh (pod four axioms enforcement for the Swift stack, replacing META's Go reference pod-lint.sh)",
-      "proof": "pod-lint-swift: all pods and presentation layer passed ✓ @ M0 2026-08-25; pre-commit has hooked meta-doctor+pod-lint+scripts/test.sh"
+      "mechanism": "scripts/hooks/pre-commit and CI run scripts/pod-lint-swift.sh (pod four axioms enforcement for the Swift stack, replacing META's Go reference pod-lint.sh)",
+      "proof": "pod-lint-swift: all pods and presentation layer passed ✓ @ M0 2026-08-25; pre-commit (scripts/install-hooks.sh) runs pod-lint, grid-lint and scripts/test.sh"
     },
     {
       "module": "spec",
-      "mechanism": "spec.md The seven-section structure of spec.md is machine-checked by META doc-structure-lint.py (dispatched through meta-doctor))",
+      "mechanism": "spec.md The seven-section structure of spec.md was machine-checked by META doc-structure-lint.py through meta-doctor at M0, which is external and not run by the hooks",
       "proof": "spec.md The seven sections of spec.md passed doc-structure-lint (included in the meta-doctor PASS) @ M0"
     },
     {

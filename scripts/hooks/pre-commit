@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Blocks a commit unless pod-lint, grid-lint (staged Swift files) and the tests pass.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+./scripts/pod-lint-swift.sh
+./scripts/grid-lint.sh
+./scripts/test.sh --quiet

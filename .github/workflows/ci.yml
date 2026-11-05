@@ -9,10 +9,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   check:
     # Package.swift requires macOS 26, so the runner must carry the macOS 26 SDK (Xcode 26).

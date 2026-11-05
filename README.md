@@ -64,7 +64,7 @@ Sources/
 └─ HSpaceApp/         AppKit presentation layer (code-only UI, semantic color tokens, 4pt grid enforced by grid-lint)
 ```
 
-See [DESIGN.md](DESIGN.md) for the design system. The engineering gates (meta-doctor / pod-lint / grid-lint / tests) all run in pre-commit; a commit is allowed only when they are green.
+See [DESIGN.md](DESIGN.md) for the design system. The engineering gates (pod-lint / grid-lint / tests) run in CI on every pull request and in a pre-commit hook. Run `./scripts/install-hooks.sh` once per clone to install the hooks; `scripts/sanitize-check.sh` runs on pre-push.
 
 ## Known system limits (stated honestly)
 

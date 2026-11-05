@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Blocks a push if tracked text contains a term from the local .sanitize-terms list.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+./scripts/sanitize-check.sh
