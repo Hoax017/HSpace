@@ -46,7 +46,10 @@ final class StashShelfController {
     }
 
     func start() {
-        Task { await refresh() }
+        Task {
+            await refresh()
+            ProblemAlert.show(await store.takeProblem())
+        }
     }
 
     // MARK: Add/remove/clear (all committed serially through the StashStore actor)

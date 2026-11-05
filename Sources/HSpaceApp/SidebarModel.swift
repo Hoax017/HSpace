@@ -77,6 +77,7 @@ final class SidebarModel {
                 await self.bookmarkStore.restoreMissingSeeds(Self.seedPlaces())
                 UserDefaults.standard.set(true, forKey: seedsMergedKey)
             }
+            ProblemAlert.show(await self.bookmarkStore.takeProblem())
             self.rebuild()
         }
         // Auto-refresh on volume mount/unmount

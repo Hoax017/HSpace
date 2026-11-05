@@ -28,9 +28,11 @@ public struct TrashLedgerEntry: Sendable, Hashable, Codable {
     }
 }
 
-public struct TrashLedgerError: ClassifiedError {
+public struct TrashLedgerError: ClassifiedError, LocalizedError {
     public let errorClass: ErrorClass
     public let localizedDescription: String
+    /// What `localizedDescription` gives on `any Error`, which is how the app receives it
+    public var errorDescription: String? { localizedDescription }
 
     init(_ cls: ErrorClass, _ message: String) {
         self.errorClass = cls

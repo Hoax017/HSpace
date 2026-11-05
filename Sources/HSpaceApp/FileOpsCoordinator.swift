@@ -173,7 +173,12 @@ final class FileOpsCoordinator {
         run(OperationSpec(kind: .delete, sources: victims, destination: trash)) { [weak self] receipt in
             guard let self, let receipt else { return }
             // Void the ledger entries of what was really erased; failed items are still in the Trash
-            if let led = self.trashLedger { Task { await led.forgetErased(victims, receipt: receipt) } }
+            if let led = self.trashLedger {
+                Task {
+                    await led.forgetErased(victims, receipt: receipt)
+                    ProblemAlert.show(await led.takeProblem())
+                }
+            }
             if receipt.failures.isEmpty {
                 Toast.show(L10n.f("toast.trashEmptied", receipt.filesDone), in: self.grid?.view.window)
             } else {
@@ -227,7 +232,12 @@ final class FileOpsCoordinator {
                 self.registerRestoreUndo(items)
                 // Record in the ledger: cross-session Put Back depends on it (UndoManager lives only in this window for this session)
                 let pairs = items.map { (original: $0.original, trashed: $0.trashed) }
-                if let led = self.trashLedger { Task { await led.record(pairs) } }
+                if let led = self.trashLedger {
+                    Task {
+                        await led.record(pairs)
+                        ProblemAlert.show(await led.takeProblem())
+                    }
+                }
             }
             // The old version gave **no feedback** on this path (copy/move had toasts, trash didn't); users only saw rows vanish.
             // On partial failure it's even more important to say how many succeeded, how many didn't, and the first reason.
@@ -428,6 +438,7 @@ final class FileOpsCoordinator {
                 await trashLedger?.settle(step, for: item.trashed)
                 if step != .notRestored { restored += 1 }
             }
+            ProblemAlert.show(await trashLedger?.takeProblem())
             onComplete?(restored)
         }
     }

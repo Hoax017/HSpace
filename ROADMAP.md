@@ -122,7 +122,7 @@ Owns `FileOpsCoordinator.swift`, `Sources/Pods/Eraser`, `Sources/Pods/TrashLedge
 
 Owns `Sources/Pods/BookmarkStore`, `StashStore`, `SessionStore`.
 
-- [ ] **D1** (M) A corrupt JSON file must be kept aside and reported, never overwritten. `TrashLedger/Node.swift:73`, `StashStore/Node.swift:74`, `BookmarkStore/Node.swift:128`
+- [x] **D1** (M) A corrupt JSON file must be kept aside and reported, never overwritten. `TrashLedger/Node.swift:73`, `StashStore/Node.swift:74`, `BookmarkStore/Node.swift:128`
 - [x] **D2** (S) Report failed bookmark writes instead of showing success. `MainWindowController.swift:316`
 - [ ] **D3** (S) Add a way to clear the local history of opened paths. `Sources/Pods/Frecency`
 
@@ -160,7 +160,7 @@ Owns `.github`, `scripts`, docs.
 
 Found while closing tracks A to F. H1 to H3 touch shared files, so they run one at a time.
 
-- [ ] **H1** (M) Show `takeProblem()` from the stores in the UI, and give TrashLedger the D1 treatment. Closes D1
+- [x] **H1** (M) Show `takeProblem()` from the stores in the UI, and give TrashLedger the D1 treatment. Closes D1
 - [ ] **H2** (S) Settings: clear history (D3), restore Finder for Reveal (E4), and no "0 restored" toast after a failed seed restore. Closes D3 and E4
 - [ ] **H3** (S) Refuse Trash drops in `validateDrop` through `FileOpsCoordinator.isTrashDestination`, with a message instead of a beep
 - [ ] **H4** (S) Update text after password removal (B4): `Contracts.swift:109`, `settings.archiveCryptoNote`, `README.md`
@@ -347,6 +347,7 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Corrupt `bookmarks.json` in a copy of the app data: you get a warning and a kept-aside file
 - [ ] Clear history in Settings
 - [ ] Enable Reveal takeover, then restore Finder in Settings
+- [ ] Corrupt `trash-ledger.json` or `stash.json` in a copy of the app data: a warning names the kept-aside file, and the Full Disk Access prompt does not overlap it
 
 ### Overall feel
 

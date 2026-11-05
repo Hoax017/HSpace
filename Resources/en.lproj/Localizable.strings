@@ -44,6 +44,7 @@
 "trash.empty.button" = "Empty";
 "trash.empty.tooltip" = "Permanently erase everything in the Trash (cannot be undone)";
 "menu.putBack" = "Put Back";
+"alert.storeProblem.title" = "Some saved data needs attention";
 "alert.emptyTrash.title" = "Permanently erase %d items in the Trash?";
 "alert.emptyTrash.body" = "This cannot be undone.";
 "alert.emptyTrash.confirm" = "Empty Trash";

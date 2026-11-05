@@ -86,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sessionReady = true
             flushPendingExternalOpens()   // I-60: deliver the external opens queued during restore (windows exist now)
             NSApp.activate()
+            await reportStoreProblems()
             #if DEBUG
             if UISelfTest.isEnabled {
                 UISelfTest.run(delegate: self)
@@ -299,8 +300,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Full Disk Access guided prompt: not granted and "Don't ask again" unticked -> show one explanatory sheet on the main window.
     /// Three buttons: grant (opens System Settings) / later (skip now, ask next time) / never ask (sets a Preferences flag).
+    /// The stores the app owns. Each window reports its own bookmark and stash stores.
+    private func reportStoreProblems() async {
+        ProblemAlert.show(await sessionStore.takeProblem())
+        ProblemAlert.show(await frecencyStore.takeProblem())
+        ProblemAlert.show(await trashLedger.takeProblem())
+    }
+
     private func promptFullDiskAccessIfNeeded() {
+        // A store problem goes first; this prompt comes back at the next launch
         guard !Preferences.fdaPromptDismissed, !FinderIntegration.hasFullDiskAccess(),
+              !ProblemAlert.isBusy,
               let window = windowControllers.first(where: { $0.window != nil })?.window else { return }
         let alert = NSAlert()
         alert.messageText = L10n.t("fda.prompt.title")
