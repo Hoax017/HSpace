@@ -90,6 +90,7 @@ extension TransferNode {
             do {
                 try await copyRecursive(from: entry.source, to: entry.destination, merge: true, run: run)
                 try await verifyCopy(of: entry.source, run: run)
+                try run.finishFolders()
             } catch {
                 try run.removeCreated()
                 throw error
@@ -100,6 +101,7 @@ extension TransferNode {
                 try await copyRecursive(from: entry.source, to: staged, merge: false, run: run)
                 try await verifyCopy(of: entry.source, run: run)
                 if flag.isSet { throw CancellationError() }
+                try run.finishFolders()
                 if replacing {
                     try swapIn(staged, over: entry.destination)
                 } else {
@@ -154,6 +156,7 @@ extension TransferNode {
                 do { try fm.createDirectory(at: dst, withIntermediateDirectories: false) } catch {
                     throw TransferError(.external, "Could not create folder:\(error.localizedDescription)", path: dst.path)
                 }
+                run.noteFolder(src, dst)
             }
             // A listing failure must stop the copy: treated as empty, it would count as copied and a move could delete the source
             let children: [URL]
@@ -249,6 +252,7 @@ private final class CopyRun: @unchecked Sendable {
     let manifest: CopyManifest?
     private let lock = NSLock()
     private var created: [URL] = []
+    private var folders: [(src: URL, dst: URL)] = []
 
     init(flag: CancelFlag, progress: ProgressAggregator, manifest: CopyManifest?) {
         self.flag = flag; self.progress = progress; self.manifest = manifest
@@ -256,9 +260,34 @@ private final class CopyRun: @unchecked Sendable {
 
     func noteCreated(_ url: URL) { lock.lock(); created.append(url); lock.unlock() }
 
+    /// A folder this run made, as opposed to one a merge entered.
+    func noteFolder(_ src: URL, _ dst: URL) { lock.lock(); folders.append((src, dst)); lock.unlock() }
+
+    /// Gives the new folders their source's dates, tags and mode. Runs once they are full: filling a folder
+    /// changes its dates, and a read-only mode would refuse the fill. Children first, for the same two reasons.
+    func finishFolders() throws {
+        lock.lock(); let items = folders; lock.unlock()
+        for folder in items.reversed() { try copyFolderMetadata(from: folder.src, to: folder.dst) }
+    }
+
     func removeCreated() throws {
         lock.lock(); let items = created; lock.unlock()
         for url in items.reversed() { try discardStaged(url) }
+    }
+}
+
+/// Tags and other extended attributes, ACLs, mode and dates. Not COPYFILE_STAT: its flags would lock a locked folder's copy before the final rename.
+private func copyFolderMetadata(from src: URL, to dst: URL) throws {
+    do {
+        guard copyfile(src.path, dst.path, nil, copyfile_flags_t(COPYFILE_METADATA | COPYFILE_NOFOLLOW)) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        let fm = FileManager.default
+        let attributes = try fm.attributesOfItem(atPath: src.path)
+        try fm.setAttributes(attributes.filter { $0.key == .creationDate || $0.key == .modificationDate },
+                             ofItemAtPath: dst.path)
+    } catch {
+        throw TransferError(.external, "Could not keep the folder's attributes:\(error.localizedDescription)", path: src.path)
     }
 }
 
@@ -344,10 +373,34 @@ func isRealDirectory(_ url: URL) -> Bool {
     return lstat(url.path, &info) == 0 && info.st_mode & S_IFMT == S_IFDIR
 }
 
+private let stagingPrefix = ".hspace-transfer-"
+
 /// Hidden sibling of the destination, so the final rename stays on one volume and is atomic.
+/// The name holds the process id, so a later run can tell a crash's leftover from a transfer still running.
 private func stagingURL(for destination: URL) -> URL {
     destination.deletingLastPathComponent()
-        .appendingPathComponent(".hspace-transfer-\(UUID().uuidString)")
+        .appendingPathComponent("\(stagingPrefix)p\(getpid())-\(UUID().uuidString)")
+}
+
+/// Names without a process id come from older versions, which no longer run.
+private func stagingOwnerIsRunning(_ name: String) -> Bool {
+    let rest = name.dropFirst(stagingPrefix.count)
+    guard rest.first == "p", let id = rest.dropFirst().split(separator: "-").first,
+          let pid = pid_t(id) else { return false }
+    return kill(pid, 0) == 0 || errno == EPERM
+}
+
+/// Moves what a crash left in these folders to the Trash. Never deletes: during a replace, a staged item can be
+/// the only copy of the user's file. Best effort, because a leftover that stays costs disk space and nothing else,
+/// and it must not stop the transfer the user asked for. Staged items deeper inside a merge are not reached.
+func sweepLeftovers(in folders: Set<URL>) {
+    let fm = FileManager.default
+    for folder in folders {
+        guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { continue }
+        for name in names where name.hasPrefix(stagingPrefix) && !stagingOwnerIsRunning(name) {
+            try? fm.trashItem(at: folder.appendingPathComponent(name), resultingItemURL: nil)
+        }
+    }
 }
 
 /// Renames `src` to `dst`, failing if `dst` exists by then.
@@ -402,6 +455,14 @@ private func discardReplaced(_ leftover: URL) throws {
 /// Removes staged output after a failure. If that fails too, the user must learn where the leftover is.
 private func discardStaged(_ staged: URL) throws {
     guard itemExists(staged) else { return }
+    // Its folders may already carry a read-only source's mode
+    if isRealDirectory(staged), let walker = FileManager.default.enumerator(atPath: staged.path) {
+        chmod(staged.path, 0o700)
+        while let child = walker.nextObject() as? String {
+            let url = staged.appendingPathComponent(child)
+            if isRealDirectory(url) { chmod(url.path, 0o700) }
+        }
+    }
     do { try FileManager.default.removeItem(at: staged) } catch {
         throw TransferError(.external, "Stopped, but partial output could not be removed:\(error.localizedDescription)",
                             path: staged.path)

@@ -166,7 +166,7 @@ Found while closing tracks A to F. H1 to H3 touch shared files, so they run one 
 - [x] **H4** (S) Update text after password removal (B4): `Contracts.swift:109`, `settings.archiveCryptoNote`, `README.md`
 - [x] **H5** (M) Add an `HSpaceAppTests` target and drop the symlinks in `Tests/HSpaceKernelTests/AppEntryPoints`
 - [x] **H6** (S) Restore: use landed URLs from receipts, skip redo after a failed restore, keep records for trashed dangling links
-- [ ] **H7** (M) Keep folder dates, tags and modes on cross-volume moves, and clean leftover `.hspace-transfer-*` items after a crash
+- [x] **H7** (M) Keep folder dates, tags and modes on cross-volume moves, and clean leftover `.hspace-transfer-*` items after a crash
 - [ ] **H8** (S) Check a drop with the "move" preference and Option held. AppKit may refuse it
 - [ ] **H9** (M) Run `ui-smoke.sh` on the merged code, then check by hand: Return in the conflict panel, drops, terminal, Put Back, `hspace://`
 
@@ -320,6 +320,7 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Copy a folder holding a symlink: the link stays a link
 - [ ] Try to copy a folder into itself: it is refused with a clear message
 - [ ] Move a file to another volume: the source goes only after the copy finishes
+- [ ] Move a tagged folder to another volume: its tag, dates and permissions stay
 
 ### Drag and drop
 
