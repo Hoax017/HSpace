@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let externalOpenWorker = ExternalOpenWorker()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ExternalOpenHistory.purgeStoredPath(from: .standard)
         NSApp.mainMenu = MainMenu.build()
         Theme.applyAppearance()   // Appearance: apply light/dark mode at launch (system/light/dark)
         // M28: usage-based ranking; the search panel shares the same frecencyStore (app-wide accounting lives in each window coordinator)
@@ -205,10 +206,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func routeExternalOpens(_ requests: [ExternalRequest]) {
-        // External-open audit breadcrumb (I-28 NSFileViewer chain diagnostics; a single overwritten key, so volume stays tiny)
-        if let first = requests.first, case .system(let url) = first {
-            UserDefaults.standard.set("\(Date().timeIntervalSince1970)|\(url.path)", forKey: "debug.lastExternalOpen")
-        }
         // I-60: routing before the session is restored (zero windows) would only open a surplus window. Queue first.
         guard sessionReady else {
             pendingExternalOpens.append(contentsOf: requests)

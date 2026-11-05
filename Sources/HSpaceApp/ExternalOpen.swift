@@ -184,6 +184,13 @@ private extension ExternalOpenPlan {
     }
 }
 
+/// Earlier versions kept the last externally opened path in defaults as a diagnostic.
+enum ExternalOpenHistory {
+    static func purgeStoredPath(from defaults: UserDefaults) {
+        defaults.removeObject(forKey: "debug.lastExternalOpen")
+    }
+}
+
 /// Runs disk checks away from the main thread and stops waiting after `timeout`. A thread stuck in the kernel cannot be
 /// cancelled, so the queue also caps how many a dead mount can hold at once.
 final class ExternalOpenWorker: Sendable {
