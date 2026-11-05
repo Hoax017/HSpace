@@ -428,6 +428,7 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 
 - [ ] "Always Move" with Option held (H8): macOS may refuse this drop. Decide what the preference should do. It also copies across volumes, despite its name
 - [ ] Grant Full Disk Access to the debug build, rerun `scripts/ui-smoke.sh`, and confirm the five Trash checks pass (H9)
+- [ ] Encrypted and split 7z or RAR archives (L52): pick an option in the review under Lane 6. Suggested: stay with the system `tar` and record the gap
 
 ### Batch tools
 
