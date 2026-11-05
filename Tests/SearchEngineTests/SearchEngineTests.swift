@@ -28,6 +28,14 @@ import Foundation
         return dir
     }
 
+    /// Channel B alone. The skip list belongs to this channel: where Spotlight has indexed the temp directory (CI runners),
+    /// channel A returns files inside skipped directories too, so a test of the skip list must not go through it.
+    func scanned(_ root: URL, _ request: SearchRequest) -> [SearchHit] {
+        var hits: [SearchHit] = []
+        SearchSession.scan(root: root, request: request) { hits.append(contentsOf: $0) }
+        return hits
+    }
+
     /// Collects stream results until natural completion or timeout (timeout cancels = verifies cooperative stop)
     func collect(_ request: SearchRequest, timeout: Double = 5) async -> [SearchHit] {
         let engine = SearchEngine()
@@ -63,12 +71,13 @@ import Foundation
         #expect(!names.contains("unrelated.txt"))
     }
 
-    @Test func skippedDirectoriesAreNotScanned() async throws {
+    @Test func skippedDirectoriesAreNotScanned() throws {
         let dir = try makeFixture()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let hits = await collect(SearchRequest(query: "nsneedle", scope: .directory(dir),
-                                               searchNames: true, searchContents: false,
-                                               includeHidden: true))
+        let hits = scanned(dir, SearchRequest(query: "nsneedle", scope: .directory(dir),
+                                              searchNames: true, searchContents: false,
+                                              includeHidden: true))
+        #expect(hits.contains { $0.name == "deep-nsneedle.txt" })   // Anti-empty: the scan did run
         // The heavy directory node_modules is skipped
         #expect(!hits.contains { $0.name == "skip-nsneedle.txt" })
     }
@@ -214,7 +223,7 @@ import Foundation
 
     /// Real cause (3): a directory in the skip list could **itself** never be a hit: the old skip branch did `continue`
     /// **before** the match test, so searching "node_modules" / "Library" / ".git" could not find that directory itself.
-    @Test func skippedDirectoryItselfCanStillBeAHit() async throws {
+    @Test func skippedDirectoryItselfCanStillBeAHit() throws {
         // Dedicated fixture: the file name inside the heavy directory **also** contains the query. With the shared fixture's skip-nsneedle.txt,
         // the "still not descended into" check would be trivially true (the query node_modules cannot match it), asserting nothing.
         let fm = FileManager.default
@@ -223,9 +232,9 @@ import Foundation
         try fm.createDirectory(at: dir.appendingPathComponent("node_modules"),
                                withIntermediateDirectories: true)
         try Data("x".utf8).write(to: dir.appendingPathComponent("node_modules/node_modules-inside.txt"))
-        let hits = await collect(SearchRequest(query: "node_modules", scope: .directory(dir),
-                                               searchNames: true, searchContents: false,
-                                               includeHidden: true))
+        let hits = scanned(dir, SearchRequest(query: "node_modules", scope: .directory(dir),
+                                              searchNames: true, searchContents: false,
+                                              includeHidden: true))
         #expect(hits.contains { $0.name == "node_modules" && $0.isDirectory },
                 "The heavy directory itself must be matchable, got\(hits.map(\.name))")
         // Still not descended into: the file inside that **also matches** must not appear (skip semantics not changed along the way)
