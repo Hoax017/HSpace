@@ -88,7 +88,7 @@ Come from the 2026-11-04 code audit, by reading the code. Each fix starts with a
 
 Owns `Sources/Pods/Transfer`. Sequential within the track.
 
-- [ ] **A1** (L) Atomic replace: copy to a temporary name, then swap, so a failed copy keeps the old target. `InternalEngine.swift:75`
+- [x] **A1** (L) Atomic replace: copy to a temporary name, then swap, so a failed copy keeps the old target. `InternalEngine.swift:75`
 - [ ] **A2** (M) Stop treating unreadable folders as empty, which can delete the source on a cross-volume move. `InternalEngine.swift:119`
 - [ ] **A3** (M) Delete the source of a cross-volume move only after verifying the copy. `InternalEngine.swift:97`
 - [ ] **A4** (M) Block a folder moved or copied into itself, and moves that replace a parent of the source. `InternalPlan.swift:166`

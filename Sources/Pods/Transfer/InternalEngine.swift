@@ -70,28 +70,35 @@ extension TransferNode {
         if flag.isSet { throw CancellationError() }
         let fm = FileManager.default
 
-        // Replace decision: delete the target here (micro-step 3, just before this entry transfers), not all at once during resolution,
-        // so that if a batch is cancelled or fails midway, targets of untransferred entries stay intact (prevents "delete everything, then copy the first byte" data loss).
-        if entry.replaceExisting, fm.fileExists(atPath: entry.destination.path) {
-            do { try fm.removeItem(at: entry.destination) } catch {
-                throw TransferError(.external, "Could not replace destination:\(error.localizedDescription)",
-                                    path: entry.destination.path)
-            }
-        }
+        // Replace never deletes the target first: the new content is built under a temporary sibling name and swapped in,
+        // so a failure or cancellation before the swap leaves the old target intact.
+        let replacing = entry.replaceExisting && itemExists(entry.destination)
 
         if mode == .move, sameVolume(entry.source, entry.destination.deletingLastPathComponent()) {
             // Same-volume move = atomic rename, instant
-            do { try fm.moveItem(at: entry.source, to: entry.destination) } catch {
-                throw TransferError(.external, "Move failed:\(error.localizedDescription)", path: entry.source.path)
-            }
+            try moveWithinVolume(from: entry.source, to: entry.destination, replacing: replacing)
             progress.addCompleted(files: entryTotals.files, bytes: entryTotals.bytes,
                                   path: entry.destination.path)
             return
         }
 
         // Copy (or the copy phase of a cross-volume move)
-        try await copyRecursive(from: entry.source, to: entry.destination,
-                                merge: entry.merge, flag: flag, progress: progress)
+        if replacing {
+            let staged = stagingURL(for: entry.destination)
+            do {
+                try await copyRecursive(from: entry.source, to: staged, merge: false,
+                                        flag: flag, progress: progress)
+                if flag.isSet { throw CancellationError() }
+                try swapIn(staged, over: entry.destination)
+            } catch {
+                try discardStaged(staged)
+                throw error
+            }
+            try discardReplaced(staged)
+        } else {
+            try await copyRecursive(from: entry.source, to: entry.destination,
+                                    merge: entry.merge, flag: flag, progress: progress)
+        }
 
         if mode == .move {
             do { try fm.removeItem(at: entry.source) } catch {
@@ -99,6 +106,28 @@ extension TransferNode {
                                     path: entry.source.path)
             }
         }
+    }
+
+    private func moveWithinVolume(from src: URL, to dst: URL, replacing: Bool) throws {
+        guard replacing else {
+            do { try FileManager.default.moveItem(at: src, to: dst) } catch {
+                throw TransferError(.external, "Move failed:\(error.localizedDescription)", path: src.path)
+            }
+            return
+        }
+        let staged = stagingURL(for: dst)
+        guard rename(src.path, staged.path) == 0 else {
+            throw TransferError(.external, "Move failed:\(String(cString: strerror(errno)))", path: src.path)
+        }
+        do {
+            try swapIn(staged, over: dst)
+        } catch {
+            guard rename(staged.path, src.path) == 0 else {
+                throw TransferError(.external, "Move failed, and the item is now at a temporary name.", path: staged.path)
+            }
+            throw error
+        }
+        try discardReplaced(staged)
     }
 
     private func copyRecursive(from src: URL, to dst: URL, merge: Bool,
@@ -164,6 +193,63 @@ extension TransferNode {
     private func isPackageTreatedAsFile(_ url: URL) -> Bool { false }
 }
 
+// MARK: Staged commit
+
+/// `lstat` existence: a dangling symlink is an existing item, unlike `FileManager.fileExists`.
+func itemExists(_ url: URL) -> Bool {
+    var info = stat()
+    return lstat(url.path, &info) == 0
+}
+
+/// Hidden sibling of the destination, so the final rename stays on one volume and is atomic.
+private func stagingURL(for destination: URL) -> URL {
+    destination.deletingLastPathComponent()
+        .appendingPathComponent(".hspace-transfer-\(UUID().uuidString)")
+}
+
+/// Puts `staged` at `target`. On return `staged` holds the old target, for the caller to discard.
+private func swapIn(_ staged: URL, over target: URL) throws {
+    if renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 { return }
+    let swapErrno = errno
+    guard swapErrno == ENOTSUP || swapErrno == EINVAL else {
+        throw TransferError(.external, "Could not replace destination:\(String(cString: strerror(swapErrno)))",
+                            path: target.path)
+    }
+    // File systems without RENAME_SWAP (exFAT, SMB): same result through three renames, restoring on failure
+    let aside = stagingURL(for: target)
+    guard rename(target.path, aside.path) == 0 else {
+        throw TransferError(.external, "Could not replace destination:\(String(cString: strerror(errno)))",
+                            path: target.path)
+    }
+    guard rename(staged.path, target.path) == 0 else {
+        let message = String(cString: strerror(errno))
+        guard rename(aside.path, target.path) == 0 else {
+            throw TransferError(.external, "Replace failed, and the old item is now at a temporary name:\(message)",
+                                path: aside.path)
+        }
+        throw TransferError(.external, "Could not replace destination:\(message)", path: target.path)
+    }
+    guard rename(aside.path, staged.path) == 0 else {
+        throw TransferError(.external, "Replaced, but the old item remains at a temporary name.", path: aside.path)
+    }
+}
+
+private func discardReplaced(_ leftover: URL) throws {
+    do { try FileManager.default.removeItem(at: leftover) } catch {
+        throw TransferError(.external, "Replaced, but the old item could not be removed:\(error.localizedDescription)",
+                            path: leftover.path)
+    }
+}
+
+/// Removes staged output after a failure. If that fails too, the user must learn where the leftover is.
+private func discardStaged(_ staged: URL) throws {
+    guard itemExists(staged) else { return }
+    do { try FileManager.default.removeItem(at: staged) } catch {
+        throw TransferError(.external, "Stopped, but partial output could not be removed:\(error.localizedDescription)",
+                            path: staged.path)
+    }
+}
+
 /// copyfile callback context box (passed into the C callback via STATUS_CTX)
 private final class CopyContext {
     let flag: CancelFlag
@@ -190,6 +276,8 @@ private func copyOneFileSync(from src: URL, to dst: URL,
         guard let ctxPtr else { return Int32(COPYFILE_CONTINUE) }
         let box = Unmanaged<CopyContext>.fromOpaque(ctxPtr).takeUnretainedValue()
         if box.flag.isSet { return Int32(COPYFILE_QUIT) }
+        // Returning CONTINUE at the error stage retries the failed write forever, which hangs on a full disk
+        if what == COPYFILE_COPY_DATA, stage == COPYFILE_ERR { return Int32(COPYFILE_QUIT) }
         if what == COPYFILE_COPY_DATA, stage == COPYFILE_PROGRESS {
             var copied: off_t = 0
             copyfile_state_get(state, UInt32(COPYFILE_STATE_COPIED), &copied)
