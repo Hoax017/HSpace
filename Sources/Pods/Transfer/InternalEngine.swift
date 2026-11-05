@@ -144,8 +144,9 @@ extension TransferNode {
         }
 
         if isRealDirectory(src), !isPackageTreatedAsFile(src) {
-            if !itemExists(dst) {
-                do { try fm.createDirectory(at: dst, withIntermediateDirectories: true) } catch {
+            // Only a merge may enter an existing folder: outside one, it appeared after the conflict check and is not ours
+            if !merge || !itemExists(dst) {
+                do { try fm.createDirectory(at: dst, withIntermediateDirectories: false) } catch {
                     throw TransferError(.external, "Could not create folder:\(error.localizedDescription)", path: dst.path)
                 }
             }
@@ -357,8 +358,6 @@ private final class CopyContext {
 private func copyOneFileSync(from src: URL, to dst: URL,
                              flag: CancelFlag, progress: ProgressAggregator) throws {
     if flag.isSet { throw CancellationError() }
-    // Failure cleanup removes only the partial file created by this run: if the target existed before the copy (external race / clone EEXIST), never delete someone else's file
-    let dstPreexisted = itemExists(dst)
     let state = copyfile_state_alloc()
     defer { copyfile_state_free(state) }
 
@@ -385,13 +384,14 @@ private func copyOneFileSync(from src: URL, to dst: URL,
                        unsafeBitCast(callback, to: UnsafeRawPointer.self))
 
     // COPYFILE_CLONE: instant APFS clone on the same volume; falls back to a real copy across volumes
-    let flags = copyfile_flags_t(COPYFILE_ALL | COPYFILE_CLONE | COPYFILE_NOFOLLOW)
+    // COPYFILE_EXCL: a file that appeared after the conflict check fails the copy with EEXIST instead of being overwritten
+    let flags = copyfile_flags_t(COPYFILE_ALL | COPYFILE_CLONE | COPYFILE_NOFOLLOW | COPYFILE_EXCL)
     let rc = copyfile(src.path, dst.path, state, flags)
 
     if rc < 0 {
         let savedErrno = errno   // snapshot first: removeItem clobbers errno
-        // Partial-file cleanup: delete only the incomplete target created by this run; leave it if it existed before the copy (avoids deleting someone else's file)
-        if !dstPreexisted { try? FileManager.default.removeItem(at: dst) }
+        // Partial-file cleanup: with EXCL, EEXIST means this run created nothing and the file belongs to someone else
+        if savedErrno != EEXIST { try? FileManager.default.removeItem(at: dst) }
         if flag.isSet || savedErrno == ECANCELED { throw CancellationError() }
         let msg = String(cString: strerror(savedErrno))
         throw TransferError(.external, "Copy failed:\(msg)", path: src.path)

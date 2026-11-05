@@ -429,4 +429,60 @@ import HSpaceTestSupport
         func set(_ value: [Bool]) { lock.lock(); stored = value; lock.unlock() }
         var value: [Bool] { lock.lock(); defer { lock.unlock() }; return stored }
     }
+
+    // MARK: A6 exclusive copy
+
+    /// Copies or moves [first, second]; `foreign` appears at the second destination once the first has landed.
+    static func racedTransfer(_ kind: OperationSpec.Kind, into destination: URL, base: URL,
+                              foreign: @escaping @Sendable (URL) -> Void, second: String) async throws {
+        let first = base.appendingPathComponent("src/first.txt")
+        try FaultFixture.write(Data("first".utf8), to: first)
+        let once = Once { _ in foreign(destination.appendingPathComponent(second)) }
+        try await run(kind, [first, base.appendingPathComponent("src/\(second)")], to: destination,
+                      context(report: once.report))
+    }
+
+    @Test func fileAppearingAfterTheCheckIsNotOverwritten() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        try FaultFixture.write(Data("mine".utf8), to: base.appendingPathComponent("src/b.txt"))
+        let destination = base.appendingPathComponent("dst")
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        await #expect(throws: TransferError.self) {
+            try await Self.racedTransfer(.copy, into: destination, base: base,
+                                         foreign: { try? Data("foreign".utf8).write(to: $0) }, second: "b.txt")
+        }
+        #expect(try Self.text(destination.appendingPathComponent("b.txt")) == "foreign")
+    }
+
+    @Test func fileAppearingOnAnotherVolumeIsNotOverwritten() async throws {
+        let volume = try ScratchVolume()
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("src/b.txt")
+        try FaultFixture.write(Data("mine".utf8), to: source)
+
+        await #expect(throws: TransferError.self) {
+            try await Self.racedTransfer(.move, into: volume.url, base: base,
+                                         foreign: { try? Data("foreign".utf8).write(to: $0) }, second: "b.txt")
+        }
+        #expect(try Self.text(volume.url.appendingPathComponent("b.txt")) == "foreign")
+        #expect(try Self.text(source) == "mine")
+    }
+
+    @Test func folderAppearingAfterTheCheckIsNotMergedInto() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        try FaultFixture.write(Data("mine".utf8), to: base.appendingPathComponent("src/d/m.txt"))
+        let destination = base.appendingPathComponent("dst")
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        await #expect(throws: TransferError.self) {
+            try await Self.racedTransfer(.copy, into: destination, base: base,
+                                         foreign: { try? FaultFixture.write(to: $0.appendingPathComponent("foreign.txt")) },
+                                         second: "d")
+        }
+        #expect(try Self.names(in: destination.appendingPathComponent("d")) == ["foreign.txt"])
+    }
 }
