@@ -94,7 +94,7 @@ Owns `Sources/Pods/Transfer`. Sequential within the track.
 - [x] **A4** (M) Block a folder moved or copied into itself, and moves that replace a parent of the source. `InternalPlan.swift:166`
 - [x] **A5** (M) Preserve symlinks as symlinks, handle cycles and dangling links. `InternalEngine.swift:109,206`
 - [x] **A6** (S) Copy with `COPYFILE_EXCL` so a file that appears after the conflict check is not overwritten. Files were already safe (`COPYFILE_CLONE` implies EXCL); a folder appearing in that window was merged into, which is fixed.
-- [ ] **A7** (M) Remove partial output when a folder copy is cancelled.
+- [x] **A7** (M) Remove partial output when a folder copy is cancelled.
 - [ ] **A8** (S) Make merge replace file over file only, as its contract says. `InternalEngine.swift:128`
 
 ### Track B: Archives

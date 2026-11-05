@@ -485,4 +485,118 @@ import HSpaceTestSupport
         }
         #expect(try Self.names(in: destination.appendingPathComponent("d")) == ["foreign.txt"])
     }
+
+    // MARK: A7 cancellation
+
+    /// Cancels the running task from the progress callback, which may fire before the task handle is stored.
+    final class Canceller: @unchecked Sendable {
+        private let ready = DispatchSemaphore(value: 0)
+        private let lock = NSLock()
+        private var task: Task<Void, any Error>?
+        func store(_ task: Task<Void, any Error>) { lock.lock(); self.task = task; lock.unlock(); ready.signal() }
+        func cancel() {
+            ready.wait()
+            lock.lock(); defer { lock.unlock() }
+            task?.cancel()
+        }
+    }
+
+    static func cancelAfterFirstFile(_ kind: OperationSpec.Kind, _ source: URL, to destination: URL,
+                                     decision: ConflictDecision? = nil) async throws {
+        let canceller = Canceller()
+        let once = Once { _ in canceller.cancel() }
+        let task = Task { try await run(kind, [source], to: destination, context(decision, report: once.report)) }
+        canceller.store(task)
+        try await task.value
+    }
+
+    static func twoFileFolder(in base: URL) throws -> URL {
+        let source = base.appendingPathComponent("src/d")
+        try FaultFixture.write(Data("a".utf8), to: source.appendingPathComponent("a.txt"))
+        try FaultFixture.write(Data("b".utf8), to: source.appendingPathComponent("b.txt"))
+        return source
+    }
+
+    @Test func cancelledFolderCopyLeavesNothing() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = try Self.twoFileFolder(in: base)
+        let destination = base.appendingPathComponent("dst")
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        await #expect(throws: CancellationError.self) {
+            try await Self.cancelAfterFirstFile(.copy, source, to: destination)
+        }
+        #expect(try Self.names(in: destination) == [])
+    }
+
+    @Test func cancelledCrossVolumeMoveLeavesNothingAndKeepsSource() async throws {
+        let volume = try ScratchVolume()
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = try Self.twoFileFolder(in: base)
+
+        await #expect(throws: CancellationError.self) {
+            try await Self.cancelAfterFirstFile(.move, source, to: volume.url)
+        }
+        #expect(try Self.names(in: volume.url).filter { !$0.hasPrefix(".fseventsd") } == [])
+        #expect(try Self.names(in: source) == ["a.txt", "b.txt"])
+    }
+
+    @Test func cancelledReplaceKeepsOldFolder() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = try Self.twoFileFolder(in: base)
+        let target = base.appendingPathComponent("dst/d")
+        try FaultFixture.write(Data("old".utf8), to: target.appendingPathComponent("old.txt"))
+
+        await #expect(throws: CancellationError.self) {
+            try await Self.cancelAfterFirstFile(.copy, source, to: target.deletingLastPathComponent(), decision: .replace)
+        }
+        #expect(try Self.names(in: target) == ["old.txt"])
+        #expect(try Self.names(in: target.deletingLastPathComponent()) == ["d"])
+    }
+
+    @Test func failedFolderCopyLeavesNothing() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("src/d")
+        try FaultFixture.write(Data("a".utf8), to: source.appendingPathComponent("a.txt"))
+        let secret = source.appendingPathComponent("secret")
+        try FileManager.default.createDirectory(at: secret, withIntermediateDirectories: true)
+        let destination = base.appendingPathComponent("dst")
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        await #expect(throws: TransferError.self) {
+            try await FaultFixture.withUnreadable(secret) {
+                try await Self.run(.copy, [source], to: destination)
+            }
+        }
+        #expect(try Self.names(in: destination) == [])
+    }
+
+    @Test func cancelledMergeRemovesOnlyWhatItCreated() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = try Self.twoFileFolder(in: base)
+        let target = base.appendingPathComponent("dst/d")
+        try FaultFixture.write(Data("old".utf8), to: target.appendingPathComponent("old.txt"))
+
+        await #expect(throws: CancellationError.self) {
+            try await Self.cancelAfterFirstFile(.copy, source, to: target.deletingLastPathComponent(), decision: .mergeFolders)
+        }
+        #expect(try Self.names(in: target) == ["old.txt"])
+    }
+
+    @Test func progressNeverShowsTemporaryNames() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("f.txt")
+        try FaultFixture.write(Data("x".utf8), to: source)
+        let destination = base.appendingPathComponent("dst")
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let once = Once { name in #expect(name == "f.txt") }
+
+        try await Self.run(.copy, [source], to: destination, Self.context(report: once.report))
+    }
 }

@@ -70,8 +70,8 @@ extension TransferNode {
         if flag.isSet { throw CancellationError() }
         let fm = FileManager.default
 
-        // Replace never deletes the target first: the new content is built under a temporary sibling name and swapped in,
-        // so a failure or cancellation before the swap leaves the old target intact.
+        // Replace never deletes the target first, and nothing appears under the final name until it is complete:
+        // the new content is built under a temporary sibling name and renamed in, so a failure or cancellation leaves no partial output.
         let replacing = entry.replaceExisting && itemExists(entry.destination)
 
         if mode == .move, sameVolume(entry.source, entry.destination.deletingLastPathComponent()) {
@@ -83,24 +83,32 @@ extension TransferNode {
         }
 
         // Copy (or the copy phase of a cross-volume move, which records what it copied for verification)
-        let manifest = mode == .move ? CopyManifest() : nil
-        if replacing {
+        let run = CopyRun(flag: flag, progress: progress, manifest: mode == .move ? CopyManifest() : nil)
+        if entry.merge {
+            // A merge writes into the existing folder, so it cannot be staged: it undoes what it added instead
+            do {
+                try await copyRecursive(from: entry.source, to: entry.destination, merge: true, run: run)
+                try await verifyCopy(of: entry.source, run: run)
+            } catch {
+                try run.removeCreated()
+                throw error
+            }
+        } else {
             let staged = stagingURL(for: entry.destination)
             do {
-                try await copyRecursive(from: entry.source, to: staged, merge: false,
-                                        flag: flag, progress: progress, manifest: manifest)
-                if let manifest { try await verifyCopy(of: entry.source, against: manifest, flag: flag) }
+                try await copyRecursive(from: entry.source, to: staged, merge: false, run: run)
+                try await verifyCopy(of: entry.source, run: run)
                 if flag.isSet { throw CancellationError() }
-                try swapIn(staged, over: entry.destination)
+                if replacing {
+                    try swapIn(staged, over: entry.destination)
+                } else {
+                    try renameExclusive(staged, to: entry.destination)
+                }
             } catch {
                 try discardStaged(staged)
                 throw error
             }
-            try discardReplaced(staged)
-        } else {
-            try await copyRecursive(from: entry.source, to: entry.destination,
-                                    merge: entry.merge, flag: flag, progress: progress, manifest: manifest)
-            if let manifest { try await verifyCopy(of: entry.source, against: manifest, flag: flag) }
+            if replacing { try discardReplaced(staged) }
         }
 
         if mode == .move {
@@ -113,9 +121,7 @@ extension TransferNode {
 
     private func moveWithinVolume(from src: URL, to dst: URL, replacing: Bool) throws {
         guard replacing else {
-            do { try FileManager.default.moveItem(at: src, to: dst) } catch {
-                throw TransferError(.external, "Move failed:\(error.localizedDescription)", path: src.path)
-            }
+            try renameExclusive(src, to: dst)
             return
         }
         let staged = stagingURL(for: dst)
@@ -133,10 +139,8 @@ extension TransferNode {
         try discardReplaced(staged)
     }
 
-    private func copyRecursive(from src: URL, to dst: URL, merge: Bool,
-                               flag: CancelFlag, progress: ProgressAggregator,
-                               manifest: CopyManifest?) async throws {
-        if flag.isSet { throw CancellationError() }
+    private func copyRecursive(from src: URL, to dst: URL, merge: Bool, run: CopyRun) async throws {
+        if run.flag.isSet { throw CancellationError() }
         let fm = FileManager.default
         // lstat view: a symlink is copied as a link and never followed, so link cycles and dangling links need no special case
         guard itemExists(src) else {
@@ -157,7 +161,7 @@ extension TransferNode {
             } catch {
                 throw TransferError(.external, "Could not read folder:\(error.localizedDescription)", path: src.path)
             }
-            manifest?.record(src, dst)
+            run.manifest?.record(src, dst)
             for child in children {
                 let childDst = dst.appendingPathComponent(child.lastPathComponent)
                 if merge, itemExists(childDst) {
@@ -165,13 +169,14 @@ extension TransferNode {
                         // Merge semantics: a same-named source file overwrites the target (documented contract promise)
                         try? fm.removeItem(at: childDst)
                     }
+                } else if merge {
+                    run.noteCreated(childDst)
                 }
-                try await copyRecursive(from: child, to: childDst, merge: merge,
-                                        flag: flag, progress: progress, manifest: manifest)
+                try await copyRecursive(from: child, to: childDst, merge: merge, run: run)
             }
         } else {
-            try await copyOneFile(from: src, to: dst, flag: flag, progress: progress)
-            manifest?.record(src, dst)
+            try await copyOneFile(from: src, to: dst, flag: run.flag, progress: run.progress)
+            run.manifest?.record(src, dst)
         }
     }
 
@@ -190,7 +195,10 @@ extension TransferNode {
         }
     }
 
-    private func verifyCopy(of src: URL, against manifest: CopyManifest, flag: CancelFlag) async throws {
+    /// Only moves record a manifest: a copy keeps its source, so it has nothing to verify before deleting
+    private func verifyCopy(of src: URL, run: CopyRun) async throws {
+        guard let manifest = run.manifest else { return }
+        let flag = run.flag
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, any Error>) in
             ioQueue.async {
                 do {
@@ -212,6 +220,26 @@ extension TransferNode {
 
     /// Packages such as .app: treating them as one file-level copy unit still works through directory recursion; this only decides progress granularity, and false means recurse
     private func isPackageTreatedAsFile(_ url: URL) -> Bool { false }
+}
+
+/// State of one entry's copy.
+private final class CopyRun: @unchecked Sendable {
+    let flag: CancelFlag
+    let progress: ProgressAggregator
+    let manifest: CopyManifest?
+    private let lock = NSLock()
+    private var created: [URL] = []
+
+    init(flag: CancelFlag, progress: ProgressAggregator, manifest: CopyManifest?) {
+        self.flag = flag; self.progress = progress; self.manifest = manifest
+    }
+
+    func noteCreated(_ url: URL) { lock.lock(); created.append(url); lock.unlock() }
+
+    func removeCreated() throws {
+        lock.lock(); let items = created; lock.unlock()
+        for url in items.reversed() { try discardStaged(url) }
+    }
 }
 
 // MARK: Verification before a move deletes its source
@@ -302,6 +330,21 @@ private func stagingURL(for destination: URL) -> URL {
         .appendingPathComponent(".hspace-transfer-\(UUID().uuidString)")
 }
 
+/// Renames `src` to `dst`, failing if `dst` exists by then.
+private func renameExclusive(_ src: URL, to dst: URL) throws {
+    var failure: Int32 = 0
+    if renamex_np(src.path, dst.path, UInt32(RENAME_EXCL)) != 0 {
+        failure = errno
+        if failure == ENOTSUP || failure == EINVAL {
+            // File systems without RENAME_EXCL (exFAT, SMB)
+            failure = itemExists(dst) ? EEXIST : (rename(src.path, dst.path) == 0 ? 0 : errno)
+        }
+    }
+    guard failure == 0 else {
+        throw TransferError(.external, "Could not finish:\(String(cString: strerror(failure)))", path: dst.path)
+    }
+}
+
 /// Puts `staged` at `target`. On return `staged` holds the old target, for the caller to discard.
 private func swapIn(_ staged: URL, over target: URL) throws {
     if renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 { return }
@@ -349,9 +392,9 @@ private func discardStaged(_ staged: URL) throws {
 private final class CopyContext {
     let flag: CancelFlag
     let progress: ProgressAggregator
-    let dstPath: String
-    init(flag: CancelFlag, progress: ProgressAggregator, dstPath: String) {
-        self.flag = flag; self.progress = progress; self.dstPath = dstPath
+    let srcPath: String
+    init(flag: CancelFlag, progress: ProgressAggregator, srcPath: String) {
+        self.flag = flag; self.progress = progress; self.srcPath = srcPath
     }
 }
 
@@ -361,7 +404,7 @@ private func copyOneFileSync(from src: URL, to dst: URL,
     let state = copyfile_state_alloc()
     defer { copyfile_state_free(state) }
 
-    let box = CopyContext(flag: flag, progress: progress, dstPath: dst.path)
+    let box = CopyContext(flag: flag, progress: progress, srcPath: src.path)
     let ctx = Unmanaged.passRetained(box)
     defer { ctx.release() }
 
@@ -374,7 +417,7 @@ private func copyOneFileSync(from src: URL, to dst: URL,
         if what == COPYFILE_COPY_DATA, stage == COPYFILE_PROGRESS {
             var copied: off_t = 0
             copyfile_state_get(state, UInt32(COPYFILE_STATE_COPIED), &copied)
-            box.progress.currentFile(bytes: Int64(copied), path: box.dstPath)
+            box.progress.currentFile(bytes: Int64(copied), path: box.srcPath)
         }
         return Int32(COPYFILE_CONTINUE)
     }
@@ -404,5 +447,6 @@ private func copyOneFileSync(from src: URL, to dst: URL,
         let attrs = try? FileManager.default.attributesOfItem(atPath: dst.path)
         size = off_t((attrs?[.size] as? Int64) ?? 0)
     }
-    progress.fileFinished(bytes: Int64(size), path: dst.path)
+    // Progress names the source: the destination is a temporary name until the entry commits
+    progress.fileFinished(bytes: Int64(size), path: src.path)
 }
