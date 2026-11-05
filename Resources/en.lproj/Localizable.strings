@@ -464,3 +464,9 @@
 "settings.kind.reset" = "Reset to Defaults";
 "settings.kind.resetTitle" = "Reset the kind groups?";
 "settings.kind.resetBody" = "Your groups are replaced by the starting list.";
+"menu.alwaysOpenWith" = "Always Open With";
+"defaultApp.confirmTitle" = "Always open every %1$@ with %2$@?";
+"defaultApp.confirmBody" = "This changes the default app across your Mac, in Finder too.";
+"defaultApp.confirm" = "Change All";
+"undo.defaultApp" = "Change Default App";
+"toast.defaultApp" = "%1$@ now opens with %2$@";

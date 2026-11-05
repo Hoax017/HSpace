@@ -50,6 +50,8 @@ final class FileOpsCoordinator {
     private(set) lazy var metadataActions = MetadataActions(coordinator: self)
     /// Keeps Finder's Get Info in step with comments changed here
     var finderComments: any FinderCommentPushing = OsascriptFinderComments()
+    /// Where "always open with" lands
+    var defaultAppRegistry: any DefaultAppRegistry = SystemDefaultApps()
 
     /// Records one access (file opened/folder entered) so Spotlight-style search can rank by usage. Fire-and-forget async commit to the actor.
     func recordAccess(_ url: URL) {

@@ -186,7 +186,7 @@ New pod `FileMetadata`.
 - [x] **L03** (M) File colours and rules
 - [x] **L04** (M) Custom folder icons and emoji, folder styles
 - [x] **L05** (M) Kind groups with a manager
-- [ ] **L06** (S) Set default app per file kind
+- [x] **L06** (S) Set default app per file kind
 
 ### Lane 2: Batch tools
 
@@ -377,6 +377,9 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Sort by Kind with Use Groups on, in list and icon views: headers show the kind groups in the manager's order, with Other last
 - [ ] Right-click a kind header, Show Only This Group, then Show All Groups
 - [ ] Settings, Kind Groups: rename, edit matches, reorder, add and remove. Open panes regroup at once. Reset to Defaults asks first
+- [ ] Open With, Always Open With: it asks first, then a double-click and Finder both use the new app. Undo puts the old app back
+- [ ] Always Open With, Other: choose an app outside the list
+- [ ] Always Open With is absent for folders and for files of an unknown kind
 
 ### Needs a decision
 

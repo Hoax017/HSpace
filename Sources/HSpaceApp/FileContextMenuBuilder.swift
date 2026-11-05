@@ -45,7 +45,7 @@ enum FileContextMenuBuilder {
         add(menu, "menu.open", #selector(FileListViewController.openSelected(_:)), target,
             symbol: "arrow.up.forward.app")
         if let single {
-            menu.addItem(openWithSubmenu(for: single.url, target: target))
+            menu.addItem(openWithSubmenu(for: single, target: target))
         }
         menu.addItem(.separator())
 
@@ -112,7 +112,8 @@ enum FileContextMenuBuilder {
 
     // MARK: Open With submenu (lists apps + icons + default marker + Other…)
 
-    private static func openWithSubmenu(for url: URL, target: AnyObject) -> NSMenuItem {
+    private static func openWithSubmenu(for file: FileItem, target: AnyObject) -> NSMenuItem {
+        let url = file.url
         let item = NSMenuItem(title: L10n.t("menu.openWith"), action: nil, keyEquivalent: "")
         item.image = NSImage(systemSymbolName: "app.dashed", accessibilityDescription: nil)
         let submenu = NSMenu()
@@ -138,6 +139,7 @@ enum FileContextMenuBuilder {
                                keyEquivalent: "")
         other.target = target
         submenu.addItem(other)
+        MetadataMenu.addDefaultAppEntries(to: submenu, file: file, apps: apps, target: target)
         item.submenu = submenu
         return item
     }

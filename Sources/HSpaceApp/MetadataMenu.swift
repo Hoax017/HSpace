@@ -116,6 +116,40 @@ enum MetadataMenu {
         menu.addItem(sort)
     }
 
+    /// The kind a file can set a default app for, or nil
+    static func defaultAppKind(of file: FileItem) -> String? {
+        guard !file.isDirectory, DefaultApps.canChange(typeID: file.contentTypeID) else { return nil }
+        return file.contentTypeID
+    }
+
+    /// "Always Open With" under Open With, with the same apps plus a chooser
+    static func addDefaultAppEntries(to menu: NSMenu, file: FileItem, apps: [URL], target: AnyObject) {
+        guard let typeID = defaultAppKind(of: file),
+              let actions = (target as? MetadataMenuHost)?.coordinator?.metadataActions else { return }
+        let kindName = Formatters.kind(forTypeID: typeID, isDirectory: false)
+        let parent = NSMenuItem(title: L10n.t("menu.alwaysOpenWith"), action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        for app in apps {
+            let item = NSMenuItem(title: FileManager.default.displayName(atPath: app.path),
+                                  action: #selector(MetadataActions.chooseDefaultApp(_:)), keyEquivalent: "")
+            item.target = actions
+            let icon = NSWorkspace.shared.icon(forFile: app.path)
+            icon.size = NSSize(width: 16, height: 16)
+            item.image = icon
+            item.representedObject = MetadataActions.DefaultAppChoice(typeID: typeID, kindName: kindName, app: app)
+            submenu.addItem(item)
+        }
+        if !apps.isEmpty { submenu.addItem(.separator()) }
+        let other = NSMenuItem(title: L10n.t("openWith.other"),
+                               action: #selector(MetadataActions.chooseOtherDefaultApp(_:)), keyEquivalent: "")
+        other.target = actions
+        other.representedObject = MetadataActions.DefaultAppChoice(typeID: typeID, kindName: kindName, app: nil)
+        submenu.addItem(other)
+        parent.submenu = submenu
+        menu.addItem(.separator())
+        menu.addItem(parent)
+    }
+
     /// Finder's seven, then recent tags and those in view
     static func offeredTags(host: MetadataMenuHost, extra: [[FinderTag]]) -> [FinderTag] {
         let inView = host.metadataModel.metadata.values.map(\.tags)
@@ -137,6 +171,12 @@ final class MetadataActions: NSObject {
     struct EditTarget {
         let items: [FileItem]
         let host: MetadataMenuHost
+    }
+
+    struct DefaultAppChoice {
+        let typeID: String
+        let kindName: String
+        let app: URL?
     }
 
     struct ColorChoice {
@@ -220,6 +260,21 @@ final class MetadataActions: NSObject {
         CommentSheet.present(start: start, title: title, in: window) { [weak self] text in
             self?.coordinator?.applyMetadata(.comment(text), to: urls, actionName: L10n.t("undo.comment"))
         }
+    }
+
+    @objc func chooseDefaultApp(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? DefaultAppChoice, let app = choice.app else { return }
+        coordinator?.confirmDefaultApp(typeID: choice.typeID, kindName: choice.kindName, app: app)
+    }
+
+    @objc func chooseOtherDefaultApp(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? DefaultAppChoice else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        guard panel.runModal() == .OK, let app = panel.url else { return }
+        coordinator?.confirmDefaultApp(typeID: choice.typeID, kindName: choice.kindName, app: app)
     }
 
     nonisolated static func isFolder(_ item: FileItem) -> Bool { item.isDirectory && !item.isPackage }
