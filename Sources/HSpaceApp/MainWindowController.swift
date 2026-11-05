@@ -196,6 +196,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         // so third-party "open file location" such as Antigravity reached the parent directory without selecting the file). The pending mechanism handles the first async directory read race.
         if let select { grid.activePane.reveal(select) }
         installKeyMonitor()
+        ProblemAlert.show(ViewStylesHost.store.takeProblem())
     }
 
     @available(*, unavailable)
@@ -306,7 +307,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
     }
 
     /// Sync deck controls (fed back after active pane/location/layout/selection changes)
-    private func syncDeck() {
+    func syncDeck() {
         let pane = grid.activePane
         let b = pane.activeTab.browser
         deck.syncViewMode(pane.activeTab.viewMode.rawValue)
@@ -461,6 +462,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         if let enabled = BatchToolsMenu.validate(item, in: self) { return enabled }
         if let enabled = TemplateMenu.validate(item, in: self) { return enabled }
         if let enabled = DetailPanelMenu.validate(item, in: self) { return enabled }
+        if let enabled = ViewStyleMenu.validate(item, in: self) { return enabled }
         if item.action == #selector(switchWorkspaceByNumber(_:)) {
             item.state = item.tag == workspaces.activeIndex ? .on : .off
             return item.tag < workspaces.count

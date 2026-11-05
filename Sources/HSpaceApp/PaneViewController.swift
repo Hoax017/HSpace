@@ -1,6 +1,7 @@
 import AppKit
 import HSpaceContracts
 import SessionStore
+import ViewStyles
 
 /// Pane content view mode (M9: independent per pane; ⌘1 icons / ⌘2 list / ⌘3 columns)
 enum PaneViewMode: Int {
@@ -21,6 +22,8 @@ final class PaneViewController: NSViewController {
         var viewMode: PaneViewMode = .list
         var iconVC: FileIconGridViewController?
         var columnVC: FileColumnViewController?
+        /// The pane's own view options, while a folder rule has replaced them
+        var styleBaseline: ViewStyle?
 
         init(browser: BrowserState, model: DirectoryViewModel, listVC: FileListViewController) {
             self.browser = browser
@@ -236,6 +239,10 @@ final class PaneViewController: NSViewController {
         model.addOnUpdate { [weak self, weak model] in
             guard let self, self.tab?.model === model else { return }
             self.syncTagFilterPill()
+        }
+        model.onViewOptionsChange = { [weak self, weak model] in
+            guard let self, self.tab?.model === model else { return }
+            self.rememberViewChange()
         }
         let listVC = FileListViewController(model: model)
         listVC.coordinator = coordinator
@@ -544,7 +551,9 @@ final class PaneViewController: NSViewController {
     }
 
     private func applyLocation() {
+        let styledMode = prepareFolderStyle(for: activeTab.browser.current)
         activeTab.model.navigate(to: activeTab.browser.current)
+        finishFolderStyle(styledMode)
         // Column mode: keep the column chain in step (drill-down along the chain extends in place; a jump rebuilds the chain)
         if activeTab.viewMode == .columns {
             activeTab.columnVC?.showDirectory(activeTab.browser.current)
@@ -554,7 +563,7 @@ final class PaneViewController: NSViewController {
 
     // MARK: View mode switching (M9: ⌘1 icons / ⌘2 list / ⌘3 columns; selection carried over by URL set)
 
-    func setViewMode(_ mode: PaneViewMode) {
+    func setViewMode(_ mode: PaneViewMode, takeFocus: Bool = true) {
         guard activeTab.viewMode != mode else { return }
         let carried = currentSelectionURLs()
         // Switching view mode mid-read: the pending reveal is still on the old view; unless moved it is lost for good,
@@ -564,8 +573,9 @@ final class PaneViewController: NSViewController {
         mountActiveTab()
         restoreSelection(carried)
         if let carriedReveal { revealAfterLoad(carriedReveal.url, rename: carriedReveal.rename) }
-        view.window?.makeFirstResponder(focusTarget)
+        if takeFocus { view.window?.makeFirstResponder(focusTarget) }
         updateStatusCounts()
+        rememberViewChange()
     }
 
     /// Takes the pending reveal from the current view (for relocation on view mode switch)
@@ -623,6 +633,8 @@ final class PaneViewController: NSViewController {
         if let raw = st.viewMode, let vm = PaneViewMode(rawValue: raw) {
             fresh.viewMode = vm
         }
+        // The snapshot holds what the rule gave; what comes back on leaving the folder is the default
+        if ViewStylesHost.store.rule(for: url.path) != nil { fresh.styleBaseline = Self.defaultStyle }
         if isViewLoaded {
             mountActiveTab()
             refreshChrome()
@@ -769,7 +781,8 @@ final class PaneViewController: NSViewController {
         // Without turning them on we'd jump to the parent and select nothing, which to the user looks like "Return did nothing".
         // Turn on hidden files for this pane (per pane, ⌘⇧. turns it off any time) so the user really sees what they asked for.
         if Self.isHiddenItem(fileURL), !activeTab.model.includeHidden {
-            activeTab.model.includeHidden = true
+            // Not a view change of the folder being left, so no rule takes it up
+            activeTab.model.setViewOptions(sort: activeTab.model.sort, includeHidden: true)
         }
         let parent = fileURL.deletingLastPathComponent()
         navigate(to: parent)

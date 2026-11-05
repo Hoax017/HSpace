@@ -782,3 +782,22 @@
 "inspector.unreadable" = "Could not be read";
 "inspector.atLeast" = "At least %@";
 "inspector.problem" = "Problem";
+
+/* View options per folder and saved styles (L22) */
+"menu.viewOptions" = "View Options";
+"menu.rememberFolderView" = "Remember for This Folder";
+"menu.ruleIncludesSubfolders" = "Include Subfolders";
+"menu.saveViewStyle" = "Save View as Style…";
+"menu.manageViewStyles" = "Manage Styles…";
+"viewStyle.saveTitle" = "Save View as Style";
+"viewStyle.renameTitle" = "Rename Style";
+"viewStyle.namePlaceholder" = "Style name";
+"viewStyle.managerTitle" = "View Styles";
+"viewStyle.rename" = "Rename…";
+"viewStyle.remove" = "Remove";
+"viewStyle.column.name" = "Name";
+"viewStyle.column.type" = "Type";
+"viewStyle.kind.style" = "Saved style";
+"viewStyle.kind.folder" = "Folder";
+"viewStyle.kind.folderAndBelow" = "Folder and below";
+"viewStyle.deleteQuestion" = "Remove the style \"%@\"?";

@@ -35,8 +35,25 @@ final class DirectoryViewModel {
     private(set) var items: [FileItem] = []
     private(set) var isLoading = false
 
-    var includeHidden = false { didSet { reload() } }
-    var sort = SortSpec() { didSet { reload() } }
+    var includeHidden = false { didSet { viewOptionsChanged() } }
+    var sort = SortSpec() { didSet { viewOptionsChanged() } }
+    /// The user or a command changed the sort or hidden files. Not called for `setViewOptions`.
+    var onViewOptionsChange: (() -> Void)?
+    private var settingViewOptions = false
+
+    private func viewOptionsChanged() {
+        guard !settingViewOptions else { return }
+        reload()
+        onViewOptionsChange?()
+    }
+
+    /// Sets both without reading the folder, for a caller about to navigate or reload
+    func setViewOptions(sort: SortSpec, includeHidden: Bool) {
+        settingViewOptions = true
+        self.sort = sort
+        self.includeHidden = includeHidden
+        settingViewOptions = false
+    }
 
     /// Tags of this directory's items. Decoration: read after each snapshot, and a failed read only means no dots.
     private(set) var metadata: [URL: ItemMetadata] = [:]

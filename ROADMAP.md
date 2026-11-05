@@ -207,7 +207,7 @@ Owns the view controllers and `Sources/Pods/IconThumb`.
 
 - [x] **L20** (L) Side preview panel, with configurable actions
 - [x] **L21** (L) File inspector panel
-- [ ] **L22** (M) View options per folder, and saved view styles with a manager
+- [x] **L22** (M) View options per folder, and saved view styles with a manager
 - [ ] **L23** (M) Custom hidden items and exclusion rules
 - [ ] **L24** (M) Folder sizes in list view, with a setting
 - [ ] **L25** (M) Icon view options: size, spacing, label position
@@ -458,6 +458,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Select a big folder: "Calculating…", then the size. Move on while it counts: it stops, with no CPU left running
 - [ ] Select several items with a folder among them: the total arrives, or says "At least" when part cannot be read
 - [ ] Values can be selected and copied; VoiceOver reads each with its label
+- [ ] View > View Options > Remember for This Folder: set icons sorted by size, leave, come back: the view returns. Other folders keep the pane's own view, also after Back
+- [ ] Include Subfolders: subfolders follow, until one has its own rule
+- [ ] Change the view in a remembered folder: the change sticks. Quit and reopen: it is still there
+- [ ] Save View as Style, apply it elsewhere from the menu. A duplicate or blank name is refused with a message
+- [ ] Manage Styles: rename, remove (asks first), forget a folder; keyboard and VoiceOver work in the sheet
 
 ### Overall feel
 
