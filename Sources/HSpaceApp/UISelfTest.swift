@@ -1,9 +1,10 @@
+#if DEBUG
 import AppKit
 import HSpaceContracts
 import SearchEngine
 import Frecency
 
-/// UI self-test channel (runs automatically after launch when HSPACE_UITEST=1; not a product path, gated by an environment variable).
+/// UI self-test channel (runs automatically after launch when HSPACE_UITEST=1; not a product path, compiled into debug builds only).
 /// Needs no Accessibility or Screen Recording permission: scenarios are driven programmatically, screenshots are self-rendered (cacheDisplay),
 /// assertions are written to /tmp/hspace-ui/report.txt, and the process exits with 0/1 based on the result when done.
 @MainActor
@@ -21,8 +22,11 @@ enum UISelfTest {
     }()
     private static var lines: [String] = []
     private static var failed = false
+    private static var userClipboard: PasteboardSnapshot?
 
     static func run(delegate: AppDelegate) {
+        DefaultsSandbox.standard.begin()
+        userClipboard = PasteboardSnapshot(of: .general)
         // Watchdog: if any scenario's await hangs (waiting on an interactive sheet, say), force a FAIL finish after 180 s; never hang forever
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(180))
@@ -3558,6 +3562,17 @@ enum UISelfTest {
         }
         let report = lines.joined(separator: "\n") + "\n"
         try? report.data(using: .utf8)?.write(to: outDir.appendingPathComponent("report.txt"))
+        userClipboard?.restore(to: .general)
+        DefaultsSandbox.standard.end()
         exit(failed ? 1 : 0)
     }
 }
+
+#else
+
+/// Release builds carry no self-test, only the one flag product code asks about.
+enum UISelfTest {
+    static var isEnabled: Bool { false }
+}
+
+#endif

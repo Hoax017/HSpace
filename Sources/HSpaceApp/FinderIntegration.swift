@@ -54,12 +54,7 @@ enum FinderIntegration {
     }
 
     static var revealHandler: RevealHandler {
-        guard let id = CFPreferencesCopyValue("NSFileViewer" as CFString,
-                                              kCFPreferencesAnyApplication,
-                                              kCFPreferencesCurrentUser,
-                                              kCFPreferencesAnyHost) as? String, !id.isEmpty else {
-            return .finder
-        }
+        guard let id = RevealSetting.system.handler else { return .finder }
         if id == "com.hoax017.hspace" { return .hspace }
         let resolvable = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) != nil
         return .other(id: id, resolvable: resolvable)
@@ -67,11 +62,12 @@ enum FinderIntegration {
 
     /// Turn Reveal takeover on/off: writes/removes the global NSFileViewer key (takes effect at once, no system component restart needed)
     static func setRevealTakeover(_ on: Bool) {
-        CFPreferencesSetValue("NSFileViewer" as CFString,
-                              on ? "com.hoax017.hspace" as CFString : nil,
-                              kCFPreferencesAnyApplication,
-                              kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
-        CFPreferencesSynchronize(kCFPreferencesAnyApplication,
-                                 kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        RevealSetting.system.set(handler: on ? "com.hoax017.hspace" : nil)
+    }
+
+    /// Gives Reveal back to Finder from any state, including `.other`, where the takeover checkbox cannot do it.
+    /// Throws `RevealSettingError` if the setting did not change.
+    static func restoreSystemReveal() throws {
+        try RevealSetting.system.restoreSystemDefault()
     }
 }

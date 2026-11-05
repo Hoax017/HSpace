@@ -43,8 +43,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         self.coordinator = FileOpsCoordinator(kernel: kernel, grid: grid)
         self.coordinator.frecencyStore = frecencyStore   // M28: app-wide open/enter accounting
         self.coordinator.trashLedger = trashLedger       // "Put Back" ledger (same instance app-wide)
-        let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("HSpace")
+        let supportDir = AppDelegate.supportDirectory
         let model = SidebarModel(bookmarkStore: BookmarkStore(directory: supportDir))
         self.sidebar = SidebarViewController(model: model)
         self.stashShelf = StashShelfController(store: StashStore(directory: supportDir))

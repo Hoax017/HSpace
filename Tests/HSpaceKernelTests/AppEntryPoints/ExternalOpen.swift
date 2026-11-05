@@ -1,0 +1,1 @@
+../../../Sources/HSpaceApp/ExternalOpen.swift

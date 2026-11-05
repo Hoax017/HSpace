@@ -31,9 +31,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static var supportDirectory: URL {
         let real = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("HSpace")
-        return ProcessInfo.processInfo.environment["HSPACE_UITEST"] != nil
-            ? FileManager.default.temporaryDirectory.appendingPathComponent("hspace-uitest-support")
-            : real
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["HSPACE_UITEST"] != nil {
+            return FileManager.default.temporaryDirectory.appendingPathComponent("hspace-uitest-support")
+        }
+        #endif
+        return real
     }
     /// State changes are not persisted until restore finishes (stops startup from overwriting the last session with a half-built one)
     private var sessionReady = false
@@ -42,9 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// arrives early and synchronously from LaunchServices: when "Reveal in Finder" launches a stopped HSpace, the request lands with zero windows,
     /// activeMainWindowController() returns nil, and it drops into the new-window branch; session restore then opens its own window,
     /// so the user gets an extra window despite having chosen new tab. Queue here and route normally once restore is done.
-    private var pendingExternalOpens: [URL] = []
+    private var pendingExternalOpens: [ExternalRequest] = []
+    private let externalOpenWorker = ExternalOpenWorker()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ExternalOpenHistory.purgeStoredPath(from: .standard)
         NSApp.mainMenu = MainMenu.build()
         Theme.applyAppearance()   // Appearance: apply light/dark mode at launch (system/light/dark)
         // M28: usage-based ranking; the search panel shares the same frecencyStore (app-wide accounting lives in each window coordinator)
@@ -63,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await kernel.register(EraserNode(), for: [.delete])
             await kernel.setArbiter(conflictSheet)
             ProgressWindowController.shared.start(kernel: kernel)
+            #if DEBUG
             // Performance self-check entry (for north star acceptance, not a product path): HSPACE_PERF_DIRS=a:b:c:d navigates each quad pane to one directory
             if let spec = ProcessInfo.processInfo.environment["HSPACE_PERF_DIRS"], !spec.isEmpty {
                 let dirs = spec.split(separator: ":").map { URL(fileURLWithPath: String($0)) }
@@ -74,9 +80,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 await restoreSessionOrDefault()
             }
+            #else
+            await restoreSessionOrDefault()
+            #endif
             sessionReady = true
             flushPendingExternalOpens()   // I-60: deliver the external opens queued during restore (windows exist now)
             NSApp.activate()
+            #if DEBUG
             if UISelfTest.isEnabled {
                 UISelfTest.run(delegate: self)
             } else if ProcessInfo.processInfo.environment["HSPACE_CONFLICT_PREVIEW"] != nil {
@@ -89,9 +99,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Permissions prompt: not granted and "Don't ask again" unticked -> show one sheet once the main window is ready (self-test/perf runs are left alone)
                 promptFullDiskAccessIfNeeded()
             }
+            #else
+            promptFullDiskAccessIfNeeded()
+            #endif
         }
     }
 
+    #if DEBUG
     /// Live conflict sheet preview (HSPACE_CONFLICT_PREVIEW): builds 3 conflicts in private fixtures and shows the real sheet for screenshots.
     /// Sandbox hard rule: only touch our own fixtures under temporaryDirectory, never the user's real files.
     private func presentConflictPreview() {
@@ -137,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? fm.setAttributes([.modificationDate: date], ofItemAtPath: f.path)
             }
         }
+        DefaultsSandbox.standard.begin()   // Undone at quit, so the preview does not leave grouping on for the user
         Preferences.listGrouping = true
         let pane = wc.grid.activePane
         pane.setViewMode(.icons)
@@ -148,6 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             wc.window?.makeKeyAndOrderFront(nil)
         }
     }
+    #endif
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
@@ -176,72 +192,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// open-URL routing: directory -> open a window there; file -> parent directory with the file selected (the Finder replacement entry).
+    /// hspace:// links (I-25 third-party integration) can only navigate: hspace://open?path=<directory> / hspace://reveal?path=<item>.
     /// Open mode (externalOpenTarget): anything but newWindow, with a window present -> reuse that window and open a new workspace tab there.
     func application(_ application: NSApplication, open urls: [URL]) {
-        var fileURLs: [URL] = []
-        for url in urls {
-            // hspace:// scheme (I-25 third-party integration): hspace://open?path=… / hspace://reveal?path=…
-            if url.scheme == "hspace" {
-                if let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
-                   let path = comps.queryItems?.first(where: { $0.name == "path" })?.value {
-                    fileURLs.append(URL(fileURLWithPath: path))
-                }
-                continue
-            }
-            fileURLs.append(url)
-        }
-        openFileURLs(fileURLs)
+        routeExternalOpens(urls.map { $0.scheme?.lowercased() == "hspace" ? HSpaceURL.parse($0) : .system($0) })
     }
 
     /// Services menu entry (Finder context menu > Services > Open with HSpace; I-25)
     @objc func openInHSpace(_ pboard: NSPasteboard, userData: String, error: NSErrorPointer) {
         let urls = (pboard.readObjects(forClasses: [NSURL.self]) as? [URL]) ?? []
-        openFileURLs(urls)
+        routeExternalOpens(urls.map { .system($0) })
         NSApp.activate()
     }
 
-    private func openFileURLs(_ urls: [URL]) {
-        // External-open audit breadcrumb (I-28 NSFileViewer chain diagnostics; a single overwritten key, so volume stays tiny)
-        if let first = urls.first {
-            UserDefaults.standard.set("\(Date().timeIntervalSince1970)|\(first.path)", forKey: "debug.lastExternalOpen")
-        }
+    private func routeExternalOpens(_ requests: [ExternalRequest]) {
         // I-60: routing before the session is restored (zero windows) would only open a surplus window. Queue first.
         guard sessionReady else {
-            pendingExternalOpens.append(contentsOf: urls)
+            pendingExternalOpens.append(contentsOf: requests)
             return
         }
-        // **Merge by parent directory** before routing: a single "Reveal in Finder" often brings several files from one directory
-        // (5 attachments picked in WeChat, a multi-file browser download). Opening one destination per URL would,
-        // since v0.19.26, duplicate a whole layout per destination: 20 pane rebuilds in a quad layout.
-        // Open each directory once, so destinations drop from "number of files" to "number of directories".
-        var dirOrder: [URL] = []
-        var picks: [URL: URL] = [:]     // Directory -> first file to select in it (nil = destination is the directory itself)
-        for url in urls {
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { continue }
-            let directory = isDir.boolValue ? url : url.deletingLastPathComponent()
-            if !dirOrder.contains(directory) { dirOrder.append(directory) }
-            if !isDir.boolValue, picks[directory] == nil { picks[directory] = url }
-        }
-        for directory in dirOrder {
-            let selecting = picks[directory]
-            if Preferences.externalOpenTarget != "newWindow", let wc = activeMainWindowController() {
-                // New **workspace tab** in the existing window (default, user request): reuse the active window and point the active pane at the target directory.
-                // Before v0.19.26 this used pane.openNewTab: it pushed a tab into the pane, whose tab bar is hidden by default,
-                // so every external open piled up somewhere invisible (one user session reached 5 tabs in a pane),
-                // impossible to close or return to. The workspace tab strip is always shown and has close buttons, so tabs landing there can be seen and closed.
-                //
-                // allowEvictingOldest: false: this open comes from **another app**. At the workspace limit we would
-                // rather navigate in place than evict the user's oldest workspace because some app hit "Reveal in Finder".
-                wc.openWorkspaceTab(at: directory, allowEvictingOldest: false)
-                if let selecting { wc.grid.activePane.reveal(selecting) }
-                wc.window?.makeKeyAndOrderFront(nil)
-                NSApp.activate()
-            } else if let selecting {
-                openWindow(at: directory, selecting: selecting)
-            } else {
-                openWindow(at: directory)
+        guard !requests.isEmpty else { return }
+        // The disk is only read off the main thread: a path on a dead mount or the automounter would otherwise freeze the app
+        Task { @MainActor in
+            guard let plan = await externalOpenWorker.run({ ExternalOpenPlanner.plan(requests) }) else {
+                reportExternalOpenRejection(.timedOut)
+                return
             }
+            for destination in plan.destinations { openExternalDestination(destination) }
+            if let rejection = plan.rejections.first { reportExternalOpenRejection(rejection) }
+        }
+    }
+
+    private func reportExternalOpenRejection(_ rejection: ExternalOpenRejection) {
+        Toast.show(rejection.message, in: activeMainWindowController()?.window)
+    }
+
+    private func openExternalDestination(_ destination: ExternalDestination) {
+        let directory = destination.directory
+        let selecting = destination.selecting
+        if Preferences.externalOpenTarget != "newWindow", let wc = activeMainWindowController() {
+            // New **workspace tab** in the existing window (default, user request): reuse the active window and point the active pane at the target directory.
+            // Before v0.19.26 this used pane.openNewTab: it pushed a tab into the pane, whose tab bar is hidden by default,
+            // so every external open piled up somewhere invisible (one user session reached 5 tabs in a pane),
+            // impossible to close or return to. The workspace tab strip is always shown and has close buttons, so tabs landing there can be seen and closed.
+            //
+            // allowEvictingOldest: false: this open comes from **another app**. At the workspace limit we would
+            // rather navigate in place than evict the user's oldest workspace because some app hit "Reveal in Finder".
+            wc.openWorkspaceTab(at: directory, allowEvictingOldest: false)
+            if let selecting { wc.grid.activePane.reveal(selecting) }
+            wc.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+        } else if let selecting {
+            openWindow(at: directory, selecting: selecting)
+        } else {
+            openWindow(at: directory)
         }
     }
 
@@ -324,10 +328,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func restoreSessionOrDefault() async {
         // UITEST isolation: self-test assertions rely on a deterministic initial state (single workspace, default layout), not the real user session;
         // frame persistence scenarios (SETFRAME/EXPECTFRAME) use the separate windowFrame key and are unaffected
+        #if DEBUG
         if ProcessInfo.processInfo.environment["HSPACE_UITEST"] != nil {
             openWindow(at: FileManager.default.homeDirectoryForCurrentUser)
             return
         }
+        #endif
         guard let snapshot = await sessionStore.load(), !snapshot.windows.isEmpty else {
             openWindow(at: FileManager.default.homeDirectoryForCurrentUser)
             return
@@ -344,6 +350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         first?.window?.makeKeyAndOrderFront(nil)
     }
 
+    #if DEBUG
     /// UISelfTest (I-60): number of queued external opens / whether the session is ready
     var uiTestPendingExternalOpenCount: Int { pendingExternalOpens.count }
     var uiTestSessionReady: Bool { sessionReady }
@@ -358,13 +365,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// UISelfTest (I-60): flush the queue by hand (simulates session restore finishing)
     func uiTestFlushPendingExternalOpens() { flushPendingExternalOpens() }
+    #endif
 
     /// I-60: deliver external opens queued during session restore (windows exist now, so the normal "new workspace tab in existing window" branch applies)
     private func flushPendingExternalOpens() {
         guard !pendingExternalOpens.isEmpty else { return }
         let queued = pendingExternalOpens
         pendingExternalOpens = []
-        openFileURLs(queued)
+        routeExternalOpens(queued)
     }
 
     /// Request to persist state (called on location/layout/workspace changes; SessionStore debounces and merges over 1s internally)
@@ -390,6 +398,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             done.signal()
         }
         _ = done.wait(timeout: .now() + 1)
+        #if DEBUG
+        DefaultsSandbox.standard.end()
+        #endif
         // Force preferences to disk so the last writes (window size, sidebar width, column visibility, etc.)
         // are persisted before the process exits (a fallback for cfprefsd not having flushed asynchronously)
         UserDefaults.standard.synchronize()
