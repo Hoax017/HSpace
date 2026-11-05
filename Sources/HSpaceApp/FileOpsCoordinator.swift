@@ -171,8 +171,8 @@ final class FileOpsCoordinator {
         guard !victims.isEmpty else { return }
         run(OperationSpec(kind: .delete, sources: victims, destination: trash)) { [weak self] receipt in
             guard let self, let receipt else { return }
-            // Void the matching ledger entries too (those destinations no longer exist)
-            if let led = self.trashLedger { Task { await led.forget(victims) } }
+            // Void the ledger entries of what was really erased; failed items are still in the Trash
+            if let led = self.trashLedger { Task { await led.forgetErased(victims, receipt: receipt) } }
             if receipt.failures.isEmpty {
                 Toast.show(L10n.f("toast.trashEmptied", receipt.filesDone), in: self.grid?.view.window)
             } else {

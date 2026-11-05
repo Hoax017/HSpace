@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import Eraser
+import HSpaceTestSupport
 import HSpaceContracts
 
 /// Black-box acceptance: real physical I/O on temp fixtures (no fakes or mocks).
@@ -97,6 +98,26 @@ import HSpaceContracts
         #expect(r.failures.count == 1)
         #expect(r.failures.first?.url == ghost)
         #expect(!FileManager.default.fileExists(atPath: real.path))
+    }
+
+    /// The ledger keeps the records of exactly these URLs (C3), so the receipt must name what really stayed.
+    @Test func undeletableItemIsNamedInTheReceipt() async throws {
+        let dir = try FaultFixture.tempDir("hspace-er")
+        defer { FaultFixture.remove(dir) }
+        let locked = dir.appendingPathComponent("locked")
+        let stuck = locked.appendingPathComponent("stuck.txt")
+        let free = dir.appendingPathComponent("free.txt")
+        try FaultFixture.write(to: stuck)
+        try FaultFixture.write(to: free)
+
+        let r = try await FaultFixture.withReadOnly(locked) {
+            try await EraserNode().execute(
+                OperationSpec(kind: .delete, sources: [free, stuck], destination: dir),
+                context: Self.context())
+        }
+        #expect(r.filesDone == 1)
+        #expect(r.failures.map(\.url) == [stuck])
+        #expect(FileManager.default.fileExists(atPath: stuck.path))
     }
 
     @Test func totalFailureThrows() async throws {

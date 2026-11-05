@@ -63,6 +63,13 @@ public actor TrashLedger {
         if changed { persist() }
     }
 
+    /// Forgets what a permanent delete really removed. Items the receipt lists as failed are still in the
+    /// Trash, so they keep their record and stay eligible for Put Back.
+    public func forgetErased(_ victims: [URL], receipt: OperationReceipt) async {
+        let failed = Set(receipt.failures.map { Self.key($0.url) })
+        await forget(victims.filter { !failed.contains(Self.key($0)) })
+    }
+
     /// Closes the record of a restore attempt: dropped only once the item has left the Trash,
     /// so a failed or skipped Put Back can be tried again, including after a restart.
     public func settle(_ step: TrashRestoreStep, for trashedURL: URL) async {

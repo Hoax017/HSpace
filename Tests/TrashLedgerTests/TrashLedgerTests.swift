@@ -81,6 +81,26 @@ import HSpaceTestSupport
         #expect(many.isEmpty)
     }
 
+    // MARK: Empty Trash record lifetime (C3)
+
+    @Test func itemsThatFailedToEraseKeepTheirRecord() async throws {
+        let dir = try FaultFixture.tempDir("hspace-tl-erase")
+        defer { FaultFixture.remove(dir) }
+        let gone = dir.appendingPathComponent("gone.txt")
+        let stuck = dir.appendingPathComponent("stuck.txt")
+        try FaultFixture.write(to: gone)
+        try FaultFixture.write(to: stuck)
+        let led = TrashLedger(directory: dir)
+        await led.record([(original: dir.appendingPathComponent("o/gone.txt"), trashed: gone),
+                          (original: dir.appendingPathComponent("o/stuck.txt"), trashed: stuck)])
+        let receipt = OperationReceipt(id: UUID(), filesDone: 1, bytesDone: 0, duration: 0, failures: [
+            OperationFailure(url: stuck, errorClass: .external, message: "busy"),
+        ])
+        await led.forgetErased([gone, stuck], receipt: receipt)
+        #expect(await led.origin(of: gone) == nil)
+        #expect(await led.origin(of: stuck) != nil)
+    }
+
     // MARK: Put Back record lifetime (C2)
 
     @Test func failedPutBackKeepsTheRecordAcrossRestart() async throws {
