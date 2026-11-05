@@ -3,8 +3,12 @@
 # + empty task window + adding to stash + search panel). Output: /tmp/hspace-ui/{report.txt,*.png}
 set -uo pipefail
 cd "$(dirname "$0")/.."
+# Never touch a running HSpace: it may be mid-copy. Checked before the build, which replaces build/HSpace.app.
+if running=$(pgrep -x HSpace); then
+  echo "HSpace is running (pid $(echo $running)). Quit it, then run ui-smoke.sh again." >&2
+  exit 2
+fi
 ./scripts/build-app.sh debug >/dev/null 2>&1 || { echo "Build failed"; exit 1; }
-pkill -x HSpace 2>/dev/null; sleep 0.5
 rm -rf /tmp/hspace-ui
 
 BIN=build/HSpace.app/Contents/MacOS/HSpace
@@ -306,5 +310,7 @@ require_pass "I-64 subfolder fixture put back"
 echo "==== M17 assertion check complete (exit=$CODE) ===="
 # Test sandbox hard rule wrap-up (I-46 / M28 / I-47): clear UITEST isolated state, never leave test residue in the user's real domain
 defaults delete com.hoax017.hspace "windowFrame.uitest" 2>/dev/null || true
-rm -rf "$TMPDIR/hspace-uitest-support" /tmp/hspace-uitest-support "$TMPDIR/hspace-uitest-frecency" /tmp/hspace-uitest-frecency 2>/dev/null || true
+# TMPDIR can be unset (cron, ssh): under set -u that would abort here and lose $CODE. The app falls back to the same per-user directory.
+TEST_TMP="${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR)}"
+rm -rf "$TEST_TMP/hspace-uitest-support" /tmp/hspace-uitest-support "$TEST_TMP/hspace-uitest-frecency" /tmp/hspace-uitest-frecency 2>/dev/null || true
 exit $CODE
