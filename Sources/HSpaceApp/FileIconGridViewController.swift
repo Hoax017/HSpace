@@ -652,6 +652,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     @objc func moveToTrash(_ sender: Any?) { coordinator?.moveToTrash(selectedURLs) }
     @objc func newFolderHere(_ sender: Any?) { coordinator?.newFolder(in: model.directory, revealIn: self) }
     @objc func editTags(_ sender: Any?) { coordinator?.metadataActions.editTags(of: selectedItems, host: self) }
+    @objc func editComment(_ sender: Any?) { coordinator?.metadataActions.editComment(of: selectedItems) }
     @objc func newFileHere(_ sender: Any?) { coordinator?.newFile(in: model.directory, revealIn: self) }
     @objc func copyToOtherPane(_ sender: Any?) { coordinator?.copyToOtherPane(selectedURLs) }
     @objc func moveToOtherPane(_ sender: Any?) { coordinator?.moveToOtherPane(selectedURLs) }

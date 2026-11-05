@@ -40,6 +40,13 @@ enum MetadataMenu {
         submenu.addItem(edit)
         parent.submenu = submenu
         menu.addItem(parent)
+
+        let comment = NSMenuItem(title: L10n.t("menu.editComment"),
+                                 action: #selector(MetadataActions.editCommentFromMenu(_:)), keyEquivalent: "")
+        comment.target = actions
+        comment.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: nil)
+        comment.representedObject = MetadataActions.EditTarget(items: selection, host: host)
+        menu.addItem(comment)
     }
 
     static func addDirectoryEntries(to menu: NSMenu, target: AnyObject) {
@@ -143,6 +150,34 @@ final class MetadataActions: NSObject {
             guard let edit = final.edit else { return }
             Preferences.rememberTags(final.newTags)
             self?.coordinator?.applyMetadata(edit, to: urls, actionName: L10n.t("undo.tags"))
+        }
+    }
+
+    @objc func editCommentFromMenu(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? EditTarget else { return }
+        editComment(of: target.items)
+    }
+
+    /// Opens the comment editor. As with tags, current values come from disk, and anything unreadable stops here.
+    func editComment(of items: [FileItem]) {
+        guard let coordinator, !items.isEmpty else { NSSound.beep(); return }
+        let window = coordinator.grid?.view.window
+        var comments: [String] = []
+        for item in items {
+            do {
+                comments.append(try Engines.metadata.comment(of: item.url) ?? "")
+            } catch {
+                Toast.show(error.localizedDescription, in: window)
+                return
+            }
+        }
+        guard let window else { return }
+        let start = CommentEditStart(comments: comments)
+        let title = items.count == 1 ? L10n.f("comment.titleOne", items[0].name)
+                                     : L10n.f("comment.titleN", items.count)
+        let urls = items.map(\.url)
+        CommentSheet.present(start: start, title: title, in: window) { [weak self] text in
+            self?.coordinator?.applyMetadata(.comment(text), to: urls, actionName: L10n.t("undo.comment"))
         }
     }
 

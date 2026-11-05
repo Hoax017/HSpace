@@ -189,6 +189,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         ("size", "column.size", 68, 52, true, true),
         ("kind", "column.kind", 92, 64, false, true),
         ("tags", "column.tags", 92, 64, false, true),
+        ("comment", "column.comment", 128, 64, false, false),
     ]
 
     private func addColumn(id: String, title: String, width: CGFloat, min: CGFloat,
@@ -292,7 +293,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         if !rows.isEmpty, !columns.isEmpty { tableView.reloadData(forRowIndexes: rows, columnIndexes: columns) }
     }
 
-    private static let metadataColumnIDs: Set<String> = ["tags"]
+    private static let metadataColumnIDs: Set<String> = ["tags", "comment"]
     /// The Tags column sorts through the model's tag sort, because tags are not part of `SortSpec`
     private static let tagSortKey = "tags"
 
@@ -725,6 +726,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
     @objc func newFileHere(_ sender: Any?) { coordinator?.newFile(in: currentDirectory, revealIn: self) }
     @objc func renameSelected(_ sender: Any?) { beginRenameSelected() }
     @objc func editTags(_ sender: Any?) { coordinator?.metadataActions.editTags(of: selectedItems, host: self) }
+    @objc func editComment(_ sender: Any?) { coordinator?.metadataActions.editComment(of: selectedItems) }
     @objc func copyToOtherPane(_ sender: Any?) { coordinator?.copyToOtherPane(selectedURLs) }
     @objc func moveToOtherPane(_ sender: Any?) { coordinator?.moveToOtherPane(selectedURLs) }
 
@@ -845,7 +847,7 @@ extension FileListViewController: @preconcurrency NSMenuItemValidation {
              #selector(duplicateItems(_:)), #selector(moveToTrash(_:)), #selector(openSelected(_:)),
              #selector(copyToOtherPane(_:)), #selector(moveToOtherPane(_:)),
              #selector(copy(_:)), #selector(cut(_:)), #selector(airdropSelected(_:)),
-             #selector(compressItems(_:)), #selector(editTags(_:)):
+             #selector(compressItems(_:)), #selector(editTags(_:)), #selector(editComment(_:)):
             return hasSelection
         case #selector(extractItems(_:)), #selector(extractItemsTo(_:)):
             return !selectedArchiveURLs.isEmpty
@@ -968,6 +970,8 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.configure(Formatters.kind(forTypeID: item.contentTypeID, isDirectory: item.isDirectory), alignment: .left)
         case "tags":
             cell.configure((model.metadata[item.url]?.tags ?? []).map(\.name).joined(separator: ", "), alignment: .left)
+        case "comment":
+            cell.configure(model.metadata[item.url]?.comment ?? "", alignment: .left)
         default:
             cell.configure("", alignment: .left)
         }

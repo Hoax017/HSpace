@@ -99,5 +99,7 @@
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>HSpace asks Finder to show the comments you set, so they also appear in Finder's Get Info.</string>
 </dict>
 </plist>

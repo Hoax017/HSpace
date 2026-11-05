@@ -4,6 +4,8 @@ import HSpaceContracts
 // FileMetadata pod's sole public contract surface (Axiom 3): metadata the OS and Finder own, kept in the places they read it from.
 // Tags live in the `com.apple.metadata:_kMDItemUserTags` attribute plus the label bits of `com.apple.FinderInfo`, which is
 // exactly what macOS writes itself: a file tagged here shows the same tags in Finder, and the other way round.
+// Comments live in `com.apple.metadata:kMDItemFinderComment`, which is what Spotlight and `mdls` read. Finder's Get Info
+// shows its own copy from the folder's .DS_Store, which only Finder can write, so `FinderCommentPushing` asks Finder to update it.
 
 /// Finder's seven tag colours. The raw value is the number stored after the tag name, and the Finder label number.
 public enum TagColor: Int, Sendable, Codable, CaseIterable {
@@ -44,9 +46,11 @@ public struct MetadataError: ClassifiedError, LocalizedError {
 /// What the pod knows about one item
 public struct ItemMetadata: Sendable, Hashable {
     public var tags: [FinderTag]
+    public var comment: String?
 
-    public init(tags: [FinderTag] = []) {
+    public init(tags: [FinderTag] = [], comment: String? = nil) {
         self.tags = tags
+        self.comment = comment
     }
 }
 
@@ -54,11 +58,14 @@ public struct ItemMetadata: Sendable, Hashable {
 public enum MetadataEdit: Sendable {
     /// Keeps the item's other tags. `remove` holds names, compared without regard to case.
     case tags(add: [FinderTag], remove: Set<String>)
+    /// Replaces the comment. nil or empty removes it.
+    case comment(String?)
 }
 
 /// One stored value, as it was before a change. Giving it back to `restore` undoes the change.
 public enum MetadataValue: Sendable, Hashable {
     case tags([FinderTag])
+    case comment(String?)
 }
 
 public struct MetadataChange: Sendable, Hashable {
@@ -84,6 +91,13 @@ public struct MetadataBatchResult: Sendable {
 }
 
 public typealias MetadataProgress = @Sendable (_ done: Int, _ total: Int) -> Void
+
+/// Tells Finder about a comment, so its Get Info window shows it too. Behind a protocol because the real one sends Apple
+/// Events to Finder, and that needs the user's consent, which tests must not ask for.
+public protocol FinderCommentPushing: Sendable {
+    /// `comment` is empty to clear it. Throws `MetadataError` when Finder could not be told.
+    func push(comment: String, to urls: [URL]) async throws
+}
 
 /// Pure rules for tag lists. No file access.
 public enum TagQuery {

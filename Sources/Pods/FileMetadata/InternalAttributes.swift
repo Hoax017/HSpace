@@ -5,6 +5,7 @@ import HSpaceContracts
 // metadata and tagging it never changes the file it points to.
 
 let tagsAttribute = "com.apple.metadata:_kMDItemUserTags"
+private let commentAttribute = "com.apple.metadata:kMDItemFinderComment"
 private let finderInfoAttribute = "com.apple.FinderInfo"
 private let finderInfoSize = 32
 /// Byte 9 of FinderInfo holds the label number in bits 1 to 3, for files and folders alike
@@ -151,6 +152,36 @@ private func writeLabel(_ color: TagColor, to url: URL) throws {
     } else {
         try writeAttribute(finderInfoAttribute, info, of: url)
     }
+}
+
+// MARK: Comments
+
+/// Throws when the attribute is damaged, for the same reason as `readTags`
+func readComment(of url: URL) throws -> String? {
+    guard let data = try readAttribute(commentAttribute, of: url) else { return nil }
+    let damaged = MetadataError(.external, "The comment of \"\(url.lastPathComponent)\" is damaged, so it was left alone")
+    let value: Any
+    do {
+        value = try PropertyListSerialization.propertyList(from: data, format: nil)
+    } catch {
+        throw damaged
+    }
+    guard let text = value as? String else { throw damaged }
+    return text.isEmpty ? nil : text
+}
+
+func writeComment(_ comment: String?, to url: URL) throws {
+    guard let comment, !comment.isEmpty else {
+        try removeAttribute(commentAttribute, of: url)
+        return
+    }
+    let data: Data
+    do {
+        data = try PropertyListSerialization.data(fromPropertyList: comment, format: .binary, options: 0)
+    } catch {
+        throw MetadataError(.logic, "Could not encode the comment of \"\(url.lastPathComponent)\"")
+    }
+    try writeAttribute(commentAttribute, data, of: url)
 }
 
 func validate(_ tags: [FinderTag]) throws {

@@ -62,6 +62,9 @@ enum InfoPanel {
         if !tags.isEmpty {
             rows.append(row(L10n.t("info.tags"), tags.map(\.name).joined(separator: ", ")))
         }
+        if let comment = (try? Engines.metadata.comment(of: url)) ?? nil {
+            rows.append(row(L10n.t("info.comment"), comment))
+        }
         let fields = NSStackView(views: rows)
         fields.orientation = .vertical
         fields.alignment = .leading

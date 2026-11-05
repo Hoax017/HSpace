@@ -12,6 +12,10 @@ public struct FileMetadata: Sendable {
         try readTags(of: url)
     }
 
+    public func comment(of url: URL) throws -> String? {
+        try readComment(of: url)
+    }
+
     /// Reads many items for display. An item that cannot be read is simply left out: decoration must not hurt the listing.
     /// Throws only `CancellationError`.
     public func read(_ urls: [URL]) async throws -> [URL: ItemMetadata] {
@@ -22,9 +26,8 @@ public struct FileMetadata: Sendable {
                 try Task.checkCancellation()
                 await Task.yield()
             }
-            if let tags = try? readTags(of: url), !tags.isEmpty {
-                result[url] = ItemMetadata(tags: tags)
-            }
+            let found = ItemMetadata(tags: (try? readTags(of: url)) ?? [], comment: try? readComment(of: url))
+            if !found.tags.isEmpty || found.comment != nil { result[url] = found }
         }
         try Task.checkCancellation()
         return result
@@ -44,6 +47,7 @@ public struct FileMetadata: Sendable {
                       progress: MetadataProgress = { _, _ in }) async throws -> MetadataBatchResult {
         switch edit {
         case .tags(let add, _): try validate(add)
+        case .comment: break
         }
         return try await run(urls, progress: progress) { url in
             switch edit {
@@ -53,6 +57,12 @@ public struct FileMetadata: Sendable {
                 guard after != before else { return nil }
                 try writeTags(after, to: url)
                 return MetadataChange(url: url, before: .tags(before))
+            case .comment(let comment):
+                let before = try readComment(of: url)
+                let after = comment?.isEmpty == true ? nil : comment
+                guard after != before else { return nil }
+                try writeComment(after, to: url)
+                return MetadataChange(url: url, before: .comment(before))
             }
         }
     }
@@ -65,6 +75,27 @@ public struct FileMetadata: Sendable {
             guard let value = values[url] else { return nil }
             return try swap(value, on: url)
         }
+    }
+
+    /// Passes the items' stored comments on to Finder, one call per distinct comment. Returns what went wrong:
+    /// the comments are already saved, so this is a warning for the user and not a failed change.
+    public func pushComments(of urls: [URL], using pusher: any FinderCommentPushing) async -> MetadataError? {
+        var groups: [String: [URL]] = [:]
+        for url in urls {
+            do {
+                groups[try readComment(of: url) ?? "", default: []].append(url)
+            } catch {
+                return error as? MetadataError
+            }
+        }
+        for (comment, members) in groups.sorted(by: { $0.key < $1.key }) {
+            do {
+                try await pusher.push(comment: comment, to: members)
+            } catch {
+                return error as? MetadataError ?? MetadataError(.transient, error.localizedDescription)
+            }
+        }
+        return nil
     }
 
     // MARK: Private
@@ -95,6 +126,10 @@ public struct FileMetadata: Sendable {
             let current = try readTags(of: url)
             try writeTags(tags, to: url)
             return MetadataChange(url: url, before: .tags(current))
+        case .comment(let comment):
+            let current = try readComment(of: url)
+            try writeComment(comment, to: url)
+            return MetadataChange(url: url, before: .comment(current))
         }
     }
 

@@ -396,3 +396,12 @@
 "batch.progress" = "%1$d of %2$d";
 "toast.metadataPartial" = "Changed %1$d, %2$d failed: %3$@";
 "toast.metadataCancelled" = "Cancelled. Nothing was changed";
+"column.comment" = "Comment";
+"menu.editComment" = "Edit Comment...";
+"undo.comment" = "Change Comment";
+"info.comment" = "Comment:";
+"comment.titleOne" = "Comment on %@";
+"comment.titleN" = "Comment on %d items";
+"comment.differs" = "These items have different comments. Saving replaces them all.";
+"comment.save" = "Save";
+"toast.commentNotInFinder" = "Comment saved, but Finder's Get Info may show the old one: %@";

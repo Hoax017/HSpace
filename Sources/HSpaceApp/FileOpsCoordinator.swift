@@ -4,6 +4,7 @@ import HSpaceContracts
 import ArchiveEngine
 import Frecency
 import TrashLedger
+import FileMetadata
 
 /// Reveals the result of an operation (after creating an item: select it and enter rename if needed); implemented by the list and icon views (column view passes nil)
 @MainActor
@@ -47,6 +48,8 @@ final class FileOpsCoordinator {
 
     /// Target of the tag menus (menu items hold their target weakly, so it lives here)
     private(set) lazy var metadataActions = MetadataActions(coordinator: self)
+    /// Keeps Finder's Get Info in step with comments changed here
+    var finderComments: any FinderCommentPushing = OsascriptFinderComments()
 
     /// Records one access (file opened/folder entered) so Spotlight-style search can rank by usage. Fire-and-forget async commit to the actor.
     func recordAccess(_ url: URL) {

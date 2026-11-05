@@ -182,7 +182,7 @@ Lanes run in parallel. Depends on Gate 0.
 New pod `FileMetadata`.
 
 - [x] **L01** (M) Finder tags: read, set, filter, sort and a tag picker
-- [ ] **L02** (S) Finder comments
+- [x] **L02** (S) Finder comments
 - [ ] **L03** (M) File colours and rules
 - [ ] **L04** (M) Custom folder icons and emoji, folder styles
 - [ ] **L05** (M) Kind groups with a manager
@@ -363,6 +363,10 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Tags column in the list: shows in the header menu and sorts on click
 - [ ] Undo and Redo a tag change with ⌘Z and ⇧⌘Z
 - [ ] Tag a few thousand items: the progress sheet appears, and Cancel leaves them all unchanged
+- [ ] Edit Comment on a file: macOS asks once to let HSpace control Finder. Allow it, then Finder's Get Info shows the comment
+- [ ] Refuse that request, then edit a comment: a toast says Finder may show the old one, and the comment is still saved here
+- [ ] Comment column in the list, and the Comment line in Get Info. With several items selected and differing comments, the sheet says so
+- [ ] A comment set in Finder shows here, and Undo restores the old comment in both places
 
 ### Needs a decision
 

@@ -18,6 +18,7 @@ extension FileOpsCoordinator {
             try await Engines.metadata.apply(edit, to: urls, progress: progress)
         } onChanged: { [weak self] changes in
             self?.registerMetadataUndo(changes, actionName: actionName)
+            self?.pushComments(changes)
         }
     }
 
@@ -37,7 +38,25 @@ extension FileOpsCoordinator {
         undoManager.setActionName(actionName)
         runMetadata(title: actionName, count: changes.count) { progress in
             try await Engines.metadata.restore(changes, progress: progress)
-        } onChanged: { record.changes = $0 }
+        } onChanged: { [weak self] changes in
+            record.changes = changes
+            self?.pushComments(changes)
+        }
+    }
+
+    /// The comments are saved by now. If Finder cannot be told, only its Get Info is behind, so this warns and does not fail.
+    private func pushComments(_ changes: [MetadataChange]) {
+        let urls = changes.compactMap { change -> URL? in
+            if case .comment = change.before { return change.url }
+            return nil
+        }
+        guard !urls.isEmpty else { return }
+        let window = grid?.view.window
+        let pusher = finderComments
+        Task { @MainActor in
+            guard let problem = await Engines.metadata.pushComments(of: urls, using: pusher) else { return }
+            Toast.show(L10n.f("toast.commentNotInFinder", problem.localizedDescription), in: window)
+        }
     }
 
     /// Runs a batch and reports it. The progress sheet appears only if the batch lasts, so a quick tag change shows nothing.

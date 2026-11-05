@@ -31,6 +31,7 @@ enum KeyBindings {
         Entry(id: "duplicate", titleKey: "menu.duplicate", defaultKey: "d", defaultMods: [.command]),
         Entry(id: "moveToTrash", titleKey: "menu.moveToTrash", defaultKey: "\u{8}", defaultMods: [.command]),
         Entry(id: "editTags", titleKey: "menu.editTags", defaultKey: "", defaultMods: []),
+        Entry(id: "editComment", titleKey: "menu.editComment", defaultKey: "", defaultMods: []),
         Entry(id: "copyPath", titleKey: "menu.copyPath", defaultKey: "c", defaultMods: [.command, .shift]),
         Entry(id: "toggleHidden", titleKey: "menu.toggleHidden", defaultKey: ".", defaultMods: [.command, .shift]),
         // Use Groups (M26): no default key (set your own if wanted), configurable through the registry

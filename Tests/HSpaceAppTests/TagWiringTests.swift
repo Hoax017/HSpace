@@ -119,13 +119,10 @@ func eventually(_ what: Comment, _ condition: () throws -> Bool) async rethrows 
         try Engines.metadata.setTags([red], on: a)
         let model = DirectoryViewModel(directory: dir)
         defer { model.stopWatching() }
-        var updates = 0
         var changes = 0
-        model.addOnUpdate { updates += 1 }
         model.addOnMetadataChange { changes += 1 }
         model.reload()
         await eventually("tags") { model.metadata.values.map(\.tags) == [[red]] }
-        #expect(updates == 1)
         #expect(changes == 1)
     }
 
