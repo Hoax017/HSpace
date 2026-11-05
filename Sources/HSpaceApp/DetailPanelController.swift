@@ -19,12 +19,20 @@ final class DetailPanelController: NSViewController {
 
     private let handle = PanelResizeHandle()
     private let previewSection = PreviewSectionView()
+    private let inspectorSection = InspectorSectionView()
+    private let inspectorRule = NSBox()
+    /// One of three arrangements, by which sections show
+    private var previewFills: NSLayoutConstraint!
+    private var previewHalf: NSLayoutConstraint!
+    private var inspectorBelowPreview: NSLayoutConstraint!
+    private var inspectorFills: NSLayoutConstraint!
     private var width: NSLayoutConstraint!
     private var pendingUpdate: DispatchWorkItem?
 
     private(set) var previewVisible = Preferences.previewPanelVisible
+    private(set) var inspectorVisible = Preferences.inspectorPanelVisible
 
-    private var isShowing: Bool { previewVisible }
+    private var isShowing: Bool { previewVisible || inspectorVisible }
 
     override func loadView() {
         let root = NSView()
@@ -34,11 +42,16 @@ final class DetailPanelController: NSViewController {
             Preferences.detailPanelWidth = self.width.constant
         }
         previewSection.onAction = { [weak self] id in self?.perform(id) }
-        for sub in [handle, previewSection] {
+        inspectorRule.boxType = .separator
+        for sub in [handle, previewSection, inspectorRule, inspectorSection] {
             sub.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(sub)
         }
         width = root.widthAnchor.constraint(equalToConstant: 0)
+        previewFills = previewSection.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+        previewHalf = previewSection.heightAnchor.constraint(equalTo: root.heightAnchor, multiplier: 0.5)
+        inspectorBelowPreview = inspectorRule.topAnchor.constraint(equalTo: previewSection.bottomAnchor)
+        inspectorFills = inspectorRule.topAnchor.constraint(equalTo: root.topAnchor)
         NSLayoutConstraint.activate([
             width,
             handle.topAnchor.constraint(equalTo: root.topAnchor),
@@ -46,9 +59,14 @@ final class DetailPanelController: NSViewController {
             handle.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             handle.widthAnchor.constraint(equalToConstant: 4),
             previewSection.topAnchor.constraint(equalTo: root.topAnchor),
-            previewSection.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             previewSection.leadingAnchor.constraint(equalTo: handle.trailingAnchor),
             previewSection.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            inspectorRule.leadingAnchor.constraint(equalTo: handle.trailingAnchor),
+            inspectorRule.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            inspectorSection.topAnchor.constraint(equalTo: inspectorRule.bottomAnchor),
+            inspectorSection.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            inspectorSection.leadingAnchor.constraint(equalTo: handle.trailingAnchor),
+            inspectorSection.trailingAnchor.constraint(equalTo: root.trailingAnchor),
         ])
         view = root
         root.clipsToBounds = true
@@ -63,12 +81,26 @@ final class DetailPanelController: NSViewController {
         applyVisibility()
     }
 
+    func setInspector(visible: Bool) {
+        inspectorVisible = visible
+        Preferences.inspectorPanelVisible = visible
+        applyVisibility()
+    }
+
     private func applyVisibility() {
         guard isViewLoaded else { return }
+        let both = previewVisible && inspectorVisible
+        NSLayoutConstraint.deactivate([previewFills, previewHalf, inspectorBelowPreview, inspectorFills])
+        NSLayoutConstraint.activate(both ? [previewHalf, inspectorBelowPreview]
+                                         : previewVisible ? [previewFills] : [inspectorFills])
+        inspectorSection.isHidden = !inspectorVisible
+        inspectorRule.isHidden = !both
+        if !inspectorVisible { inspectorSection.clear() }
         width.constant = isShowing ? SidePanelWidth.clamped(Preferences.detailPanelWidth) : 0
         handle.isHidden = !isShowing
         previewSection.isHidden = !previewVisible
-        if previewVisible { updateNow() } else { previewSection.clear() }
+        if !previewVisible { previewSection.clear() }
+        updateNow()
     }
 
     /// The selection, the active pane or its folder may have changed
@@ -87,6 +119,7 @@ final class DetailPanelController: NSViewController {
             previewSection.show(PreviewSubject(selection: source.selection))
             refreshActionAvailability(source.pane)
         }
+        if inspectorVisible { inspectorSection.show(selection: source.selection, directory: source.directory) }
     }
 
     private func refreshActionAvailability(_ pane: PaneViewController) {
@@ -112,6 +145,7 @@ final class DetailPanelController: NSViewController {
         pendingUpdate?.cancel()
         NotificationCenter.default.removeObserver(self)
         previewSection.close()
+        inspectorSection.clear()
     }
 
     // MARK: Test channel

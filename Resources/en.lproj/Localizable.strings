@@ -756,3 +756,29 @@
 "settings.sidePanel.reset" = "Reset";
 "settings.sidePanel.up" = "Move %@ up";
 "settings.sidePanel.down" = "Move %@ down";
+
+/* Inspector (L21) */
+"menu.toggleInspectorPanel" = "Inspector Panel";
+"inspector.onDisk" = "On disk";
+"inspector.items" = "Items";
+"inspector.itemCount" = "%d items";
+"inspector.dimensions" = "Dimensions";
+"inspector.pixels" = "%1$d × %2$d";
+"inspector.colorModel" = "Colour model";
+"inspector.dpi" = "Resolution (DPI)";
+"inspector.duration" = "Duration";
+"inspector.pages" = "Pages";
+"inspector.accessed" = "Last opened";
+"inspector.added" = "Date added";
+"inspector.permissions" = "Permissions";
+"inspector.owner" = "Owner";
+"inspector.group" = "Group";
+"inspector.linkTarget" = "Points to";
+"inspector.linkBroken" = "%@ (missing)";
+"inspector.locked" = "Locked";
+"inspector.hidden" = "Hidden";
+"inspector.yes" = "Yes";
+"inspector.calculating" = "Calculating…";
+"inspector.unreadable" = "Could not be read";
+"inspector.atLeast" = "At least %@";
+"inspector.problem" = "Problem";

@@ -206,7 +206,7 @@ New pods `BatchRename`, `FileHash`, `ImageConvert`.
 Owns the view controllers and `Sources/Pods/IconThumb`.
 
 - [x] **L20** (L) Side preview panel, with configurable actions
-- [ ] **L21** (L) File inspector panel
+- [x] **L21** (L) File inspector panel
 - [ ] **L22** (M) View options per folder, and saved view styles with a manager
 - [ ] **L23** (M) Custom hidden items and exclusion rules
 - [ ] **L24** (M) Folder sizes in list view, with a setting
@@ -453,6 +453,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Settings > Side Panel: turn actions off, reorder them; the panel follows at once. Reset brings the defaults back
 - [ ] Panel buttons act on the selection of the active pane, and gray out in the Trash where the menus do. Move to Trash can be undone
 - [ ] The panel looks right in light and dark mode, and VoiceOver names each button
+- [ ] View > Inspector Panel (⌥⌘I): facts of the selection, or of the folder with nothing selected. With the preview on too, each takes half the column
+- [ ] Inspect an image, a video, a PDF, a symlink and a broken symlink: dimensions, duration, pages, target and "missing" show
+- [ ] Select a big folder: "Calculating…", then the size. Move on while it counts: it stops, with no CPU left running
+- [ ] Select several items with a folder among them: the total arrives, or says "At least" when part cannot be read
+- [ ] Values can be selected and copied; VoiceOver reads each with its label
 
 ### Overall feel
 

@@ -226,6 +226,11 @@ enum Preferences {
         set { d.set(newValue, forKey: "previewPanelVisible") }
     }
 
+    static var inspectorPanelVisible: Bool {
+        get { d.bool(forKey: "inspectorPanelVisible") }
+        set { d.set(newValue, forKey: "inspectorPanelVisible") }
+    }
+
     static var detailPanelWidth: CGFloat {
         get { (d.object(forKey: "detailPanelWidth") as? Double).map { CGFloat($0) } ?? 280 }
         set { d.set(Double(newValue), forKey: "detailPanelWidth") }

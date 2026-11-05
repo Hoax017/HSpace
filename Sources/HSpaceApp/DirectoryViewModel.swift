@@ -5,6 +5,7 @@ import DirectoryWatch
 import FolderSize
 import IconThumb
 import FileMetadata
+import FileInspector
 
 /// App-wide shared engine instances (constructed once, injected globally): FolderSize's concurrency limit (=2) and cache apply globally,
 /// and IconThumb's LRU thumbnail cache is reused across panes and tabs. Both are Sendable, so static storage is safe.
@@ -12,6 +13,7 @@ enum Engines {
     static let folderSize = FolderSize()
     static let iconThumb = IconThumb()
     static let metadata = FileMetadata()
+    static let inspector = FileInspector()
 }
 
 /// Glue for one pane's content: subscribes to the DirectoryReader projection, holds the snapshot, and uses generations to block stale overwrites (spec 3.2).
