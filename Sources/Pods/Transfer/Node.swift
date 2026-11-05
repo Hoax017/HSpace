@@ -29,7 +29,8 @@ public struct TransferNode: OperationNode {
             return OperationReceipt(id: context.operationID,
                                     filesDone: progress.snapshotFiles(),
                                     bytesDone: progress.snapshotBytes(),
-                                    duration: Date().timeIntervalSince(started))
+                                    duration: Date().timeIntervalSince(started),
+                                    createdURLs: resolved.map(\.destination))
         } onCancel: {
             flag.set()
         }

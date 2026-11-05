@@ -112,13 +112,13 @@ public actor TrashLedger {
             setAsideUnusableFile(because: "the file is damaged")
             return
         }
-        let fm = FileManager.default
         var kept: [String: TrashLedgerEntry] = [:]
         var dropped = false
         for e in list {
             // Self-pruning: the item is no longer in Trash (emptied / deleted by another app / already put back), so the entry is void.
             // An item on an unmounted volume is only out of reach: its Put Back must work again after remounting.
-            if fm.fileExists(atPath: e.trashedPath) || Self.isOnOfflineVolume(e) {
+            // lstat, because a trashed dangling link is still in the Trash
+            if TrashRestorePolicy.isOccupied(URL(fileURLWithPath: e.trashedPath)) || Self.isOnOfflineVolume(e) {
                 kept[e.trashedPath] = e
             } else {
                 dropped = true

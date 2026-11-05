@@ -105,6 +105,14 @@ import HSpaceTestSupport
         #expect(await TrashLedger(directory: dir).origin(of: trashed) != nil)
     }
 
+    @Test func trashedDanglingLinkKeepsItsRecord() async throws {
+        let dir = try Self.tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let link = try FaultFixture.danglingLink(at: dir.appendingPathComponent("link"))
+        await TrashLedger(directory: dir).record([(original: dir.appendingPathComponent("o/link"), trashed: link)])
+        #expect(await TrashLedger(directory: dir).origin(of: link) != nil)
+    }
+
     @Test func entryOnAMountedVolumeIsPrunedWhenItsItemIsGone() async throws {
         let dir = try FaultFixture.tempDir("hspace-tl-volume")
         defer { FaultFixture.remove(dir) }
@@ -202,7 +210,8 @@ import HSpaceTestSupport
         let led = TrashLedger(directory: f.root)
         await led.record([(original: f.item.original, trashed: f.item.trashed)])
         try FileManager.default.moveItem(at: f.item.trashed, to: TrashRestorePolicy.landedURL(of: f.item))
-        let step = TrashRestorePolicy.step(after: Self.okReceipt, of: f.item, landedWasOccupied: false)
+        let step = TrashRestorePolicy.step(after: TrashLedgerTests.okReceipt(landed: TrashRestorePolicy.landedURL(of: f.item)),
+                                           of: f.item, landedWasOccupied: false)
         await led.settle(step, for: f.item.trashed)
         #expect(await led.count() == 0)
     }
@@ -218,7 +227,9 @@ import HSpaceTestSupport
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         return (root, home, TrashedItem(original: home.appendingPathComponent("report.txt"), trashed: trashed))
     }
-    static let okReceipt = OperationReceipt(id: UUID(), filesDone: 1, bytesDone: 0, duration: 0)
+    static func okReceipt(landed: URL) -> OperationReceipt {
+        OperationReceipt(id: UUID(), filesDone: 1, bytesDone: 0, duration: 0, createdURLs: [landed])
+    }
 
     @Test func failedMoveNeverRenamesAnUnrelatedFile() throws {
         let f = try Self.restoreFixture()
@@ -246,8 +257,29 @@ import HSpaceTestSupport
         let f = try Self.restoreFixture()
         defer { FaultFixture.remove(f.root) }
         try FaultFixture.write(to: f.home.appendingPathComponent("report 10.txt"))
-        try FileManager.default.moveItem(at: f.item.trashed, to: f.home.appendingPathComponent("report 10 2.txt"))
-        #expect(TrashRestorePolicy.step(after: Self.okReceipt, of: f.item, landedWasOccupied: true) == .restored)
+        let kept = f.home.appendingPathComponent("report 10 2.txt")
+        try FileManager.default.moveItem(at: f.item.trashed, to: kept)
+        #expect(TrashRestorePolicy.step(after: Self.okReceipt(landed: kept), of: f.item, landedWasOccupied: true)
+                == .restored(at: kept))
+    }
+
+    @Test func aMergeIntoAFolderThatWasThereGivesNothingForRedoToTrash() throws {
+        let f = try Self.restoreFixture()
+        defer { FaultFixture.remove(f.root) }
+        let stranger = TrashRestorePolicy.landedURL(of: f.item)
+        try FaultFixture.write(to: stranger)
+        try FileManager.default.removeItem(at: f.item.trashed)
+        #expect(TrashRestorePolicy.step(after: Self.okReceipt(landed: stranger), of: f.item, landedWasOccupied: true)
+                == .restored(at: nil))
+    }
+
+    @Test func theRenameTargetsWhereTheReceiptSaysTheItemLanded() throws {
+        let f = try Self.restoreFixture()
+        defer { FaultFixture.remove(f.root) }
+        let actual = f.home.appendingPathComponent("report 10 2.txt")
+        try FileManager.default.moveItem(at: f.item.trashed, to: actual)
+        #expect(TrashRestorePolicy.step(after: Self.okReceipt(landed: actual), of: f.item, landedWasOccupied: false)
+                == .rename(landed: actual, to: "report.txt"))
     }
 
     @Test func partialFailureIsNotRestored() throws {
@@ -264,7 +296,7 @@ import HSpaceTestSupport
         defer { FaultFixture.remove(f.root) }
         let landed = TrashRestorePolicy.landedURL(of: f.item)
         try FileManager.default.moveItem(at: f.item.trashed, to: landed)
-        #expect(TrashRestorePolicy.step(after: Self.okReceipt, of: f.item, landedWasOccupied: false)
+        #expect(TrashRestorePolicy.step(after: Self.okReceipt(landed: landed), of: f.item, landedWasOccupied: false)
                 == .rename(landed: landed, to: "report.txt"))
     }
 
@@ -276,7 +308,7 @@ import HSpaceTestSupport
         let item = TrashedItem(original: f.home.appendingPathComponent("empty"), trashed: trashedDir)
         let landed = TrashRestorePolicy.landedURL(of: item)
         try FileManager.default.moveItem(at: trashedDir, to: landed)
-        let none = OperationReceipt(id: UUID(), filesDone: 0, bytesDone: 0, duration: 0)
+        let none = OperationReceipt(id: UUID(), filesDone: 0, bytesDone: 0, duration: 0, createdURLs: [landed])
         #expect(TrashRestorePolicy.step(after: none, of: item, landedWasOccupied: false)
                 == .rename(landed: landed, to: "empty"))
     }
@@ -287,7 +319,9 @@ import HSpaceTestSupport
         let trashed = f.root.appendingPathComponent("Trash/plain.txt")
         try FaultFixture.write(to: f.home.appendingPathComponent("plain.txt"))
         let item = TrashedItem(original: f.home.appendingPathComponent("plain.txt"), trashed: trashed)
-        #expect(TrashRestorePolicy.step(after: Self.okReceipt, of: item, landedWasOccupied: false) == .restored)
+        let landed = f.home.appendingPathComponent("plain.txt")
+        #expect(TrashRestorePolicy.step(after: Self.okReceipt(landed: landed), of: item, landedWasOccupied: false)
+                == .restored(at: landed))
     }
 
     @Test func danglingLinkCountsAsOccupied() throws {

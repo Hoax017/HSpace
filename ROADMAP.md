@@ -165,7 +165,7 @@ Found while closing tracks A to F. H1 to H3 touch shared files, so they run one 
 - [x] **H3** (S) Refuse Trash drops in `validateDrop` through `FileOpsCoordinator.isTrashDestination`, with a message instead of a beep
 - [x] **H4** (S) Update text after password removal (B4): `Contracts.swift:109`, `settings.archiveCryptoNote`, `README.md`
 - [x] **H5** (M) Add an `HSpaceAppTests` target and drop the symlinks in `Tests/HSpaceKernelTests/AppEntryPoints`
-- [ ] **H6** (S) Restore: use landed URLs from receipts, skip redo after a failed restore, keep records for trashed dangling links
+- [x] **H6** (S) Restore: use landed URLs from receipts, skip redo after a failed restore, keep records for trashed dangling links
 - [ ] **H7** (M) Keep folder dates, tags and modes on cross-volume moves, and clean leftover `.hspace-transfer-*` items after a crash
 - [ ] **H8** (S) Check a drop with the "move" preference and Option held. AppKit may refuse it
 - [ ] **H9** (M) Run `ui-smoke.sh` on the merged code, then check by hand: Return in the conflict panel, drops, terminal, Put Back, `hspace://`
@@ -332,6 +332,7 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Move to Trash, then Put Back
 - [ ] Put Back when the original name is taken
 - [ ] Empty Trash with one item that cannot be deleted: its record stays
+- [ ] Undo a Trash whose restore fails, put an unrelated file at the original path, then Redo: the unrelated file stays
 
 ### Archives
 
