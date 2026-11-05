@@ -74,7 +74,8 @@ extension TransferNode {
         // the new content is built under a temporary sibling name and renamed in, so a failure or cancellation leaves no partial output.
         let replacing = entry.replaceExisting && itemExists(entry.destination)
 
-        if mode == .move, sameVolume(entry.source, entry.destination.deletingLastPathComponent()) {
+        // A merge cannot be one rename: it goes through the copy path, where clones keep it fast on the same volume
+        if mode == .move, !entry.merge, sameVolume(entry.source, entry.destination.deletingLastPathComponent()) {
             // Same-volume move = atomic rename, instant
             try moveWithinVolume(from: entry.source, to: entry.destination, replacing: replacing)
             progress.addCompleted(files: entryTotals.files, bytes: entryTotals.bytes,
@@ -82,7 +83,7 @@ extension TransferNode {
             return
         }
 
-        // Copy (or the copy phase of a cross-volume move, which records what it copied for verification)
+        // Copy (or the copy phase of a move across volumes or into a merge, which records what it copied for verification)
         let run = CopyRun(flag: flag, progress: progress, manifest: mode == .move ? CopyManifest() : nil)
         if entry.merge {
             // A merge writes into the existing folder, so it cannot be staged: it undoes what it added instead
@@ -113,7 +114,7 @@ extension TransferNode {
 
         if mode == .move {
             do { try fm.removeItem(at: entry.source) } catch {
-                throw TransferError(.external, "Could not remove source after cross-volume move:\(error.localizedDescription)",
+                throw TransferError(.external, "Could not remove source after move:\(error.localizedDescription)",
                                     path: entry.source.path)
             }
         }
@@ -163,14 +164,20 @@ extension TransferNode {
             }
             run.manifest?.record(src, dst)
             for child in children {
-                let childDst = dst.appendingPathComponent(child.lastPathComponent)
-                if merge, itemExists(childDst) {
-                    if !(isRealDirectory(childDst) && isRealDirectory(child)) {
-                        // Merge semantics: a same-named source file overwrites the target (documented contract promise)
-                        try? fm.removeItem(at: childDst)
+                var childDst = dst.appendingPathComponent(child.lastPathComponent)
+                if merge {
+                    let sourceIsFolder = isRealDirectory(child)
+                    if !itemExists(childDst) {
+                        run.noteCreated(childDst)
+                    } else if !sourceIsFolder, !isRealDirectory(childDst) {
+                        // Merge semantics: a same-named source file replaces the target file (documented contract promise)
+                        try await replaceFile(child, over: childDst, run: run)
+                        continue
+                    } else if sourceIsFolder != isRealDirectory(childDst) {
+                        // A file and a folder share the name: neither may be deleted for the other, so the incoming item gets a new name
+                        childDst = dst.appendingPathComponent(keepBothName(for: child, in: dst, existsCheck: itemExists))
+                        run.noteCreated(childDst)
                     }
-                } else if merge {
-                    run.noteCreated(childDst)
                 }
                 try await copyRecursive(from: child, to: childDst, merge: merge, run: run)
             }
@@ -178,6 +185,19 @@ extension TransferNode {
             try await copyOneFile(from: src, to: dst, flag: run.flag, progress: run.progress)
             run.manifest?.record(src, dst)
         }
+    }
+
+    private func replaceFile(_ src: URL, over target: URL, run: CopyRun) async throws {
+        let staged = stagingURL(for: target)
+        do {
+            try await copyOneFile(from: src, to: staged, flag: run.flag, progress: run.progress)
+            try swapIn(staged, over: target)
+        } catch {
+            try discardStaged(staged)
+            throw error
+        }
+        try discardReplaced(staged)
+        run.manifest?.record(src, target)
     }
 
     /// Single-file copyfile: byte-level progress callback + COPYFILE_QUIT cancellation + partial-file cleanup

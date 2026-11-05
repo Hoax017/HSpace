@@ -599,4 +599,118 @@ import HSpaceTestSupport
 
         try await Self.run(.copy, [source], to: destination, Self.context(report: once.report))
     }
+
+    // MARK: A8 merge semantics
+
+    /// src/d and dst/d, ready for a merge of d.
+    static func mergeFolders(in base: URL) throws -> (source: URL, target: URL) {
+        let source = base.appendingPathComponent("src/d")
+        let target = base.appendingPathComponent("dst/d")
+        try FaultFixture.write(Data("s".utf8), to: source.appendingPathComponent("only-src.txt"))
+        try FaultFixture.write(Data("t".utf8), to: target.appendingPathComponent("only-dst.txt"))
+        return (source, target)
+    }
+
+    @Test func mergeNeverDeletesAFolderForAFile() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let (source, target) = try Self.mergeFolders(in: base)
+        try FaultFixture.write(Data("file".utf8), to: source.appendingPathComponent("x"))
+        try FaultFixture.write(Data("keep".utf8), to: target.appendingPathComponent("x/keep.txt"))
+
+        try await Self.run(.copy, [source], to: target.deletingLastPathComponent(), Self.context(.mergeFolders))
+
+        #expect(try Self.text(target.appendingPathComponent("x/keep.txt")) == "keep")
+        #expect(try Self.text(target.appendingPathComponent("x 2")) == "file")
+    }
+
+    @Test func mergeNeverDeletesAFileForAFolder() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let (source, target) = try Self.mergeFolders(in: base)
+        try FaultFixture.write(Data("inner".utf8), to: source.appendingPathComponent("x/inner.txt"))
+        try FaultFixture.write(Data("keep".utf8), to: target.appendingPathComponent("x"))
+
+        try await Self.run(.copy, [source], to: target.deletingLastPathComponent(), Self.context(.mergeFolders))
+
+        #expect(try Self.text(target.appendingPathComponent("x")) == "keep")
+        #expect(try Self.text(target.appendingPathComponent("x 2/inner.txt")) == "inner")
+    }
+
+    @Test func mergeDoesNotWriteThroughALinkToAFolder() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let (source, target) = try Self.mergeFolders(in: base)
+        try FaultFixture.write(Data("inner".utf8), to: source.appendingPathComponent("x/inner.txt"))
+        let outside = base.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: target.appendingPathComponent("x"), withDestinationURL: outside)
+
+        try await Self.run(.copy, [source], to: target.deletingLastPathComponent(), Self.context(.mergeFolders))
+
+        #expect(try Self.names(in: outside) == [])
+        #expect(try Self.text(target.appendingPathComponent("x 2/inner.txt")) == "inner")
+    }
+
+    @Test func failedMergeKeepsTheOldFile() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let (source, target) = try Self.mergeFolders(in: base)
+        let locked = source.appendingPathComponent("both.txt")
+        try FaultFixture.write(Data("new".utf8), to: locked)
+        let old = target.appendingPathComponent("both.txt")
+        try FaultFixture.write(Data("old".utf8), to: old)
+
+        await #expect(throws: (any Error).self) {
+            try await FaultFixture.withMode(0o000, on: locked) {
+                try await Self.run(.copy, [source], to: target.deletingLastPathComponent(), Self.context(.mergeFolders))
+            }
+        }
+        #expect(try Self.text(old) == "old")
+        #expect(try Self.names(in: target).filter { $0.hasPrefix(".") } == [])
+    }
+
+    @Test func mergeOfNonFoldersKeepsBoth() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("src/f.txt")
+        let target = base.appendingPathComponent("dst/f.txt")
+        try FaultFixture.write(Data("new".utf8), to: source)
+        try FaultFixture.write(Data("old".utf8), to: target)
+
+        try await Self.run(.copy, [source], to: target.deletingLastPathComponent(), Self.context(.mergeFolders))
+
+        #expect(try Self.text(target) == "old")
+        #expect(try Self.text(base.appendingPathComponent("dst/f 2.txt")) == "new")
+    }
+
+    @Test func sameVolumeMoveCanMerge() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let (source, target) = try Self.mergeFolders(in: base)
+
+        try await Self.run(.move, [source], to: target.deletingLastPathComponent(), Self.context(.mergeFolders))
+
+        #expect(try Self.names(in: target) == ["only-dst.txt", "only-src.txt"])
+        #expect(!FileManager.default.fileExists(atPath: source.path))
+    }
+
+    @Test func crossVolumeMoveMergeVerifiesRenamedItems() async throws {
+        let volume = try ScratchVolume()
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("d")
+        try FaultFixture.write(Data("file".utf8), to: source.appendingPathComponent("x"))
+        try FaultFixture.write(Data("new".utf8), to: source.appendingPathComponent("both.txt"))
+        let target = volume.url.appendingPathComponent("d")
+        try FaultFixture.write(Data("keep".utf8), to: target.appendingPathComponent("x/keep.txt"))
+        try FaultFixture.write(Data("old".utf8), to: target.appendingPathComponent("both.txt"))
+
+        try await Self.run(.move, [source], to: volume.url, Self.context(.mergeFolders))
+
+        #expect(!FileManager.default.fileExists(atPath: source.path))
+        #expect(try Self.text(target.appendingPathComponent("both.txt")) == "new")
+        #expect(try Self.text(target.appendingPathComponent("x 2")) == "file")
+        #expect(try Self.text(target.appendingPathComponent("x/keep.txt")) == "keep")
+    }
 }

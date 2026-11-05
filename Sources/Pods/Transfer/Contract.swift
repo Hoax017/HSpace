@@ -45,7 +45,8 @@ public func uniqueName(base: String, ext: String, in destinationDir: URL,
     }
 }
 
-/// Merge semantics (documented promise): mergeFolders recursively merges directory contents; on a name clash the source file overwrites the target
+/// Merge semantics (documented promise): mergeFolders recursively merges directory contents. A name clash between two files replaces the target file;
+/// a clash between a file and a folder deletes neither, and the incoming item gets a new name. Symlinks count as files and are never followed.
 public enum TransferMergePolicy {
-    public static let documentation = "merge = recursive union; a same-named source file overwrites the target; same-named subfolders recurse"
+    public static let documentation = "merge = recursive union; a same-named source file replaces a target file; same-named subfolders recurse; a file and a folder of the same name are both kept"
 }

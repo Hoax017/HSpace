@@ -208,8 +208,8 @@ private func applyDecision(_ decision: ConflictDecision,
         entry.replaceExisting = true   // target deletion deferred to transfer time (micro-step 3)
         return entry
     case .mergeFolders:
-        if isSelf {
-            // Self-source directory merge would recurse into itself → safely degrade to a renamed copy
+        if isSelf || !isRealDirectory(entry.source) || !isRealDirectory(entry.destination) {
+            // Self-source directory merge would recurse into itself, and only two real folders can merge → safely degrade to a renamed copy
             entry.destination = dir.appendingPathComponent(keepBothName(for: entry.source, in: dir, existsCheck: exists))
             return entry
         }
