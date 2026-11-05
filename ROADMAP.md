@@ -195,7 +195,7 @@ New pods `BatchRename`, `FileHash`, `ImageConvert`.
 - [x] **L10** (L) Batch rename: processors, sequence, date, case, replace, preview and collision check
 - [x] **L11** (M) Batch rename presets and logs, with undo
 - [x] **L12** (S) Quick rename variant for a few files
-- [ ] **L13** (M) File hash: MD5, SHA-1, SHA-256, compare, cancel
+- [x] **L13** (M) File hash: MD5, SHA-1, SHA-256, compare, cancel
 - [ ] **L14** (M) Image conversion and resize, with Vision-based actions as a later option
 - [ ] **L15** (M) Match and select by pattern
 - [ ] **L16** (S) Text processing of selected names
@@ -368,6 +368,9 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Save a preset, quit, reopen, and load it: the steps come back; delete it from the same menu
 - [ ] Quick Rename on three files: edit the lines, paste a list over them, then ⌘Return; a wrong line count is explained in place
 - [ ] Rename Log after a restart: Undo reverses an old batch; move a file away first and it refuses with a clear message
+
+- [ ] File Hash on a large file: the bar moves, Cancel stops it at once, and the digest matches `shasum -a 256`
+- [ ] Paste a digest copied from a download page: the matching cell turns green; in dark mode too
 
 ### Overall feel
 

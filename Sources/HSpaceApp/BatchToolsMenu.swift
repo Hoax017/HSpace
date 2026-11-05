@@ -18,6 +18,9 @@ enum BatchToolsMenu {
         KeyBindings.apply("quickRename", to: quick)
         menu.addItem(withTitle: L10n.t("menu.renameLog"),
                      action: #selector(MainWindowController.showRenameLog(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: L10n.t("menu.fileHash"),
+                     action: #selector(MainWindowController.showFileHash(_:)), keyEquivalent: "")
         item.submenu = menu
         return item
     }
@@ -29,6 +32,8 @@ enum BatchToolsMenu {
             return window.renamableSelection != nil
         case #selector(MainWindowController.showQuickRename(_:)):
             return (window.renamableSelection?.count ?? .max) <= QuickRenameSheetController.itemLimit
+        case #selector(MainWindowController.showFileHash(_:)):
+            return !window.grid.activePane.toolSelection.isEmpty
         default:
             return nil
         }
@@ -65,6 +70,12 @@ extension MainWindowController {
             return
         }
         QuickRenameSheetController.present(items: items, ops: renameOps, in: window)
+    }
+
+    @objc func showFileHash(_ sender: Any?) {
+        let files = grid.activePane.toolSelection.map(\.url)
+        guard !files.isEmpty, let window else { NSSound.beep(); return }
+        FileHashSheetController.present(files: files, in: window)
     }
 
     @objc func showRenameLog(_ sender: Any?) {
