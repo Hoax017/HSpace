@@ -82,6 +82,8 @@ enum FileContextMenuBuilder {
                 key: "\u{8}", mods: .command, symbol: "trash")
         }
         menu.addItem(.separator())
+        menu.addItem(BatchToolsMenu.item())
+        menu.addItem(.separator())
 
         // Archives: compress any selection / extract supported archives (FG-1 honest disabling: no "Extract" without a supported item)
         addArchiveItems(menu, selection: selection, single: single, target: target)

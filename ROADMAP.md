@@ -192,7 +192,7 @@ New pod `FileMetadata`.
 
 New pods `BatchRename`, `FileHash`, `ImageConvert`.
 
-- [ ] **L10** (L) Batch rename: processors, sequence, date, case, replace, preview and collision check
+- [x] **L10** (L) Batch rename: processors, sequence, date, case, replace, preview and collision check
 - [ ] **L11** (M) Batch rename presets and logs, with undo
 - [ ] **L12** (S) Quick rename variant for a few files
 - [ ] **L13** (M) File hash: MD5, SHA-1, SHA-256, compare, cancel
@@ -357,6 +357,14 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 
 - [ ] "Always Move" with Option held (H8): macOS may refuse this drop. Decide what the preference should do. It also copies across volumes, despite its name
 - [ ] Grant Full Disk Access to the debug build, rerun `scripts/ui-smoke.sh`, and confirm the five Trash checks pass (H9)
+
+### Batch tools
+
+- [ ] Batch Rename (⇧⌘R) on ten files: type a replace, add a number step, and the preview follows each key
+- [ ] Rename onto a name already in the folder: the row is red, Rename stays disabled, and nothing changes
+- [ ] Swap two names with Replace, then press ⌘Z once: both come back; ⇧⌘Z repeats it
+- [ ] Batch rename in list, icon and column views, with the keyboard only and with VoiceOver: the sheet reads as a form
+- [ ] The sheet in light and dark mode: blocked rows stay readable
 
 ### Overall feel
 

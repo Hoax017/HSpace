@@ -58,6 +58,8 @@ enum MainMenu {
                                          action: #selector(FileListViewController.moveToTrash(_:)), keyEquivalent: "")
         KeyBindings.apply("moveToTrash", to: trashItem)
         fileMenu.addItem(.separator())
+        fileMenu.addItem(BatchToolsMenu.item())
+        fileMenu.addItem(.separator())
         // F5 copy / F6 move to the other pane (QSpace muscle memory; defaults F5/F6, rebindable in settings)
         let f5 = fileMenu.addItem(withTitle: L10n.t("menu.copyToOtherPane"),
                                   action: #selector(FileListViewController.copyToOtherPane(_:)), keyEquivalent: "")
