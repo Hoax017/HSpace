@@ -130,7 +130,7 @@ Owns `Sources/Pods/BookmarkStore`, `StashStore`, `SessionStore`.
 
 Owns `AppDelegate.swift`, `FinderIntegration.swift`, `UISelfTest.swift`.
 
-- [ ] **E1** (M) Harden `hspace://`: separate open from reveal, reject network and automount paths, do no blocking work on the main thread. `AppDelegate.swift:183`
+- [x] **E1** (M) Harden `hspace://`: separate open from reveal, reject network and automount paths, do no blocking work on the main thread. `AppDelegate.swift:183`
 - [ ] **E2** (M) Compile `UISelfTest` and all environment test hooks out of release builds. `AppDelegate.swift:34`, `UISelfTest.swift:11`
 - [ ] **E3** (M) Isolate test runs from real preferences, bookmarks, stash and clipboard. `MainWindowController.swift:46`, `AppDelegate.swift:140`
 - [ ] **E4** (S) Provide a way to restore the system Reveal setting. `FinderIntegration.swift:69`
