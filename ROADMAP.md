@@ -241,8 +241,34 @@ Owns `Sources/Pods/ArchiveEngine`. Depends on track B.
 
 - [x] **L50** (L) Browse inside archives without extracting
 - [x] **L51** (M) Quick Look inside archives
-- [ ] **L52** (L) 7z and RAR extraction, after a license and dependency review
+- [ ] **L52** (L) 7z and RAR extraction, after a license and dependency review. Plain 7z and RAR work through the system `tar`; left open for the owner's choice in the review below.
 - [ ] **L53** (M) Compression settings and password list stored in Keychain
+
+#### Review for L52: 7z and RAR
+
+No dependency was added. Checked on macOS 26 (Darwin 25.5) with `/usr/bin/tar`, which is bsdtar 3.5.3 on libarchive 3.7.4. What is in place:
+
+| Case | Status without a dependency |
+|---|---|
+| 7z: browse, Quick Look, extract | Works. The tests create archives with `tar --format=7zip` |
+| RAR 4 and RAR 5: browse, Quick Look, extract | Works on stored data, tested with fixtures built byte by byte. Compressed RAR needs a real-world archive, see the manual checklist |
+| RAR with encrypted entries | Refused by tar on compressed data, and the error reaches the user. Tested with a RAR 4 fixture. An encrypted entry stored without compression passes that check and should fail on its checksum: not tested on a real file |
+| Password-protected 7z, or 7z with encrypted names | Not supported by libarchive, as far as its source goes. Not tested: no tool here can create one |
+| Split archives (`.part1.rar`, `.r00`, `.7z.001`) | Not supported: `tar -f` opens one file. `.r00` and `.7z.001` are not offered. `.part1.rar` is offered and should fail at the volume's end: not tested on a real file |
+| Creating RAR | Impossible without RAR's own software, and out of scope |
+
+Other tools on the system: `xar` and `unzip` read neither format. There is no `7z`, `7zz`, `unrar` or `unar` on a stock Mac. Apple ships libarchive as a library without headers; linking it would bring passwords for zip only, run hostile data inside the app process, and rely on an undocumented API, so that route is rejected.
+
+Limit of the current route: this behaviour is not documented by Apple, so a macOS update could change the formats tar reads. A failure then shows as an error, and tests catch it.
+
+**The owner must choose** how far to go for encrypted and split 7z and RAR. Licence notes are from memory of the projects' terms; read the current text before shipping anything.
+
+1. **Stay with the system `tar`.** Nothing to ship or maintain. Encrypted and split archives stay unsupported, and L52 closes with that recorded as a known gap.
+2. **Use a tool the user installed** (`7zz` or `unar` from Homebrew), looked up in known locations, and offered only when found. Nothing to ship and no licence impact. The app starts trusting a binary outside `/usr/bin`, and the feature differs between machines.
+3. **Bundle 7-Zip's `7zz`.** Covers everything for reading. LGPL 2.1 with a BSD part, plus the unRAR restriction: its RAR code must not be used to create a RAR compressor. As a separate process in an MIT app this is workable, with notices and source pointers. Costs: signing and notarizing a third-party binary, and security updates become ours. It needs an exception to "no third-party dependencies".
+4. **Bundle `unar`.** LGPL, covers RAR and 7z with passwords, but its release pace is slow, which matters for a parser fed hostile files. Same costs as option 3.
+
+Suggested: option 1 now, and option 3 only if encrypted RAR or 7z turns out to be a real need.
 
 ### Lane 7: System integration
 
@@ -349,6 +375,9 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] In the browser, press Space on an image, a PDF and a text file: each previews, and arrows page through the list
 - [ ] Double-click a file in the browser: it previews. Press Space on a folder: only a beep
 - [ ] Close the browser: no `hspace-archive-` folder stays in the temporary directory
+- [ ] Browse and extract a real `.rar` made by WinRAR (compressed, both RAR 4 and RAR 5) and a real `.7z` made by 7-Zip: tests cover stored RAR data only
+- [ ] Open an encrypted `.7z` and an encrypted `.rar`: a clear error, nothing lands
+- [ ] Extract a `.part1.rar`: a clear error, nothing lands
 
 ### App behaviour
 

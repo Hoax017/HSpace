@@ -153,6 +153,9 @@ extension ArchiveEngineNode {
                 try await runArchiveTool(Tools.tar, ["-xJf", archive.path, "-C", staging.path])
             case .tar:
                 try await runArchiveTool(Tools.tar, ["-xf", archive.path, "-C", staging.path])
+            case .sevenZip, .rar:
+                // tar tells the format from the content. Without -P it refuses paths that leave staging.
+                try await runArchiveTool(Tools.tar, ["-xf", archive.path, "-C", staging.path], utf8Locale: true)
             case .gzip, .bzip2, .xz:
                 try await extractSingleStream(archive, format: format, into: staging)
             }
@@ -275,6 +278,8 @@ extension ArchiveEngineNode {
         case .gzip: suffixes = [".gz", ".z"]
         case .bzip2: suffixes = [".bz2"]
         case .xz: suffixes = [".xz"]
+        case .sevenZip: suffixes = [".7z"]
+        case .rar: suffixes = [".rar"]
         }
         for s in suffixes where lower.hasSuffix(s) {
             return String(name.dropLast(s.count))

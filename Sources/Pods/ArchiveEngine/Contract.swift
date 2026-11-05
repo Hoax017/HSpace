@@ -57,6 +57,7 @@ public enum ArchiveFormat: Sendable, Equatable {
     case zip
     case tarGz, tarBz2, tarXz, tar   // tar family (including compressed variants)
     case gzip, bzip2, xz             // single-stream compression (not tar)
+    case sevenZip, rar               // read by the system tar; see "Review for L52" in ROADMAP.md
 
     /// Detects by URL extension (multi-part suffixes match first; returns nil when unknown)
     public static func detect(_ url: URL) -> ArchiveFormat? {
@@ -69,6 +70,8 @@ public enum ArchiveFormat: Sendable, Equatable {
         if n.hasSuffix(".gz") || n.hasSuffix(".z") { return .gzip }   // legacy .Z compress also goes through gunzip
         if n.hasSuffix(".bz2") { return .bzip2 }
         if n.hasSuffix(".xz") { return .xz }
+        if n.hasSuffix(".7z") { return .sevenZip }
+        if n.hasSuffix(".rar") { return .rar }
         return nil
     }
 
@@ -89,7 +92,7 @@ public extension ArchiveEngineNode {
     static func supportedExtensions() -> [String] {
         var exts: [String] = []
         if toolExists(Tools.unzip) { exts += ["zip"] }
-        if toolExists(Tools.tar) { exts += ["tar", "tar.gz", "tgz", "tar.bz2", "tbz2", "tbz", "tar.xz", "txz"] }
+        if toolExists(Tools.tar) { exts += ["tar", "tar.gz", "tgz", "tar.bz2", "tbz2", "tbz", "tar.xz", "txz", "7z", "rar"] }
         if toolExists(Tools.gunzip) { exts += ["gz", "Z"] }
         if toolExists(Tools.bunzip2) { exts += ["bz2"] }
         if toolExists(Tools.xz) { exts += ["xz"] }
@@ -101,7 +104,7 @@ public extension ArchiveEngineNode {
         guard let fmt = ArchiveFormat.detect(url) else { return false }
         switch fmt {
         case .zip: return toolExists(Tools.unzip)
-        case .tarGz, .tarBz2, .tarXz, .tar: return toolExists(Tools.tar)
+        case .tarGz, .tarBz2, .tarXz, .tar, .sevenZip, .rar: return toolExists(Tools.tar)
         case .gzip: return toolExists(Tools.gunzip)
         case .bzip2: return toolExists(Tools.bunzip2)
         case .xz: return toolExists(Tools.xz)
