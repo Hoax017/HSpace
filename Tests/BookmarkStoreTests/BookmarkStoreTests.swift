@@ -1,4 +1,5 @@
 import Testing
+import HSpaceTestSupport
 import Foundation
 import BookmarkStore
 
@@ -116,5 +117,81 @@ import BookmarkStore
         #expect(items.map(\.name).contains("New Seed"))
         let again = await store.restoreMissingSeeds([(target, "Duplicate Seed"), (other, "New Seed")])
         #expect(again == 0)
+    }
+}
+
+private func keptFiles(_ dir: URL, _ name: String) throws -> [URL] {
+    try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+        .filter { $0.lastPathComponent.hasPrefix("\(name).corrupt-") }
+}
+
+/// D1: a file that cannot be loaded is kept aside and reported, never overwritten.
+@Suite struct BookmarkStoreCorruptFileTests {
+    let garbage = Data("{ not json".utf8)
+
+    func corruptDirectory() throws -> (dir: URL, file: URL, target: URL) {
+        let dir = try FaultFixture.tempDir("hspace-bm")
+        let file = dir.appendingPathComponent("bookmarks.json")
+        try FaultFixture.write(garbage, to: file)
+        let target = dir.appendingPathComponent("target")
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        return (dir, file, target)
+    }
+
+    @Test func corruptFileIsKeptAsideAndReported() async throws {
+        let (dir, file, target) = try corruptDirectory()
+        defer { FaultFixture.remove(dir) }
+        let store = BookmarkStore(directory: dir)
+        #expect(await store.all().isEmpty)
+        let kept = try #require(try keptFiles(dir, "bookmarks.json").first)
+        #expect(try Data(contentsOf: kept) == garbage)
+        let problem = try #require(await store.takeProblem())
+        #expect(problem.localizedDescription.contains(kept.lastPathComponent))
+        #expect(await store.takeProblem() == nil, "reported once")
+
+        try await store.add(target)
+        #expect(try Data(contentsOf: kept) == garbage)
+        #expect(try Data(contentsOf: file) != garbage)
+        #expect(await BookmarkStore(directory: dir).all().count == 1)
+    }
+
+    @Test func unreadableFileIsKeptAside() async throws {
+        let (dir, file, target) = try corruptDirectory()
+        defer { FaultFixture.remove(dir) }
+        let store = BookmarkStore(directory: dir)
+        try await FaultFixture.withMode(0o000, on: file) {
+            #expect(await store.all().isEmpty)
+        }
+        #expect(await store.takeProblem() != nil)
+        try await store.add(target)
+        let kept = try #require(try keptFiles(dir, "bookmarks.json").first)
+        chmod(kept.path, 0o644)
+        #expect(try Data(contentsOf: kept) == garbage)
+    }
+
+    @Test func fileThatCannotBeMovedBlocksWritesUntilItCan() async throws {
+        let (dir, _, target) = try corruptDirectory()
+        defer { FaultFixture.remove(dir) }
+        let store = BookmarkStore(directory: dir)
+        try await FaultFixture.withReadOnly(dir) {
+            #expect(await store.all().isEmpty)
+            #expect(await store.takeProblem() != nil)
+            await #expect(throws: BookmarkError.self) { try await store.add(target) }
+        }
+        #expect(try keptFiles(dir, "bookmarks.json").isEmpty, "nothing moved yet")
+        // Writable again: the next write moves the original aside first
+        try await store.add(target)
+        let kept = try #require(try keptFiles(dir, "bookmarks.json").first)
+        #expect(try Data(contentsOf: kept) == garbage)
+        let located = try #require(await store.takeProblem())
+        #expect(located.localizedDescription.contains(kept.lastPathComponent))
+    }
+
+    @Test func missingFileIsNotAProblem() async throws {
+        let dir = try FaultFixture.tempDir("hspace-bm")
+        defer { FaultFixture.remove(dir) }
+        let store = BookmarkStore(directory: dir)
+        #expect(await store.all().isEmpty)
+        #expect(await store.takeProblem() == nil)
     }
 }

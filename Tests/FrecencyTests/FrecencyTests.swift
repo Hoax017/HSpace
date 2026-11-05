@@ -1,4 +1,5 @@
 import Testing
+import HSpaceTestSupport
 import Foundation
 @testable import Frecency
 
@@ -160,5 +161,61 @@ import Foundation
                                                        name: "report.pdf", path: "/a/report.pdf")!
         #expect(strongerWrongCase > weakerExactCase,
                 "Tier must beat the case bonus: \(strongerWrongCase) vs \(weakerExactCase)")
+    }
+}
+
+private func keptFiles(_ dir: URL, _ name: String) throws -> [URL] {
+    try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+        .filter { $0.lastPathComponent.hasPrefix("\(name).corrupt-") }
+}
+
+/// D1: a file that cannot be loaded is kept aside and reported, never overwritten.
+@Suite struct FrecencyCorruptFileTests {
+    let garbage = Data("{ not json".utf8)
+
+    func corruptDirectory() throws -> (dir: URL, file: URL) {
+        let dir = try FaultFixture.tempDir("hspace-fr")
+        let file = dir.appendingPathComponent("frecency.json")
+        try FaultFixture.write(garbage, to: file)
+        return (dir, file)
+    }
+
+    @Test func corruptFileIsKeptAsideAndReported() async throws {
+        let (dir, file) = try corruptDirectory()
+        defer { FaultFixture.remove(dir) }
+        let store = FrecencyStore(directory: dir)
+        #expect(await store.count() == 0)
+        let kept = try #require(try keptFiles(dir, "frecency.json").first)
+        #expect(try Data(contentsOf: kept) == garbage)
+        let problem = try #require(await store.takeProblem())
+        #expect(problem.localizedDescription.contains(kept.lastPathComponent))
+        #expect(await store.takeProblem() == nil, "reported once")
+
+        await store.record(URL(fileURLWithPath: "/tmp/a"))
+        #expect(try Data(contentsOf: kept) == garbage)
+        #expect(try Data(contentsOf: file) != garbage)
+    }
+
+    @Test func fileThatCannotBeMovedBlocksWritesUntilItCan() async throws {
+        let (dir, file) = try corruptDirectory()
+        defer { FaultFixture.remove(dir) }
+        let store = FrecencyStore(directory: dir)
+        try await FaultFixture.withReadOnly(dir) { () async throws in
+            await store.record(URL(fileURLWithPath: "/tmp/a"))
+            #expect(await store.takeProblem() != nil)
+            #expect(try Data(contentsOf: file) == garbage)
+        }
+        await store.record(URL(fileURLWithPath: "/tmp/b"))
+        let kept = try #require(try keptFiles(dir, "frecency.json").first)
+        #expect(try Data(contentsOf: kept) == garbage)
+        #expect(await FrecencyStore(directory: dir).count() == 2)
+    }
+
+    @Test func missingFileIsNotAProblem() async throws {
+        let dir = try FaultFixture.tempDir("hspace-fr")
+        defer { FaultFixture.remove(dir) }
+        let store = FrecencyStore(directory: dir)
+        #expect(await store.count() == 0)
+        #expect(await store.takeProblem() == nil)
     }
 }

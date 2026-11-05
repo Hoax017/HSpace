@@ -9,6 +9,10 @@ public actor BookmarkStore {
     private var loaded = false
     /// Whether start-location seeds have been injected (persisted in Archive; one-time, so a user's clearing is not re-seeded)
     private var seeded = false
+    /// Why the file at fileURL could not be loaded, while it still sits there: it must be moved aside before any write
+    private var unusableFileReason: String?
+    /// Failure no call could throw to its caller, waiting for takeProblem()
+    private var problem: BookmarkError?
 
     /// On-disk structure (seeded flag + entries). Old archives are a plain [BookmarkItem] array;
     /// on decode failure fall back to the old format (non-empty items count as seeded, backward compatible).
@@ -26,6 +30,13 @@ public actor BookmarkStore {
     public func all() async -> [BookmarkItem] {
         await ensureLoaded()
         return items
+    }
+
+    /// Hands over the last unreported failure once, for the app to show (for example a file that was kept aside at load).
+    public func takeProblem() async -> BookmarkError? {
+        await ensureLoaded()
+        defer { problem = nil }
+        return problem
     }
 
     /// Resolves a bookmark target (nil if the target was deleted; the UI grays it out)
@@ -125,7 +136,15 @@ public actor BookmarkStore {
     private func ensureLoaded() async {
         guard !loaded else { return }
         loaded = true
-        guard let data = try? Data(contentsOf: fileURL) else { return }
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch CocoaError.fileReadNoSuchFile {
+            return
+        } catch {
+            setAsideUnusableFile(because: error.localizedDescription)
+            return
+        }
         // New structure (Archive) first; fall back to the old plain array: non-empty items count as seeded (backward compatible)
         if let archive = try? JSONDecoder().decode(Archive.self, from: data) {
             items = archive.items
@@ -133,10 +152,32 @@ public actor BookmarkStore {
         } else if let legacy = try? JSONDecoder().decode([BookmarkItem].self, from: data) {
             items = legacy
             seeded = !legacy.isEmpty
+        } else {
+            setAsideUnusableFile(because: "the file is damaged")
         }
     }
 
+    /// Moves a file that cannot be loaded to `<name>.corrupt-<UUID>` so that no later write replaces it.
+    /// Returns the error while the file stays in place: nothing may be written then, and the next write retries.
+    @discardableResult
+    private func setAsideUnusableFile(because reason: String? = nil) -> BookmarkError? {
+        guard let reason = reason ?? unusableFileReason else { return nil }
+        unusableFileReason = reason
+        let kept = fileURL.appendingPathExtension("corrupt-\(UUID().uuidString)")
+        do {
+            try FileManager.default.moveItem(at: fileURL, to: kept)
+        } catch {
+            let failure = BookmarkError(.external, "Bookmarks could not be read (\(reason)) and the file could not be moved aside, so changes will not be saved: \(error.localizedDescription)")
+            problem = failure
+            return failure
+        }
+        unusableFileReason = nil
+        problem = BookmarkError(.external, "Bookmarks could not be read (\(reason)). The file was kept at \(kept.path).")
+        return nil
+    }
+
     private func persist() throws {
+        if let blocked = setAsideUnusableFile() { throw blocked }
         do {
             let dir = fileURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

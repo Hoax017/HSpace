@@ -4,6 +4,18 @@ import HSpaceContracts
 // Frecency pod's sole public contract surface (Axiom 3): vocabulary of usage-habit learning sort (frecency + match quality fusion).
 // frecency = frequency (open count) × recency (exponential decay): search sorts by this automatically (M28, Listary style).
 
+public struct FrecencyError: ClassifiedError, LocalizedError {
+    public let errorClass: ErrorClass
+    public let localizedDescription: String
+    /// What `localizedDescription` gives on `any Error`, which is how the app receives it
+    public var errorDescription: String? { localizedDescription }
+
+    init(_ cls: ErrorClass, _ message: String) {
+        self.errorClass = cls
+        self.localizedDescription = message
+    }
+}
+
 /// One ledger entry: cumulative open count of a path + last open time.
 public struct FrecencyEntry: Sendable, Hashable, Codable {
     public var count: Int

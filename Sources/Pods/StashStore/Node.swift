@@ -7,6 +7,10 @@ public actor StashStore {
     private let fileURL: URL
     private var items: [StashItem] = []
     private var loaded = false
+    /// Why the file at fileURL could not be loaded, while it still sits there: it must be moved aside before any write
+    private var unusableFileReason: String?
+    /// Failure no call could throw to its caller, waiting for takeProblem()
+    private var problem: StashError?
 
     public init(directory: URL) {
         self.fileURL = directory.appendingPathComponent("stash.json")
@@ -17,6 +21,13 @@ public actor StashStore {
     public func all() async -> [StashItem] {
         await ensureLoaded()
         return items
+    }
+
+    /// Hands over the last unreported failure once, for the app to show (for example a file that was kept aside at load).
+    public func takeProblem() async -> StashError? {
+        await ensureLoaded()
+        defer { problem = nil }
+        return problem
     }
 
     /// Resolves a stash target (nil if the target was deleted; the UI grays it out)
@@ -70,11 +81,43 @@ public actor StashStore {
     private func ensureLoaded() async {
         guard !loaded else { return }
         loaded = true
-        guard let data = try? Data(contentsOf: fileURL) else { return }
-        items = (try? JSONDecoder().decode([StashItem].self, from: data)) ?? []
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch CocoaError.fileReadNoSuchFile {
+            return
+        } catch {
+            setAsideUnusableFile(because: error.localizedDescription)
+            return
+        }
+        do {
+            items = try JSONDecoder().decode([StashItem].self, from: data)
+        } catch {
+            setAsideUnusableFile(because: "the file is damaged")
+        }
+    }
+
+    /// Moves a file that cannot be loaded to `<name>.corrupt-<UUID>` so that no later write replaces it.
+    /// Returns the error while the file stays in place: nothing may be written then, and the next write retries.
+    @discardableResult
+    private func setAsideUnusableFile(because reason: String? = nil) -> StashError? {
+        guard let reason = reason ?? unusableFileReason else { return nil }
+        unusableFileReason = reason
+        let kept = fileURL.appendingPathExtension("corrupt-\(UUID().uuidString)")
+        do {
+            try FileManager.default.moveItem(at: fileURL, to: kept)
+        } catch {
+            let failure = StashError(.external, "The stash shelf could not be read (\(reason)) and the file could not be moved aside, so changes will not be saved: \(error.localizedDescription)")
+            problem = failure
+            return failure
+        }
+        unusableFileReason = nil
+        problem = StashError(.external, "The stash shelf could not be read (\(reason)). The file was kept at \(kept.path).")
+        return nil
     }
 
     private func persist() throws {
+        if let blocked = setAsideUnusableFile() { throw blocked }
         do {
             let dir = fileURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

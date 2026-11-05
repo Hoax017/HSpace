@@ -10,6 +10,10 @@ public actor FrecencyStore {
     private var loaded = false
     /// Capacity cap: over the cap, evict the lowest-scoring batch (prevents unbounded growth; far from reached in daily use)
     private let maxEntries: Int
+    /// Why the file at fileURL could not be loaded, while it still sits there: it must be moved aside before any write
+    private var unusableFileReason: String?
+    /// Failure no call could throw to its caller, waiting for takeProblem()
+    private var problem: FrecencyError?
 
     public init(directory: URL, maxEntries: Int = 5000) {
         self.fileURL = directory.appendingPathComponent("frecency.json")
@@ -50,14 +54,51 @@ public actor FrecencyStore {
         return entries.count
     }
 
+    /// Hands over the last unreported failure once, for the app to show (for example a file that was kept aside at load).
+    public func takeProblem() -> FrecencyError? {
+        ensureLoaded()
+        defer { problem = nil }
+        return problem
+    }
+
     // MARK: Private: load / evict / atomic persistence
 
     private func ensureLoaded() {
         guard !loaded else { return }
         loaded = true
-        guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([String: FrecencyEntry].self, from: data) else { return }
-        entries = decoded
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch CocoaError.fileReadNoSuchFile {
+            return
+        } catch {
+            setAsideUnusableFile(because: error.localizedDescription)
+            return
+        }
+        do {
+            entries = try JSONDecoder().decode([String: FrecencyEntry].self, from: data)
+        } catch {
+            setAsideUnusableFile(because: "the file is damaged")
+        }
+    }
+
+    /// Moves a file that cannot be loaded to `<name>.corrupt-<UUID>` so that no later write replaces it.
+    /// Returns the error while the file stays in place: nothing may be written then, and the next write retries.
+    @discardableResult
+    private func setAsideUnusableFile(because reason: String? = nil) -> FrecencyError? {
+        guard let reason = reason ?? unusableFileReason else { return nil }
+        unusableFileReason = reason
+        let kept = fileURL.appendingPathExtension("corrupt-\(UUID().uuidString)")
+        do {
+            try FileManager.default.moveItem(at: fileURL, to: kept)
+        } catch {
+            let failure = FrecencyError(.external, "The history of opened paths could not be read (\(reason)) and the file could not be moved aside, so changes will not be saved: \(error.localizedDescription)")
+            problem = failure
+            return failure
+        }
+        unusableFileReason = nil
+        problem = FrecencyError(.external, "The history of opened paths could not be read (\(reason)). The file was kept at \(kept.path).")
+        return nil
     }
 
     private func pruneIfNeeded(now: Date) {
@@ -69,6 +110,7 @@ public actor FrecencyStore {
     }
 
     private func persist() {
+        guard setAsideUnusableFile() == nil else { return }
         guard let data = try? JSONEncoder().encode(entries) else { return }
         let dir = fileURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

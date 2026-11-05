@@ -1,4 +1,5 @@
 import Testing
+import HSpaceTestSupport
 import Foundation
 import SessionStore
 
@@ -160,5 +161,75 @@ import SessionStore
         #expect(!text.contains("activeTabIndex"))
         #expect(text.contains("/usr"))       // what stays is the one active at the time
         #expect(!text.contains("/tmp"))
+    }
+}
+
+private func keptFiles(_ dir: URL, _ name: String) throws -> [URL] {
+    try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+        .filter { $0.lastPathComponent.hasPrefix("\(name).corrupt-") }
+}
+
+/// D1: a file that cannot be loaded is kept aside and reported, never overwritten.
+@Suite struct SessionStoreCorruptFileTests {
+    let garbage = Data("{ not json".utf8)
+
+    func corruptDirectory() throws -> (dir: URL, file: URL) {
+        let dir = try FaultFixture.tempDir("hspace-ss")
+        let file = dir.appendingPathComponent("session.json")
+        try FaultFixture.write(garbage, to: file)
+        return (dir, file)
+    }
+
+    @Test func corruptFileIsKeptAsideAndReported() async throws {
+        let (dir, file) = try corruptDirectory()
+        defer { FaultFixture.remove(dir) }
+        let store = SessionStore(directory: dir)
+        #expect(await store.load() == nil)
+        let kept = try #require(try keptFiles(dir, "session.json").first)
+        #expect(try Data(contentsOf: kept) == garbage)
+        let problem = try #require(await store.takeProblem())
+        #expect(problem.localizedDescription.contains(kept.lastPathComponent))
+        #expect(await store.takeProblem() == nil, "reported once")
+
+        await store.save(SessionStoreTests.sample())
+        await store.flush()
+        #expect(try Data(contentsOf: kept) == garbage)
+        #expect(try Data(contentsOf: file) != garbage)
+    }
+
+    @Test func saveWithoutLoadStillKeepsTheCorruptFile() async throws {
+        let (dir, _) = try corruptDirectory()
+        defer { FaultFixture.remove(dir) }
+        let store = SessionStore(directory: dir)
+        await store.save(SessionStoreTests.sample())
+        await store.flush()
+        let kept = try #require(try keptFiles(dir, "session.json").first)
+        #expect(try Data(contentsOf: kept) == garbage)
+        #expect(await SessionStore(directory: dir).load() == SessionStoreTests.sample())
+    }
+
+    @Test func fileThatCannotBeMovedBlocksWritesUntilItCan() async throws {
+        let (dir, file) = try corruptDirectory()
+        defer { FaultFixture.remove(dir) }
+        let store = SessionStore(directory: dir)
+        try await FaultFixture.withReadOnly(dir) { () async throws in
+            #expect(await store.load() == nil)
+            #expect(await store.takeProblem() != nil)
+            await store.save(SessionStoreTests.sample())
+            await store.flush()
+            #expect(try Data(contentsOf: file) == garbage)
+        }
+        await store.flush()
+        let kept = try #require(try keptFiles(dir, "session.json").first)
+        #expect(try Data(contentsOf: kept) == garbage)
+        #expect(await SessionStore(directory: dir).load() == SessionStoreTests.sample())
+    }
+
+    @Test func missingFileIsNotAProblem() async throws {
+        let dir = try FaultFixture.tempDir("hspace-ss")
+        defer { FaultFixture.remove(dir) }
+        let store = SessionStore(directory: dir)
+        #expect(await store.load() == nil)
+        #expect(await store.takeProblem() == nil)
     }
 }
