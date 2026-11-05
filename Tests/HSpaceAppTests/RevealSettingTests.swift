@@ -1,4 +1,5 @@
 import Foundation
+@testable import HSpaceApp
 import Testing
 
 /// Runs against a private application id: the real NSFileViewer key is global to the user and must never be touched here.

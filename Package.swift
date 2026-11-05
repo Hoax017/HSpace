@@ -33,5 +33,6 @@ let package = Package(
         .target(name: "HSpaceTestSupport", path: "Tests/HSpaceTestSupport"),
         .testTarget(name: "HSpaceTestSupportTests", dependencies: ["HSpaceTestSupport"]),
         .testTarget(name: "HSpaceKernelTests", dependencies: ["HSpaceKernel", "HSpaceContracts"]),
+        .testTarget(name: "HSpaceAppTests", dependencies: ["HSpaceApp", "HSpaceContracts", "HSpaceTestSupport"] + podDeps),
     ] + podTargets + podTestTargets
 )
