@@ -263,7 +263,7 @@
 "settings.extractCreateWrapper" = "Create a wrapper folder when extracting";
 "settings.extractWrapperNote" = "Ignored when the archive has a single top-level item.";
 "settings.extractKeepArchive" = "Keep the archive after extracting";
-"settings.archiveCryptoNote" = "ZIP encryption uses legacy ZipCrypto (weak); light protection only.";
+"settings.archiveCryptoNote" = "Password protection is not available: zip accepts a password only on the command line, where other apps could read it.";
 "settings.archiveScopeNote" = "These options only affect HSpace’s built-in Compress/Extract commands. Double-clicking an archive still opens with the system default app (e.g. Bandizip).";
 /* Behavior + Open Mode + Permissions (QSpace-aligned subset) */
 "settings.tab.behavior" = "Behavior";

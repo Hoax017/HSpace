@@ -106,7 +106,7 @@ public struct OperationSpec: Sendable {
 public struct ArchiveOptions: Sendable, Equatable {
     /// Archive format: "zip" / "tar.gz" (for compress; extract dispatches by the archive's extension and ignores this field)
     public let format: String
-    /// Encryption password; nil / empty = no encryption. zip uses ZipCrypto (weak encryption, see the Contract comment)
+    /// Must stay nil or empty: ArchiveEngine refuses any password for now, see its Contract comment
     public let password: String?
     /// Whether compress keeps the originals (false = trash/delete the sources after packing; v1 always keeps them, the UI decides)
     public let keepOriginal: Bool

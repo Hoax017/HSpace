@@ -48,7 +48,7 @@ final class ArchiveSettingsPage: NSObject, SettingsPage {
                                    checked: Preferences.extractKeepArchive,
                                    action: #selector(keepArchiveChanged(_:)))
 
-        // Honest note about weak encryption
+        // Says why archives have no password option
         let cryptoNote = NSTextField(wrappingLabelWithString: L10n.t("settings.archiveCryptoNote"))
         cryptoNote.font = .systemFont(ofSize: 11)
         cryptoNote.textColor = .tertiaryLabelColor
