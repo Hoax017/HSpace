@@ -148,4 +148,95 @@ import HSpaceTestSupport
         }
         #expect(try Self.text(secret.appendingPathComponent("s.txt")) == "kept")
     }
+
+    // MARK: A3 verified cross-volume move
+
+    /// Runs `action` once, at the first per-file progress event, with the name of the file just copied.
+    final class Once: @unchecked Sendable {
+        private let lock = NSLock()
+        private var fired = false
+        private let action: @Sendable (String) -> Void
+        init(_ action: @escaping @Sendable (String) -> Void) { self.action = action }
+        func report(_ event: NodeEvent) {
+            guard case .progress(_, _, let path) = event else { return }
+            lock.lock()
+            let first = !fired
+            fired = true
+            lock.unlock()
+            if first { action(URL(fileURLWithPath: path ?? "").lastPathComponent) }
+        }
+    }
+
+    @Test func crossVolumeMoveKeepsFileAddedDuringCopy() async throws {
+        let volume = try ScratchVolume()
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("d")
+        try FaultFixture.write(Data("a".utf8), to: source.appendingPathComponent("a.txt"))
+        let late = source.appendingPathComponent("late.txt")
+        let once = Once { _ in try? Data("late".utf8).write(to: late) }
+
+        await #expect(throws: TransferError.self) {
+            try await Self.run(.move, [source], to: volume.url, Self.context(report: once.report))
+        }
+        #expect(try Self.text(late) == "late")
+    }
+
+    @Test func crossVolumeMoveKeepsFileChangedDuringCopy() async throws {
+        let volume = try ScratchVolume()
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("d")
+        try FaultFixture.write(Data("aaaa".utf8), to: source.appendingPathComponent("a.txt"))
+        try FaultFixture.write(Data("bbbb".utf8), to: source.appendingPathComponent("b.txt"))
+        // Same size, so only comparing content can notice
+        let once = Once { name in try? Data("CHNG".utf8).write(to: source.appendingPathComponent(name)) }
+
+        await #expect(throws: TransferError.self) {
+            try await Self.run(.move, [source], to: volume.url, Self.context(report: once.report))
+        }
+        let kept = try Self.names(in: source).map { try Self.text(source.appendingPathComponent($0)) }
+        #expect(kept.contains("CHNG"))
+    }
+
+    @Test func crossVolumeMoveKeepsSourceWhenVolumeFills() async throws {
+        let volume = try ScratchVolume()
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("big.bin")
+        try FaultFixture.write(Data(repeating: 7, count: 2 * 1024 * 1024), to: source)
+        try volume.fill(leaving: 256 * 1024)
+
+        await #expect(throws: TransferError.self) {
+            try await Self.run(.move, [source], to: volume.url)
+        }
+        #expect(FileManager.default.fileExists(atPath: source.path))
+    }
+
+    @Test func crossVolumeMoveKeepsSourceWhenVolumeEjects() async throws {
+        let volume = try ScratchVolume()
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("d")
+        try FaultFixture.write(Data("a".utf8), to: source.appendingPathComponent("a.txt"))
+        try FaultFixture.write(Data("b".utf8), to: source.appendingPathComponent("b.txt"))
+        let once = Once { _ in try? volume.eject() }
+
+        await #expect(throws: TransferError.self) {
+            try await Self.run(.move, [source], to: volume.url, Self.context(report: once.report))
+        }
+        #expect(try Self.names(in: source) == ["a.txt", "b.txt"])
+    }
+
+    @Test func crossVolumeMoveRemovesSourceAfterVerifiedCopy() async throws {
+        let volume = try ScratchVolume()
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("d")
+        try FaultFixture.write(Data("a".utf8), to: source.appendingPathComponent("sub/a.txt"))
+
+        try await Self.run(.move, [source], to: volume.url)
+        #expect(!FileManager.default.fileExists(atPath: source.path))
+        #expect(try Self.text(volume.url.appendingPathComponent("d/sub/a.txt")) == "a")
+    }
 }

@@ -82,12 +82,14 @@ extension TransferNode {
             return
         }
 
-        // Copy (or the copy phase of a cross-volume move)
+        // Copy (or the copy phase of a cross-volume move, which records what it copied for verification)
+        let manifest = mode == .move ? CopyManifest() : nil
         if replacing {
             let staged = stagingURL(for: entry.destination)
             do {
                 try await copyRecursive(from: entry.source, to: staged, merge: false,
-                                        flag: flag, progress: progress)
+                                        flag: flag, progress: progress, manifest: manifest)
+                if let manifest { try await verifyCopy(of: entry.source, against: manifest, flag: flag) }
                 if flag.isSet { throw CancellationError() }
                 try swapIn(staged, over: entry.destination)
             } catch {
@@ -97,7 +99,8 @@ extension TransferNode {
             try discardReplaced(staged)
         } else {
             try await copyRecursive(from: entry.source, to: entry.destination,
-                                    merge: entry.merge, flag: flag, progress: progress)
+                                    merge: entry.merge, flag: flag, progress: progress, manifest: manifest)
+            if let manifest { try await verifyCopy(of: entry.source, against: manifest, flag: flag) }
         }
 
         if mode == .move {
@@ -131,7 +134,8 @@ extension TransferNode {
     }
 
     private func copyRecursive(from src: URL, to dst: URL, merge: Bool,
-                               flag: CancelFlag, progress: ProgressAggregator) async throws {
+                               flag: CancelFlag, progress: ProgressAggregator,
+                               manifest: CopyManifest?) async throws {
         if flag.isSet { throw CancellationError() }
         let fm = FileManager.default
         var isDir: ObjCBool = false
@@ -148,10 +152,11 @@ extension TransferNode {
             // A listing failure must stop the copy: treated as empty, it would count as copied and a move could delete the source
             let children: [URL]
             do {
-                children = try fm.contentsOfDirectory(at: src, includingPropertiesForKeys: [.isDirectoryKey], options: [])
+                children = try fm.contentsOfDirectory(atPath: src.path).map { src.appendingPathComponent($0) }
             } catch {
                 throw TransferError(.external, "Could not read folder:\(error.localizedDescription)", path: src.path)
             }
+            manifest?.record(src, dst)
             for child in children {
                 let childDst = dst.appendingPathComponent(child.lastPathComponent)
                 if merge, fm.fileExists(atPath: childDst.path) {
@@ -165,10 +170,11 @@ extension TransferNode {
                     }
                 }
                 try await copyRecursive(from: child, to: childDst, merge: merge,
-                                        flag: flag, progress: progress)
+                                        flag: flag, progress: progress, manifest: manifest)
             }
         } else {
             try await copyOneFile(from: src, to: dst, flag: flag, progress: progress)
+            manifest?.record(src, dst)
         }
     }
 
@@ -187,6 +193,19 @@ extension TransferNode {
         }
     }
 
+    private func verifyCopy(of src: URL, against manifest: CopyManifest, flag: CancelFlag) async throws {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, any Error>) in
+            ioQueue.async {
+                do {
+                    try verifyItem(src, against: manifest, flag: flag)
+                    cont.resume()
+                } catch {
+                    cont.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     private func sameVolume(_ a: URL, _ b: URL) -> Bool {
         let ka: Set<URLResourceKey> = [.volumeIdentifierKey]
         guard let va = try? a.resourceValues(forKeys: ka).volumeIdentifier,
@@ -196,6 +215,74 @@ extension TransferNode {
 
     /// Packages such as .app: treating them as one file-level copy unit still works through directory recursion; this only decides progress granularity, and false means recurse
     private func isPackageTreatedAsFile(_ url: URL) -> Bool { false }
+}
+
+// MARK: Verification before a move deletes its source
+
+/// Where each source item went, so verification can catch anything the copy never saw.
+final class CopyManifest: @unchecked Sendable {
+    private let lock = NSLock()
+    private var destinations: [String: URL] = [:]
+    func record(_ src: URL, _ dst: URL) { lock.lock(); destinations[src.path] = dst; lock.unlock() }
+    func destination(of src: URL) -> URL? { lock.lock(); defer { lock.unlock() }; return destinations[src.path] }
+}
+
+private func verificationFailure(_ reason: String, _ src: URL) -> TransferError {
+    TransferError(.external, "Move stopped and the source was kept:\(reason)", path: src.path)
+}
+
+/// Walks the source as it is now: every item must have been copied and must match its copy.
+private func verifyItem(_ src: URL, against manifest: CopyManifest, flag: CancelFlag) throws {
+    if flag.isSet { throw CancellationError() }
+    guard let dst = manifest.destination(of: src) else {
+        throw verificationFailure("\(src.lastPathComponent) appeared during the move", src)
+    }
+    var srcInfo = stat(), dstInfo = stat()
+    guard lstat(src.path, &srcInfo) == 0 else { throw verificationFailure(String(cString: strerror(errno)), src) }
+    guard lstat(dst.path, &dstInfo) == 0 else { throw verificationFailure("the copy of \(src.lastPathComponent) is missing", src) }
+    guard srcInfo.st_mode & S_IFMT == dstInfo.st_mode & S_IFMT else {
+        throw verificationFailure("the copy of \(src.lastPathComponent) has a different type", src)
+    }
+    let fm = FileManager.default
+    do {
+        switch srcInfo.st_mode & S_IFMT {
+        case S_IFDIR:
+            for name in try fm.contentsOfDirectory(atPath: src.path) {
+                try verifyItem(src.appendingPathComponent(name), against: manifest, flag: flag)
+            }
+        case S_IFLNK:
+            guard try fm.destinationOfSymbolicLink(atPath: src.path) == fm.destinationOfSymbolicLink(atPath: dst.path) else {
+                throw verificationFailure("the copy of \(src.lastPathComponent) differs", src)
+            }
+        case S_IFREG:
+            guard srcInfo.st_size == dstInfo.st_size, try sameContent(src, dst, flag: flag) else {
+                throw verificationFailure("the copy of \(src.lastPathComponent) differs", src)
+            }
+        default:
+            break   // devices, sockets and FIFOs have no content to compare, and reading one could block
+        }
+    } catch let error as TransferError {
+        throw error
+    } catch is CancellationError {
+        throw CancellationError()
+    } catch {
+        throw verificationFailure(error.localizedDescription, src)
+    }
+}
+
+private func sameContent(_ a: URL, _ b: URL, flag: CancelFlag) throws -> Bool {
+    let fileA = try FileHandle(forReadingFrom: a), fileB = try FileHandle(forReadingFrom: b)
+    defer {
+        try? fileA.close()
+        try? fileB.close()
+    }
+    while true {
+        if flag.isSet { throw CancellationError() }
+        let chunkA = try fileA.read(upToCount: 1 << 20) ?? Data()
+        let chunkB = try fileB.read(upToCount: 1 << 20) ?? Data()
+        guard chunkA == chunkB else { return false }
+        if chunkA.isEmpty { return true }
+    }
 }
 
 // MARK: Staged commit
