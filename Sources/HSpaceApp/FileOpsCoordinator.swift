@@ -66,6 +66,7 @@ final class FileOpsCoordinator {
     }
 
     func paste(into directory: URL, revealIn list: FileRevealTarget? = nil) {
+        guard !Self.isTrashDestination(directory) else { NSSound.beep(); return }
         let urls = readPasteboardURLs()
         // With no files on the clipboard, paste the **content** as a new file (text/image/PDF/RTF).
         // The old version just beeped, so anything copied from a browser or a screenshot had nowhere to land.
@@ -171,8 +172,8 @@ final class FileOpsCoordinator {
         guard !victims.isEmpty else { return }
         run(OperationSpec(kind: .delete, sources: victims, destination: trash)) { [weak self] receipt in
             guard let self, let receipt else { return }
-            // Void the matching ledger entries too (those destinations no longer exist)
-            if let led = self.trashLedger { Task { await led.forget(victims) } }
+            // Void the ledger entries of what was really erased; failed items are still in the Trash
+            if let led = self.trashLedger { Task { await led.forgetErased(victims, receipt: receipt) } }
             if receipt.failures.isEmpty {
                 Toast.show(L10n.f("toast.trashEmptied", receipt.filesDone), in: self.grid?.view.window)
             } else {
@@ -195,9 +196,11 @@ final class FileOpsCoordinator {
                 return
             }
             // Reuses the existing "move back + rename to the original name if needed" chain (the same one Trash undo uses)
-            self.restore(known.map { TrashedItem(original: $0.original, trashed: $0.trashed) })
-            await led.forget(known.map(\.trashed))
-            Toast.show(L10n.f("toast.putBackN", known.count), in: self.grid?.view.window)
+            self.restore(known.map { TrashedItem(original: $0.original, trashed: $0.trashed) }) { restored in
+                // Items that stayed in the Trash keep their record; the progress window reports why they failed
+                guard restored > 0 else { return }
+                Toast.show(L10n.f("toast.putBackN", restored), in: self.grid?.view.window)
+            }
         }
     }
 
@@ -356,6 +359,10 @@ final class FileOpsCoordinator {
         guard urls.allSatisfy({ !Self.isSelfOrDescendant(destination: dest, ofSource: $0) }) else {
             NSSound.beep(); onComplete?(false); return
         }
+        // Drops, F5/F6 and the stash all arrive here. Items placed in the Trash this way would have no ledger record and no undo.
+        guard !Self.isTrashDestination(dest) else {
+            NSSound.beep(); onComplete?(false); return
+        }
         // All items already in the destination: moving is a no-op; copying goes through a normal copy, triggering the self-source conflict panel (matches paste semantics, M27-B)
         if move, urls.allSatisfy({ $0.standardizedFileURL.deletingLastPathComponent().path == dest.path }) {
             onComplete?(false)
@@ -378,6 +385,16 @@ final class FileOpsCoordinator {
         return dst == src || dst.hasPrefix(src.hasSuffix("/") ? src : src + "/")
     }
 
+    /// Whether a directory is a Trash or inside one, also when reached through a symlink.
+    /// Not private so validateDrop can use it for its feedback.
+    nonisolated static func isTrashDestination(_ destination: URL) -> Bool {
+        TrashGuard.isInside(destination, anyOf: [
+            TrashLocation.userTrash,
+            TrashLocation.trash(for: destination),
+            TrashLocation.trash(for: destination.resolvingSymlinksInPath()),
+        ])
+    }
+
     /// Same-volume check (unknown counts as cross-volume → copy, avoiding an accidental move)
     nonisolated static func isSameVolume(_ a: URL, _ b: URL) -> Bool {
         guard let va = try? a.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier,
@@ -397,23 +414,35 @@ final class FileOpsCoordinator {
 
     /// internal rather than private: Put Back reuses the same move-back chain (not a second copy,
     /// or the two would drift: undo could restore the original name while Put Back couldn't, the same bug fixed in only one place)
-    func restore(_ items: [TrashedItem]) {
+    func restore(_ items: [TrashedItem], onComplete: (@MainActor (_ restored: Int) -> Void)? = nil) {
         // Register redo: move to the Trash again (undo/redo cycle)
         undoManager.registerUndo(withTarget: self) { coord in
             MainActor.assumeIsolated { coord.moveToTrash(items.map(\.original)) }
         }
         undoManager.setActionName(L10n.t("undo.trash"))
-        for item in items {
-            let parent = item.original.deletingLastPathComponent()
-            run(OperationSpec(kind: .move, sources: [item.trashed], destination: parent)) { [weak self] _ in
-                // If the Trash renamed it because of a name clash → rename back to the original name after moving back
-                let landed = parent.appendingPathComponent(item.trashed.lastPathComponent)
-                if landed.lastPathComponent != item.original.lastPathComponent {
-                    self?.run(OperationSpec(kind: .rename, sources: [landed],
-                                            newName: item.original.lastPathComponent))
-                }
+        // One at a time: each item's "is the path free" check must see where the previous item landed
+        Task { @MainActor in
+            var restored = 0
+            for item in items {
+                let step = await restoreOne(item)
+                await trashLedger?.settle(step, for: item.trashed)
+                if step != .notRestored { restored += 1 }
             }
+            onComplete?(restored)
         }
+    }
+
+    /// Moves one item back, then renames it only when the move proves that is safe (TrashRestorePolicy).
+    private func restoreOne(_ item: TrashedItem) async -> TrashRestoreStep {
+        let occupied = TrashRestorePolicy.isOccupied(TrashRestorePolicy.landedURL(of: item))
+        let parent = item.original.deletingLastPathComponent()
+        let receipt = await runToEnd(OperationSpec(kind: .move, sources: [item.trashed], destination: parent))
+        // If the Trash renamed it because of a name clash → rename back to the original name after moving back
+        let step = TrashRestorePolicy.step(after: receipt, of: item, landedWasOccupied: occupied)
+        if case .rename(let landed, let name) = step {
+            _ = await runToEnd(OperationSpec(kind: .rename, sources: [landed], newName: name))
+        }
+        return step
     }
 
     // MARK: Internal: submit + wait for terminal state + refresh
@@ -432,6 +461,13 @@ final class FileOpsCoordinator {
             }
             onComplete?(receipt)
             reloadLists()
+        }
+    }
+
+    /// `run` for callers that must act on the outcome before starting the next operation.
+    private func runToEnd(_ spec: OperationSpec) async -> OperationReceipt? {
+        await withCheckedContinuation { done in
+            run(spec) { done.resume(returning: $0) }
         }
     }
 

@@ -49,7 +49,8 @@ public actor TrashLedger {
             let k = Self.key(p.trashed)
             entries[k] = TrashLedgerEntry(trashedPath: k,
                                           originalPath: p.original.standardizedFileURL.path,
-                                          recordedAt: now)
+                                          recordedAt: now,
+                                          volumeUUID: Self.volumeUUID(of: p.trashed))
         }
         persist()
     }
@@ -61,6 +62,20 @@ public actor TrashLedger {
         var changed = false
         for u in trashedURLs where entries.removeValue(forKey: Self.key(u)) != nil { changed = true }
         if changed { persist() }
+    }
+
+    /// Forgets what a permanent delete really removed. Items the receipt lists as failed are still in the
+    /// Trash, so they keep their record and stay eligible for Put Back.
+    public func forgetErased(_ victims: [URL], receipt: OperationReceipt) async {
+        let failed = Set(receipt.failures.map { Self.key($0.url) })
+        await forget(victims.filter { !failed.contains(Self.key($0)) })
+    }
+
+    /// Closes the record of a restore attempt: dropped only once the item has left the Trash,
+    /// so a failed or skipped Put Back can be tried again, including after a restart.
+    public func settle(_ step: TrashRestoreStep, for trashedURL: URL) async {
+        guard step != .notRestored else { return }
+        await forget([trashedURL])
     }
 
     // MARK: Internals
@@ -76,11 +91,34 @@ public actor TrashLedger {
         var kept: [String: TrashLedgerEntry] = [:]
         var dropped = false
         for e in list {
-            // Self-pruning: the item is no longer in Trash (emptied / deleted by another app / already put back), so the entry is void
-            if fm.fileExists(atPath: e.trashedPath) { kept[e.trashedPath] = e } else { dropped = true }
+            // Self-pruning: the item is no longer in Trash (emptied / deleted by another app / already put back), so the entry is void.
+            // An item on an unmounted volume is only out of reach: its Put Back must work again after remounting.
+            if fm.fileExists(atPath: e.trashedPath) || Self.isOnOfflineVolume(e) {
+                kept[e.trashedPath] = e
+            } else {
+                dropped = true
+            }
         }
         entries = kept
         if dropped { persist() }
+    }
+
+    private static func volumeUUID(of url: URL) -> String? {
+        (try? url.resourceValues(forKeys: [.volumeUUIDStringKey]))?.volumeUUIDString
+    }
+
+    /// Any doubt answers true: keeping a stale entry is harmless, losing a live one is not.
+    private static func isOnOfflineVolume(_ entry: TrashLedgerEntry) -> Bool {
+        let fm = FileManager.default
+        guard let expected = entry.volumeUUID else {
+            // No recorded identity: only the standard mount location can show the volume is away
+            let parts = URL(fileURLWithPath: entry.trashedPath).pathComponents
+            return parts.count > 3 && parts[1] == "Volumes" && !fm.fileExists(atPath: "/Volumes/" + parts[2])
+        }
+        // An unmounted volume leaves at most an empty mount folder, which belongs to another volume
+        var probe = URL(fileURLWithPath: entry.trashedPath)
+        while probe.path != "/", !fm.fileExists(atPath: probe.path) { probe = probe.deletingLastPathComponent() }
+        return volumeUUID(of: probe) != expected
     }
 
     /// Atomic persistence (write a temp file, then replace; a write failure leaves in-memory state intact, retried on the next mutation)
