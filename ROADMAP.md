@@ -212,7 +212,7 @@ Owns the view controllers and `Sources/Pods/IconThumb`.
 - [x] **L24** (M) Folder sizes in list view, with a setting
 - [x] **L25** (M) Icon view options: size, spacing, label position
 - [x] **L26** (S) Keyboard selection with Space
-- [ ] **L27** (M) Photos library browsing
+- [x] **L27** (M) Photos library browsing
 
 ### Lane 4: Navigation
 
@@ -482,6 +482,12 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] With the setting on, Shift-Space previews, and Space closes an open preview. With it off, Space previews as before
 - [ ] In column view, picking one folder with Space opens its column, like a click; the cursor stays in the column you are in
 - [ ] The outline stays visible in light and dark mode
+- [ ] Go > Photos Library on a fresh permission: a message and Allow Access. The system prompt appears only after pressing it, and it gives the reason from Info.plist
+- [ ] Don't Allow: the window explains, Open System Settings goes to the Photos pane, and allowing there works when you return to the window
+- [ ] Allowed: albums on the left, thumbnails on the right, with a mark on videos; scrolling a large library stays smooth and downloads nothing
+- [ ] Select several, Copy to Active Pane: originals arrive in the active pane's folder under their own names; a taken name gets a number
+- [ ] An item stored only in iCloud downloads and arrives. Cancel during a copy: only finished files remain, no partial file
+- [ ] Limited access shows only the chosen photos. The library in Photos is unchanged. VoiceOver reads kind and date
 
 ### Overall feel
 

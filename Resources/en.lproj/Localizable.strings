@@ -837,3 +837,21 @@
 
 /* Keyboard selection (L26) */
 "settings.behavior.spaceSelects" = "Space selects items (Shift-Space previews)";
+
+/* Photos library (L27) */
+"menu.photosLibrary" = "Photos Library";
+"photos.title" = "Photos Library";
+"photos.albums" = "Albums";
+"photos.loading" = "Loading…";
+"photos.needsPermission" = "HSpace needs your permission to show the Photos library.";
+"photos.denied" = "HSpace may not read the Photos library. You can allow it in System Settings, under Privacy & Security, Photos.";
+"photos.restricted" = "This Mac's settings do not allow access to the Photos library.";
+"photos.allow" = "Allow Access…";
+"photos.openSettings" = "Open System Settings";
+"photos.copy" = "Copy to Active Pane";
+"photos.copied" = "%1$d copied to %2$@";
+"photos.copyFailed" = "%1$d items could not be copied. First problem: %2$@";
+"photos.noDestination" = "The active pane has no folder to copy into. Open a folder outside the Trash and try again.";
+"photos.kind.photo" = "Photo";
+"photos.kind.video" = "Video";
+"photos.all" = "All Photos";

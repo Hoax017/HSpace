@@ -171,6 +171,8 @@ enum MainMenu {
         let trashNavItem = goMenu.addItem(withTitle: L10n.t("menu.goTrash"),
                                           action: #selector(PaneViewController.goTrash(_:)), keyEquivalent: "")
         KeyBindings.apply("goTrash", to: trashNavItem)
+        goMenu.addItem(withTitle: L10n.t("menu.photosLibrary"),
+                       action: #selector(MainWindowController.showPhotosLibrary(_:)), keyEquivalent: "")
         let homeItem = goMenu.addItem(withTitle: L10n.t("menu.goHome"),
                                       action: #selector(PaneViewController.goHome(_:)), keyEquivalent: "h")
         homeItem.keyEquivalentModifierMask = [.command, .shift]
