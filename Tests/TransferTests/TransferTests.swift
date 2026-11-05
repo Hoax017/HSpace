@@ -1,4 +1,5 @@
 import Testing
+import HSpaceTestSupport
 import Foundation
 import Transfer
 import HSpaceContracts
@@ -313,5 +314,17 @@ import HSpaceContracts
         } catch {
             Issue.record("Unclassified error (violates P6.4):\(error)")
         }
+    }
+
+    @Test func receiptSaysWhereEachItemLanded() async throws {
+        let dir = try FaultFixture.tempDir("hspace-landed")
+        defer { FaultFixture.remove(dir) }
+        let source = dir.appendingPathComponent("from/a.txt")
+        let target = dir.appendingPathComponent("to")
+        try FaultFixture.write(to: source)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        let receipt = try await TransferNode().execute(
+            OperationSpec(kind: .move, sources: [source], destination: target), context: Self.makeContext())
+        #expect(receipt.createdURLs == [target.appendingPathComponent("a.txt")])
     }
 }

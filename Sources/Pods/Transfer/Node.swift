@@ -16,6 +16,7 @@ public struct TransferNode: OperationNode {
 
         // Micro-step 2: conflict detection + suspend for decisions
         let resolved = try await resolveConflicts(plan: plan, context: context)
+        sweepLeftovers(in: Set(resolved.map { $0.destination.deletingLastPathComponent() }))
 
         // Micro-step 3: per-file transfer (cooperative cancellation reaches the copyfile callback via CancelFlag)
         let flag = CancelFlag()
@@ -29,7 +30,8 @@ public struct TransferNode: OperationNode {
             return OperationReceipt(id: context.operationID,
                                     filesDone: progress.snapshotFiles(),
                                     bytesDone: progress.snapshotBytes(),
-                                    duration: Date().timeIntervalSince(started))
+                                    duration: Date().timeIntervalSince(started),
+                                    createdURLs: resolved.map(\.destination))
         } onCancel: {
             flag.set()
         }

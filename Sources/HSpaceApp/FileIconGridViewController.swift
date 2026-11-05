@@ -824,6 +824,7 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
         guard urls.allSatisfy({ !FileOpsCoordinator.isSelfOrDescendant(destination: target, ofSource: $0) }) else {
             return []
         }
+        guard !DropFeedback.refusesTrash(target, in: view.window) else { return [] }
         // Same decision as the submission in dropTransfer (drag preference + ⌥ + volume), so the cursor cannot disagree with it
         let willMove = FileOpsCoordinator.effectiveMove(
             urls: urls, into: target, optionCopy: draggingInfo.draggingSourceOperationMask == .copy)

@@ -1,4 +1,5 @@
 import Foundation
+@testable import HSpaceApp
 import Testing
 
 @Suite struct ExternalOpenHistoryTests {

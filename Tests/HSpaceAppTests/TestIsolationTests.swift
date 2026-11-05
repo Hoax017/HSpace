@@ -1,4 +1,5 @@
 import AppKit
+@testable import HSpaceApp
 import Testing
 
 @Suite struct TestRunDefaultsIsolation {

@@ -1,10 +1,11 @@
 import Foundation
+@testable import HSpaceApp
 import Testing
 
 /// Reads the app sources, because the test build is a debug build and cannot see what a release build leaves out.
 enum AppSources {
     static let directory = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Sources/HSpaceApp")
 
     static func all() throws -> [(name: String, text: String)] {

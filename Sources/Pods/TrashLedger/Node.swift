@@ -10,6 +10,10 @@ public actor TrashLedger {
     private let fileURL: URL
     private var entries: [String: TrashLedgerEntry] = [:]   // trashedPath → entry
     private var loaded = false
+    /// Why the file at fileURL could not be loaded, while it still sits there: it must be moved aside before any write
+    private var unusableFileReason: String?
+    /// Failure no call could throw to its caller, waiting for takeProblem()
+    private var problem: TrashLedgerError?
 
     public init(directory: URL) {
         self.fileURL = directory.appendingPathComponent("trash-ledger.json")
@@ -37,6 +41,13 @@ public actor TrashLedger {
     public func count() async -> Int {
         await ensureLoaded()
         return entries.count
+    }
+
+    /// Hands over the last unreported failure once, for the app to show (for example a file that was kept aside at load).
+    public func takeProblem() async -> TrashLedgerError? {
+        await ensureLoaded()
+        defer { problem = nil }
+        return problem
     }
 
     // MARK: Mutations
@@ -85,15 +96,29 @@ public actor TrashLedger {
     private func ensureLoaded() async {
         guard !loaded else { return }
         loaded = true
-        guard let data = try? Data(contentsOf: fileURL),
-              let list = try? JSONDecoder().decode([TrashLedgerEntry].self, from: data) else { return }
-        let fm = FileManager.default
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch CocoaError.fileReadNoSuchFile {
+            return
+        } catch {
+            setAsideUnusableFile(because: error.localizedDescription)
+            return
+        }
+        let list: [TrashLedgerEntry]
+        do {
+            list = try JSONDecoder().decode([TrashLedgerEntry].self, from: data)
+        } catch {
+            setAsideUnusableFile(because: "the file is damaged")
+            return
+        }
         var kept: [String: TrashLedgerEntry] = [:]
         var dropped = false
         for e in list {
             // Self-pruning: the item is no longer in Trash (emptied / deleted by another app / already put back), so the entry is void.
             // An item on an unmounted volume is only out of reach: its Put Back must work again after remounting.
-            if fm.fileExists(atPath: e.trashedPath) || Self.isOnOfflineVolume(e) {
+            // lstat, because a trashed dangling link is still in the Trash
+            if TrashRestorePolicy.isOccupied(URL(fileURLWithPath: e.trashedPath)) || Self.isOnOfflineVolume(e) {
                 kept[e.trashedPath] = e
             } else {
                 dropped = true
@@ -121,17 +146,36 @@ public actor TrashLedger {
         return volumeUUID(of: probe) != expected
     }
 
-    /// Atomic persistence (write a temp file, then replace; a write failure leaves in-memory state intact, retried on the next mutation)
+    /// Moves a file that cannot be loaded to `<name>.corrupt-<UUID>` so that no later write replaces it.
+    /// Returns the error while the file stays in place: nothing may be written then, and the next write retries.
+    @discardableResult
+    private func setAsideUnusableFile(because reason: String? = nil) -> TrashLedgerError? {
+        guard let reason = reason ?? unusableFileReason else { return nil }
+        unusableFileReason = reason
+        let kept = fileURL.appendingPathExtension("corrupt-\(UUID().uuidString)")
+        do {
+            try FileManager.default.moveItem(at: fileURL, to: kept)
+        } catch {
+            let failure = TrashLedgerError(.external, "The Put Back records could not be read (\(reason)) and the file could not be moved aside, so changes will not be saved: \(error.localizedDescription)")
+            problem = failure
+            return failure
+        }
+        unusableFileReason = nil
+        problem = TrashLedgerError(.external, "The Put Back records could not be read (\(reason)). The file was kept at \(kept.path).")
+        return nil
+    }
+
+    /// Atomic persistence. A failure leaves in-memory state intact, is reported through takeProblem(),
+    /// and is retried on the next mutation.
     private func persist() {
+        guard setAsideUnusableFile() == nil else { return }
         let list = entries.values.sorted { $0.recordedAt < $1.recordedAt }
-        guard let data = try? JSONEncoder().encode(list) else { return }
-        let dir = fileURL.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let tmp = fileURL.appendingPathExtension("tmp-\(UUID().uuidString)")
-        guard (try? data.write(to: tmp, options: .atomic)) != nil else { return }
-        if (try? FileManager.default.replaceItemAt(fileURL, withItemAt: tmp)) == nil {
-            // replaceItemAt fails when the target does not exist yet; fall back to moving it over directly
-            try? FileManager.default.moveItem(at: tmp, to: fileURL)
+        do {
+            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+            try JSONEncoder().encode(list).write(to: fileURL, options: .atomic)
+        } catch {
+            problem = TrashLedgerError(.external, "Could not save the Put Back records, so Put Back will not work after a restart: \(error.localizedDescription)")
         }
     }
 }

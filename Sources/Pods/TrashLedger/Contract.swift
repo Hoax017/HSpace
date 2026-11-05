@@ -28,9 +28,11 @@ public struct TrashLedgerEntry: Sendable, Hashable, Codable {
     }
 }
 
-public struct TrashLedgerError: ClassifiedError {
+public struct TrashLedgerError: ClassifiedError, LocalizedError {
     public let errorClass: ErrorClass
     public let localizedDescription: String
+    /// What `localizedDescription` gives on `any Error`, which is how the app receives it
+    public var errorDescription: String? { localizedDescription }
 
     init(_ cls: ErrorClass, _ message: String) {
         self.errorClass = cls
@@ -61,8 +63,9 @@ public enum TrashGuard {
 public enum TrashRestoreStep: Sendable, Equatable {
     /// The item is still in the Trash: the move failed, was cancelled, or the user chose Skip.
     case notRestored
-    /// The item left the Trash and needs no further action.
-    case restored
+    /// The item left the Trash and needs no further action. `at` is nil when it joined what was already at
+    /// that path, by replace or merge: that path then holds more than this item, so redo must not trash it.
+    case restored(at: URL?)
     /// The item landed under its Trash name and must be renamed back.
     case rename(landed: URL, to: String)
 }
@@ -80,18 +83,18 @@ public enum TrashRestorePolicy {
         return lstat(url.path, &info) == 0
     }
 
-    /// Decides the follow-up after the move. `landedWasOccupied` is `isOccupied(landedURL(of:))` sampled
-    /// **before** the move: Transfer receipts do not say where an item landed, so an occupied path means
-    /// the file there may be unrelated and must never be renamed. `filesDone` is not a signal either,
-    /// because moving an empty folder reports 0.
+    /// Decides the follow-up after the move. The receipt says where the item landed. `landedWasOccupied` is
+    /// `isOccupied(landedURL(of:))` sampled **before** the move: when it is true the file there may be unrelated
+    /// and must never be renamed. `filesDone` is not a signal, because moving an empty folder reports 0.
     public static func step(after receipt: OperationReceipt?, of item: TrashedItem,
                             landedWasOccupied: Bool) -> TrashRestoreStep {
         // Skip also ends cleanly, so the receipt alone cannot prove the item left the Trash
-        guard let receipt, receipt.failures.isEmpty, !isOccupied(item.trashed) else { return .notRestored }
-        let landed = landedURL(of: item)
-        guard !landedWasOccupied, landed.lastPathComponent != item.original.lastPathComponent else {
-            return .restored
+        guard let receipt, receipt.failures.isEmpty, !isOccupied(item.trashed),
+              let landed = receipt.createdURLs.first else { return .notRestored }
+        if landedWasOccupied {
+            return .restored(at: landed == landedURL(of: item) ? nil : landed)
         }
-        return isOccupied(landed) ? .rename(landed: landed, to: item.original.lastPathComponent) : .notRestored
+        guard landed.lastPathComponent != item.original.lastPathComponent else { return .restored(at: landed) }
+        return .rename(landed: landed, to: item.original.lastPathComponent)
     }
 }
