@@ -148,7 +148,7 @@ Owns `ConflictSheet.swift` and the drop handlers in the three view controllers.
 
 Owns `.github`, `scripts`, docs.
 
-- [ ] **G1** (M) Run build, tests and lints on every pull request.
+- [x] **G1** (M) Run build, tests and lints on every pull request. Proven on `macos-26` with Xcode 26.6, including the `hdiutil` volume tests.
 - [x] **G2** (S) Pin workflow actions to commit hashes, and restrict token permissions. `release.yml:15,36`
 - [x] **G3** (S) Install the pre-commit checks the docs promise, or remove the claims. `scripts/install-hooks.sh` installs them; run it once per clone. meta-doctor claims removed: it is not in this repository.
 - [x] **G4** (S) `ui-smoke.sh` must not kill a running HSpace. `ui-smoke.sh:7`

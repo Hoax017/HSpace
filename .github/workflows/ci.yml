@@ -4,7 +4,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, phase0/track-g] # phase0/track-g is temporary, to prove the workflow on a real runner.
+    branches: [main]
 
 permissions:
   contents: read
