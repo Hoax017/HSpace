@@ -108,7 +108,8 @@ public enum HistoryBuilder {
     /// Sample before the run: which targets of a copy or move are already taken. Afterwards the receipt cannot tell a new item from a merge.
     public static func occupiedTargets(of spec: OperationSpec) -> Set<String> {
         guard [.copy, .move].contains(spec.kind), let destination = spec.destination else { return [] }
-        let paths = spec.sources.map { destination.appendingPathComponent($0.lastPathComponent).path }
+        let name = spec.sources.count == 1 ? spec.newName : nil
+        let paths = spec.sources.map { destination.appendingPathComponent(name ?? $0.lastPathComponent).path }
         return Set(paths.filter(occupied))
     }
 

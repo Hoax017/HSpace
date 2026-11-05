@@ -443,6 +443,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if let enabled = BatchToolsMenu.validate(item, in: self) { return enabled }
+        if let enabled = TemplateMenu.validate(item, in: self) { return enabled }
         if item.action == #selector(switchWorkspaceByNumber(_:)) {
             item.state = item.tag == workspaces.activeIndex ? .on : .off
             return item.tag < workspaces.count

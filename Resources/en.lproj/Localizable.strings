@@ -738,3 +738,9 @@
 "sync.delete.more" = "and %d more";
 "sync.delete.emptyWarning" = "The other folder has nothing to sync, so this empties this one. Check that it is the right folder and that its volume is mounted.";
 "sync.delete.confirm" = "Move to Trash";
+
+/* File templates (L44) */
+"menu.newFromTemplate" = "New from Template";
+"menu.saveAsTemplate" = "Save Selection as Template";
+"menu.openTemplates" = "Open Templates Folder";
+"templates.none" = "No templates yet";

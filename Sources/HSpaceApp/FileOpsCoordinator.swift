@@ -523,6 +523,11 @@ final class FileOpsCoordinator {
         }
     }
 
+    /// `run` for the extensions in other files
+    func submit(_ spec: OperationSpec, onComplete: (@MainActor (OperationReceipt?) -> Void)? = nil) {
+        run(spec, onComplete: onComplete)
+    }
+
     /// `run` for callers that must act on the outcome before starting the next operation, and
     /// that take something back rather than do something new: undo leaves no history line of its own.
     func runUnrecorded(_ spec: OperationSpec) async -> OperationReceipt? {

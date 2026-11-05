@@ -233,7 +233,7 @@ Owns a new `Scheduler` pod and `ProgressWindowController.swift`. Depends on trac
 - [x] **L41** (M) Task list window and toolbar status
 - [x] **L42** (M) Operation history with undo groups
 - [x] **L43** (L) Local folder sync: compare, filters, presets, direction, dry run. Must show a plan before any delete
-- [ ] **L44** (M) New file templates, with `$date(format)` names
+- [x] **L44** (M) New file templates, with `$date(format)` names
 
 ### Lane 6: Archives
 
@@ -438,6 +438,9 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Sync with an unreadable subfolder: the summary says so, and the plan holds no delete
 - [ ] Cancel during Compare with Contents on a large folder, and during Sync: it stops, and a second Compare shows what is left
 - [ ] Save a preset with folders, reopen the sheet, choose it: everything returns. Delete Preset removes it
+- [ ] Save a file as a template, name it `Log $date(yyyy-MM-dd).md` in the templates folder: the menu shows today's name, and New from Template selects it for renaming
+- [ ] New from Template twice in one folder: the second gets "2", with no panel. A folder template copies whole
+- [ ] New from Template in list, icon and column views, from the File menu and the right-click menu; grayed out in the Trash
 - [ ] The task list works in light and dark mode, and with VoiceOver: Pause, Priority and Cancel are named
 
 ### Overall feel
