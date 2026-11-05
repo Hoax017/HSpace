@@ -1,13 +1,34 @@
 import Foundation
 import HSpaceContracts
 
-// Private concern: physical Process driver: launches system tools, captures stderr, cooperative cancellation (terminate).
+// Private concern: physical Process driver: launches system tools, captures stderr while they run, cooperative cancellation (terminate).
 // Process.run()/waitUntilExit() block, so terminationHandler + CheckedContinuation make this non-blocking,
 // staying off the Swift concurrency cooperative pool (same spirit as Transfer's ioQueue).
 
 struct ProcessResult {
     let status: Int32
     let stderr: String
+}
+
+/// Reads a pipe from the moment it is created. A pipe holds about 64 KB, so a child writing more
+/// would block forever if the pipe were only read after the child exits.
+private final class PipeDrain: @unchecked Sendable {
+    private let done = DispatchGroup()
+    private var data = Data()   // written before done.leave(), read only after done.wait()
+
+    init(_ pipe: Pipe) {
+        let reader = pipe.fileHandleForReading
+        done.enter()
+        DispatchQueue.global(qos: .utility).async { [self] in
+            data = (try? reader.readToEnd()) ?? Data()   // diagnostics only
+            done.leave()
+        }
+    }
+
+    func wait() -> Data {
+        done.wait()
+        return data
+    }
 }
 
 extension ArchiveEngineNode {
@@ -28,19 +49,20 @@ extension ArchiveEngineNode {
         process.standardError = errPipe
         process.standardOutput = stdoutTo ?? FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
+        let errors = PipeDrain(errPipe)
 
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<ProcessResult, any Error>) in
                 process.terminationHandler = { proc in
-                    let errData = (try? errPipe.fileHandleForReading.readToEnd()) ?? Data()
-                    let text = String(decoding: errData, as: UTF8.self)
+                    let text = String(decoding: errors.wait(), as: UTF8.self)
                     cont.resume(returning: ProcessResult(status: proc.terminationStatus, stderr: text))
                 }
                 do {
                     try process.run()
                 } catch {
                     process.terminationHandler = nil
+                    try? errPipe.fileHandleForWriting.close()   // ends the drain; the child never started
                     cont.resume(throwing: ArchiveError(.external,
                         "Could not launch tool\(toolPath): \(error.localizedDescription)", path: toolPath))
                 }
@@ -48,42 +70,6 @@ extension ArchiveEngineNode {
         } onCancel: {
             // Cooperative cancellation: SIGTERM the child; terminationHandler still fires so the continuation resumes,
             // and the caller then checks Task.isCancelled → cleans up partial output and throws CancellationError.
-            if process.isRunning { process.terminate() }
-        }
-    }
-
-    /// Runs a tool and collects its stdout as text (for listing archive entries: unzip -Z1 / tar -tf)
-    func runToolCapturingStdout(_ toolPath: String, _ arguments: [String]) async throws -> (result: ProcessResult, stdout: String) {
-        guard FileManager.default.isExecutableFile(atPath: toolPath) else {
-            throw ArchiveError(.external, "System tool missing:\(toolPath)", path: toolPath)
-        }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: toolPath)
-        process.arguments = arguments
-        let outPipe = Pipe(); let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-        process.standardInput = FileHandle.nullDevice
-
-        return try await withTaskCancellationHandler {
-            try Task.checkCancellation()
-            return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<(ProcessResult, String), any Error>) in
-                process.terminationHandler = { proc in
-                    let outData = (try? outPipe.fileHandleForReading.readToEnd()) ?? Data()
-                    let errData = (try? errPipe.fileHandleForReading.readToEnd()) ?? Data()
-                    let outText = String(decoding: outData, as: UTF8.self)
-                    let errText = String(decoding: errData, as: UTF8.self)
-                    cont.resume(returning: (ProcessResult(status: proc.terminationStatus, stderr: errText), outText))
-                }
-                do {
-                    try process.run()
-                } catch {
-                    process.terminationHandler = nil
-                    cont.resume(throwing: ArchiveError(.external,
-                        "Could not launch tool\(toolPath): \(error.localizedDescription)", path: toolPath))
-                }
-            }
-        } onCancel: {
             if process.isRunning { process.terminate() }
         }
     }

@@ -6,9 +6,9 @@ import HSpaceContracts
 // with no third-party dependencies (the honest approach). Node boundaries follow irreversible side effects: one compress = one archive produced;
 // one extract = one content tree landed from an archive; each is one atomic commit unit.
 //
-// Encryption note (honest disclosure): the zip password goes through /usr/bin/zip -P <password> (legacy ZipCrypto,
-// which is **weak encryption**, and the password appears in plain text in the process argument list, an exposure surface). tar.gz has no built-in encryption, so the password is ignored.
-// The settings page explains this; strong encryption would need AES zip (third-party, not in v1).
+// Passwords are refused with a logic error, for every format. zip and unzip take a password only on the command line,
+// where other processes can read it, or from a terminal, which this node does not have. tar has no encryption at all.
+// An empty password means no password. Password support returns with a way to pass it safely (L53).
 
 public struct ArchiveError: ClassifiedError {
     public let errorClass: ErrorClass

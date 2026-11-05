@@ -21,7 +21,13 @@ extension ArchiveEngineNode {
         let isTarGz = options.format.lowercased() == "tar.gz"
         let ext = isTarGz ? "tar.gz" : "zip"
 
-        // All selected items share one parent directory (a file manager selection always comes from a single directory), used as the zip/tar relative root
+        // Archive entries carry bare names, so two sources with one name (in any case) would overwrite each other on extraction
+        var taken = Set<String>()
+        for src in spec.sources where !taken.insert(src.lastPathComponent.lowercased()).inserted {
+            throw ArchiveError(.logic, "Selected items share the name \(src.lastPathComponent)", path: src.path)
+        }
+
+        // The archive lands next to the first source, unless a destination is given
         let sourcesParent = spec.sources[0].deletingLastPathComponent()
         let outputDir = spec.destination ?? sourcesParent
         var isDir: ObjCBool = false
@@ -29,7 +35,7 @@ extension ArchiveEngineNode {
             throw ArchiveError(.external, "Output folder unavailable:\(outputDir.lastPathComponent)", path: outputDir.path)
         }
 
-        // Archive base name: explicit newName first; single source uses its extensionless name; multiple sources use the common parent's name (falling back to Archive)
+        // Archive base name: explicit newName first; single source uses its extensionless name; multiple sources use the first source's parent name (falling back to Archive)
         let baseName: String
         if let n = spec.newName, !n.isEmpty {
             baseName = n
@@ -51,18 +57,19 @@ extension ArchiveEngineNode {
         defer { try? fm.removeItem(at: staging) }
         let stagedArchive = staging.appendingPathComponent(finalName)
 
-        let names = spec.sources.map(\.lastPathComponent)
+        let folders = Self.groupedByFolder(spec.sources)
         do {
             if isTarGz {
-                // tar has no built-in encryption: the password is ignored (noted in Contract)
-                try await runArchiveTool(Tools.tar,
-                    ["-czf", stagedArchive.path, "-C", sourcesParent.path] + names)
+                // Each -C applies to the names after it, and names stay relative to their own folder
+                var args = ["-czf", stagedArchive.path]
+                for folder in folders { args += ["-C", folder.url.path] + folder.names }
+                try await runArchiveTool(Tools.tar, args)
             } else {
-                var args = ["-r", "-q"]
-                if let pw = options.password, !pw.isEmpty { args += ["-P", pw] }  // ZipCrypto weak encryption
-                args += [stagedArchive.path] + names
-                // cwd = common parent → relative paths inside the archive (no absolute prefix)
-                try await runArchiveTool(Tools.zip, args, cwd: sourcesParent)
+                // zip has no -C: one run per folder, each adding to the same archive.
+                // cwd = the folder → relative paths inside the archive (no absolute prefix)
+                for folder in folders {
+                    try await runArchiveTool(Tools.zip, ["-r", "-q", stagedArchive.path] + folder.names, cwd: folder.url)
+                }
             }
         } catch is CancellationError {
             throw CancellationError()   // defer cleans up the staging directory (including zip's zi* temp files); the final name never appeared
@@ -109,7 +116,7 @@ extension ArchiveEngineNode {
         var bytesDone: Int64 = 0
         for src in spec.sources {
             context.report(.progress(filesDone: done, bytesDone: bytesDone, currentPath: src.lastPathComponent))
-            let landed = try await extractOne(src, options: options)
+            let landed = try await extractOne(src, options: options, context: context)
             created.append(contentsOf: landed)
             done += 1
             bytesDone += Self.fileSize(src)
@@ -120,7 +127,7 @@ extension ArchiveEngineNode {
     }
 
     /// Extracts one archive and returns the landed top-level URLs (for UI selection). The staging directory ensures cancel or error leaves nothing half-finished.
-    private func extractOne(_ archive: URL, options: ArchiveOptions) async throws -> [URL] {
+    private func extractOne(_ archive: URL, options: ArchiveOptions, context: NodeContext) async throws -> [URL] {
         let fm = FileManager.default
         guard let format = ArchiveFormat.detect(archive) else {
             throw ArchiveError(.logic, "Unrecognized archive format:\(archive.lastPathComponent)", path: archive.path)
@@ -137,10 +144,7 @@ extension ArchiveEngineNode {
         do {
             switch format {
             case .zip:
-                var args = ["-o", "-q"]
-                if let pw = options.password, !pw.isEmpty { args += ["-P", pw] }
-                args += [archive.path, "-d", staging.path]
-                try await runArchiveTool(Tools.unzip, args)
+                try await runArchiveTool(Tools.unzip, ["-o", "-q", archive.path, "-d", staging.path])
             case .tarGz:
                 try await runArchiveTool(Tools.tar, ["-xzf", archive.path, "-C", staging.path])
             case .tarBz2:
@@ -157,27 +161,22 @@ extension ArchiveEngineNode {
         }
 
         // Top-level entries inside staging = what was really extracted (more reliable than a pre-read listing)
-        let children = (try? fm.contentsOfDirectory(at: staging,
-            includingPropertiesForKeys: nil, options: [])) ?? []
+        let children = try Self.contents(of: staging)
         let topCount = children.count
 
         var landed: [URL] = []
         if options.createWrapper && topCount > 1 {
             // Wrapper semantics: more than one top-level entry → create a same-named wrapper folder first (by renaming the whole staging directory to the wrapper)
             let stem = Self.archiveStemName(archive, format: format)
-            let wrapperName = uniqueArchiveName(base: stem, ext: "", in: targetBaseDir)
+            let wrapperName = uniqueArchiveName(base: stem, ext: "", in: targetBaseDir, exists: Self.itemExists)
             let wrapper = targetBaseDir.appendingPathComponent(wrapperName)
-            try fm.moveItem(at: staging, to: wrapper)
+            try Self.move(staging, to: wrapper)
             stagingAlive = false   // staging was renamed to the wrapper, so defer no longer deletes it
             landed = [wrapper]
         } else {
-            // Only one entry (or no wrapper wanted) → skip the wrapper and move entries into the target directory one by one (same name overwrites, matching unzip -o semantics)
-            for child in children {
-                let dest = targetBaseDir.appendingPathComponent(child.lastPathComponent)
-                if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
-                try fm.moveItem(at: child, to: dest)
-                landed.append(dest)
-            }
+            // Only one entry (or no wrapper wanted) → skip the wrapper; a name already taken goes to the conflict panel
+            landed = try await land(children, in: targetBaseDir, staging: staging, context: context,
+                                    stagingAlive: &stagingAlive)
         }
         return landed
     }
@@ -215,6 +214,23 @@ extension ArchiveEngineNode {
     }
 
     // MARK: Utilities
+
+    /// Sources per parent folder, in selection order.
+    /// Always "./name": a name such as -TTpython3 must not become an option, because zip -T -TT runs a program.
+    /// "--" is not enough: with it, both zip and tar still fail the option-like names in ArchiveSafetyTests.
+    static func groupedByFolder(_ sources: [URL]) -> [(url: URL, names: [String])] {
+        var folders: [(url: URL, names: [String])] = []
+        for source in sources {
+            let folder = source.deletingLastPathComponent().standardizedFileURL
+            let name = "./" + source.lastPathComponent
+            if let index = folders.firstIndex(where: { $0.url == folder }) {
+                folders[index].names.append(name)
+            } else {
+                folders.append((folder, [name]))
+            }
+        }
+        return folders
+    }
 
     static func makeDir(_ url: URL) throws {
         do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
