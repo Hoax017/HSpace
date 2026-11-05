@@ -658,12 +658,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     }
 
     @objc func openInTerminal(_ sender: Any?) {
-        let dir: URL = selectedItems.first(where: { $0.isDirectory })?.url ?? model.directory
-        let ws = NSWorkspace.shared
-        let terminal = ws.urlForApplication(withBundleIdentifier: "com.apple.Terminal")
-            ?? ws.urlForApplication(withBundleIdentifier: "com.googlecode.iterm2")
-        guard let terminal else { NSSound.beep(); return }
-        ws.open([dir], withApplicationAt: terminal, configuration: NSWorkspace.OpenConfiguration())
+        TerminalResolver.open(selectedItems.first(where: { $0.isDirectory })?.url ?? model.directory)
     }
 
     @objc func showPackageContents(_ sender: Any?) {
@@ -829,15 +824,10 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
         guard urls.allSatisfy({ !FileOpsCoordinator.isSelfOrDescendant(destination: target, ofSource: $0) }) else {
             return []
         }
-        let forceCopy = draggingInfo.draggingSourceOperationMask == .copy
-        // All sources already in the destination: a move is a no-op → refuse (⌥ copy is allowed, meaning make a duplicate)
-        let destPath = target.standardizedFileURL.path
-        if !forceCopy, urls.allSatisfy({ $0.standardizedFileURL.deletingLastPathComponent().path == destPath }) {
-            return []
-        }
-        if forceCopy { return .copy }
-        // Finder convention: same volume = move, across volumes = copy
-        return urls.allSatisfy({ FileOpsCoordinator.isSameVolume($0, target) }) ? .move : .copy
+        // Same decision as the submission in dropTransfer (drag preference + ⌥ + volume), so the cursor cannot disagree with it
+        let willMove = FileOpsCoordinator.effectiveMove(
+            urls: urls, into: target, optionCopy: draggingInfo.draggingSourceOperationMask == .copy)
+        return DropFeedback.operation(willMove: willMove, urls: urls, target: target)
     }
 
     func collectionView(_ collectionView: NSCollectionView, acceptDrop draggingInfo: any NSDraggingInfo,

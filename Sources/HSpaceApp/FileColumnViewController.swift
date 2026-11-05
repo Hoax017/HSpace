@@ -338,18 +338,17 @@ final class FileColumnViewController: NSViewController {
         guard urls.allSatisfy({ !FileOpsCoordinator.isSelfOrDescendant(destination: target, ofSource: $0) }) else {
             return []
         }
-        let forceCopy = info.draggingSourceOperationMask == .copy
-        let destPath = target.standardizedFileURL.path
-        if !forceCopy, urls.allSatisfy({ $0.standardizedFileURL.deletingLastPathComponent().path == destPath }) {
-            return []
-        }
+        // Same decision as the submission in dropTransfer (drag preference + ⌥ + volume), so the cursor cannot disagree with it
+        let willMove = FileOpsCoordinator.effectiveMove(
+            urls: urls, into: target, optionCopy: info.draggingSourceOperationMask == .copy)
+        let feedback = DropFeedback.operation(willMove: willMove, urls: urls, target: target)
+        guard !feedback.isEmpty else { return [] }
         if targetRow >= 0 {
             column.tableView.setDropRow(targetRow, dropOperation: .on)
         } else {
             column.tableView.setDropRow(-1, dropOperation: .on)   // Whole-column highlight = drop into the column's directory
         }
-        if forceCopy { return .copy }
-        return urls.allSatisfy({ FileOpsCoordinator.isSameVolume($0, target) }) ? .move : .copy
+        return feedback
     }
 
     func acceptDrop(in column: ColumnUnit, info: any NSDraggingInfo,
@@ -442,12 +441,7 @@ final class FileColumnViewController: NSViewController {
     }
 
     @objc func openInTerminal(_ sender: Any?) {
-        let dir: URL = selectedItems.first(where: { $0.isDirectory })?.url ?? currentDirectory
-        let ws = NSWorkspace.shared
-        let terminal = ws.urlForApplication(withBundleIdentifier: "com.apple.Terminal")
-            ?? ws.urlForApplication(withBundleIdentifier: "com.googlecode.iterm2")
-        guard let terminal else { NSSound.beep(); return }
-        ws.open([dir], withApplicationAt: terminal, configuration: NSWorkspace.OpenConfiguration())
+        TerminalResolver.open(selectedItems.first(where: { $0.isDirectory })?.url ?? currentDirectory)
     }
 
     @objc func showPackageContents(_ sender: Any?) {
