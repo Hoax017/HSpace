@@ -142,7 +142,7 @@ Owns `ConflictSheet.swift` and the drop handlers in the three view controllers.
 
 - [x] **F1** (S) Replace must not be the Return default. `ConflictSheet.swift:216`
 - [x] **F2** (S) Drop feedback must match the action taken. `FileIconGridViewController.swift:838`, `FileColumnViewController.swift:351`
-- [ ] **F3** (S) Honour the terminal setting in all view modes. `FileIconGridViewController.swift:663`
+- [x] **F3** (S) Honour the terminal setting in all view modes. `FileIconGridViewController.swift:663`
 
 ### Track G: Engineering
 

@@ -441,12 +441,7 @@ final class FileColumnViewController: NSViewController {
     }
 
     @objc func openInTerminal(_ sender: Any?) {
-        let dir: URL = selectedItems.first(where: { $0.isDirectory })?.url ?? currentDirectory
-        let ws = NSWorkspace.shared
-        let terminal = ws.urlForApplication(withBundleIdentifier: "com.apple.Terminal")
-            ?? ws.urlForApplication(withBundleIdentifier: "com.googlecode.iterm2")
-        guard let terminal else { NSSound.beep(); return }
-        ws.open([dir], withApplicationAt: terminal, configuration: NSWorkspace.OpenConfiguration())
+        TerminalResolver.open(selectedItems.first(where: { $0.isDirectory })?.url ?? currentDirectory)
     }
 
     @objc func showPackageContents(_ sender: Any?) {

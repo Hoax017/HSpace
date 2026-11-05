@@ -658,12 +658,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     }
 
     @objc func openInTerminal(_ sender: Any?) {
-        let dir: URL = selectedItems.first(where: { $0.isDirectory })?.url ?? model.directory
-        let ws = NSWorkspace.shared
-        let terminal = ws.urlForApplication(withBundleIdentifier: "com.apple.Terminal")
-            ?? ws.urlForApplication(withBundleIdentifier: "com.googlecode.iterm2")
-        guard let terminal else { NSSound.beep(); return }
-        ws.open([dir], withApplicationAt: terminal, configuration: NSWorkspace.OpenConfiguration())
+        TerminalResolver.open(selectedItems.first(where: { $0.isDirectory })?.url ?? model.directory)
     }
 
     @objc func showPackageContents(_ sender: Any?) {
