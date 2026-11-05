@@ -81,6 +81,53 @@ import HSpaceTestSupport
         #expect(many.isEmpty)
     }
 
+    // MARK: Offline volumes (C5)
+
+    @Test func entryOnAnEjectedVolumeSurvivesLoad() async throws {
+        let dir = try FaultFixture.tempDir("hspace-tl-volume")
+        defer { FaultFixture.remove(dir) }
+        let volume = try ScratchVolume()
+        let trashed = volume.url.appendingPathComponent(".Trashes/501/photo.jpg")
+        let local = dir.appendingPathComponent("local.txt")
+        try FaultFixture.write(to: trashed)
+        try FaultFixture.write(to: local)
+        await TrashLedger(directory: dir).record([
+            (original: volume.url.appendingPathComponent("photo.jpg"), trashed: trashed),
+            (original: dir.appendingPathComponent("o/local.txt"), trashed: local),
+        ])
+
+        try volume.eject()
+        try FileManager.default.removeItem(at: local)
+        let afterEject = TrashLedger(directory: dir)
+        #expect(await afterEject.origin(of: trashed) != nil)
+        #expect(await afterEject.origin(of: local) == nil)      // its volume is here, so the item is really gone
+        // Loading wrote the file back: the record must still be there for the next launch
+        #expect(await TrashLedger(directory: dir).origin(of: trashed) != nil)
+    }
+
+    @Test func entryOnAMountedVolumeIsPrunedWhenItsItemIsGone() async throws {
+        let dir = try FaultFixture.tempDir("hspace-tl-volume")
+        defer { FaultFixture.remove(dir) }
+        let volume = try ScratchVolume()
+        let trashed = volume.url.appendingPathComponent(".Trashes/501/photo.jpg")
+        try FaultFixture.write(to: trashed)
+        await TrashLedger(directory: dir).record([
+            (original: volume.url.appendingPathComponent("photo.jpg"), trashed: trashed),
+        ])
+        try FileManager.default.removeItem(at: trashed)
+        #expect(await TrashLedger(directory: dir).origin(of: trashed) == nil)
+    }
+
+    /// Ledgers written before C5 have no volume field.
+    @Test func olderEntryUnderAMissingVolumeSurvivesLoad() async throws {
+        let dir = try FaultFixture.tempDir("hspace-tl-volume")
+        defer { FaultFixture.remove(dir) }
+        let trashed = URL(fileURLWithPath: "/Volumes/HSpaceGone-\(UUID().uuidString)/.Trashes/501/a.txt")
+        let entry = TrashLedgerEntry(trashedPath: trashed.path, originalPath: "/Volumes/x/a.txt", recordedAt: Date())
+        try JSONEncoder().encode([entry]).write(to: dir.appendingPathComponent("trash-ledger.json"))
+        #expect(await TrashLedger(directory: dir).origin(of: trashed) != nil)
+    }
+
     // MARK: Nothing lands in the Trash without a record (C4)
 
     @Test func trashGuardCoversRootAndDescendantsOnly() throws {

@@ -49,7 +49,8 @@ public actor TrashLedger {
             let k = Self.key(p.trashed)
             entries[k] = TrashLedgerEntry(trashedPath: k,
                                           originalPath: p.original.standardizedFileURL.path,
-                                          recordedAt: now)
+                                          recordedAt: now,
+                                          volumeUUID: Self.volumeUUID(of: p.trashed))
         }
         persist()
     }
@@ -90,11 +91,34 @@ public actor TrashLedger {
         var kept: [String: TrashLedgerEntry] = [:]
         var dropped = false
         for e in list {
-            // Self-pruning: the item is no longer in Trash (emptied / deleted by another app / already put back), so the entry is void
-            if fm.fileExists(atPath: e.trashedPath) { kept[e.trashedPath] = e } else { dropped = true }
+            // Self-pruning: the item is no longer in Trash (emptied / deleted by another app / already put back), so the entry is void.
+            // An item on an unmounted volume is only out of reach: its Put Back must work again after remounting.
+            if fm.fileExists(atPath: e.trashedPath) || Self.isOnOfflineVolume(e) {
+                kept[e.trashedPath] = e
+            } else {
+                dropped = true
+            }
         }
         entries = kept
         if dropped { persist() }
+    }
+
+    private static func volumeUUID(of url: URL) -> String? {
+        (try? url.resourceValues(forKeys: [.volumeUUIDStringKey]))?.volumeUUIDString
+    }
+
+    /// Any doubt answers true: keeping a stale entry is harmless, losing a live one is not.
+    private static func isOnOfflineVolume(_ entry: TrashLedgerEntry) -> Bool {
+        let fm = FileManager.default
+        guard let expected = entry.volumeUUID else {
+            // No recorded identity: only the standard mount location can show the volume is away
+            let parts = URL(fileURLWithPath: entry.trashedPath).pathComponents
+            return parts.count > 3 && parts[1] == "Volumes" && !fm.fileExists(atPath: "/Volumes/" + parts[2])
+        }
+        // An unmounted volume leaves at most an empty mount folder, which belongs to another volume
+        var probe = URL(fileURLWithPath: entry.trashedPath)
+        while probe.path != "/", !fm.fileExists(atPath: probe.path) { probe = probe.deletingLastPathComponent() }
+        return volumeUUID(of: probe) != expected
     }
 
     /// Atomic persistence (write a temp file, then replace; a write failure leaves in-memory state intact, retried on the next mutation)

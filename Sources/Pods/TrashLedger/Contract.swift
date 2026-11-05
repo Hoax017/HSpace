@@ -16,11 +16,15 @@ public struct TrashLedgerEntry: Sendable, Hashable, Codable {
     public let originalPath: String
     /// Time recorded (used to clean up stale entries)
     public let recordedAt: Date
+    /// Volume that holds the Trash item, to tell "deleted" from "volume not mounted".
+    /// nil for ledgers written by older versions and for volumes without a UUID.
+    public let volumeUUID: String?
 
-    public init(trashedPath: String, originalPath: String, recordedAt: Date) {
+    public init(trashedPath: String, originalPath: String, recordedAt: Date, volumeUUID: String? = nil) {
         self.trashedPath = trashedPath
         self.originalPath = originalPath
         self.recordedAt = recordedAt
+        self.volumeUUID = volumeUUID
     }
 }
 
