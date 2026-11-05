@@ -208,7 +208,7 @@ Owns the view controllers and `Sources/Pods/IconThumb`.
 - [x] **L20** (L) Side preview panel, with configurable actions
 - [x] **L21** (L) File inspector panel
 - [x] **L22** (M) View options per folder, and saved view styles with a manager
-- [ ] **L23** (M) Custom hidden items and exclusion rules
+- [x] **L23** (M) Custom hidden items and exclusion rules
 - [ ] **L24** (M) Folder sizes in list view, with a setting
 - [ ] **L25** (M) Icon view options: size, spacing, label position
 - [ ] **L26** (S) Keyboard selection with Space
@@ -463,6 +463,10 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Change the view in a remembered folder: the change sticks. Quit and reopen: it is still there
 - [ ] Save View as Style, apply it elsewhere from the menu. A duplicate or blank name is refused with a message
 - [ ] Manage Styles: rename, remove (asks first), forget a folder; keyboard and VoiceOver work in the sheet
+- [ ] Right-click > Hide: the item goes in every view mode, and ⌘Z brings it back. Show Hidden Files shows it dimmed
+- [ ] Settings > Hidden Items: add `*.log`: open panes update at once. Set it to Exclude: Show Hidden Files no longer brings it back
+- [ ] A rule with a scope applies in that folder and below only. Clearing a pattern says what is wrong and keeps the old rule on disk
+- [ ] Nothing changes in Finder: the rules only change what HSpace shows
 
 ### Overall feel
 

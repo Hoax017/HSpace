@@ -127,6 +127,8 @@ final class FileColumnViewController: NSViewController {
             hScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
         ])
         view = root
+        NotificationCenter.default.addObserver(self, selector: #selector(hiddenRulesChanged(_:)),
+                                               name: .hspaceHiddenRulesChanged, object: nil)
     }
 
     // MARK: Suspend/resume (called by PaneViewController on pane/layout switches; north star of zero background power)
@@ -375,6 +377,8 @@ final class FileColumnViewController: NSViewController {
     }
 
     // MARK: Menu commands (responder chain; act on the focused column; rename unimplemented → not responding is honestly grayed out)
+
+    @objc private func hiddenRulesChanged(_ note: Notification) { reloadAllColumns() }
 
     @objc func toggleHiddenFiles(_ sender: Any?) {
         model.includeHidden.toggle()

@@ -65,6 +65,7 @@ final class DirectoryViewModel {
     private var metadataHandlers: [() -> Void] = []
     /// Set once in init; only deinit reads it again
     private nonisolated(unsafe) var colorObserver: (any NSObjectProtocol)?
+    private nonisolated(unsafe) var rulesObserver: (any NSObjectProtocol)?
 
     /// Subscribe to tag changes that leave the rows as they are, so a rename in progress is not interrupted
     func addOnMetadataChange(_ handler: @escaping () -> Void) { metadataHandlers.append(handler) }
@@ -87,7 +88,7 @@ final class DirectoryViewModel {
     /// Applies the tag filter and tag sort to a snapshot. Column view passes `applyFilter: false` for parent columns,
     /// where filtering would hide the folders the user drilled through.
     func arranged(_ items: [FileItem], metadata: [URL: ItemMetadata], applyFilter: Bool = true) -> [FileItem] {
-        var result = items
+        var result = HiddenItems.filter(items, includeHidden: includeHidden)
         if applyFilter, !tagFilter.isEmpty {
             result = result.filter { TagQuery.matches(metadata[$0.url]?.tags ?? [], anyOf: tagFilter) }
         }
@@ -117,6 +118,10 @@ final class DirectoryViewModel {
         colorObserver = NotificationCenter.default.addObserver(
             forName: .hspaceFileColorsChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.metadataHandlers.forEach { $0() } }
+        }
+        rulesObserver = NotificationCenter.default.addObserver(
+            forName: .hspaceHiddenRulesChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reload() }
         }
     }
 
@@ -233,6 +238,7 @@ final class DirectoryViewModel {
         watcher?.stop()
         metadataTask?.cancel()
         if let colorObserver { NotificationCenter.default.removeObserver(colorObserver) }
+        if let rulesObserver { NotificationCenter.default.removeObserver(rulesObserver) }
     }
 }
 

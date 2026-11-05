@@ -801,3 +801,21 @@
 "viewStyle.kind.folder" = "Folder";
 "viewStyle.kind.folderAndBelow" = "Folder and below";
 "viewStyle.deleteQuestion" = "Remove the style \"%@\"?";
+
+/* Hidden items and exclusion rules (L23) */
+"menu.hideItems" = "Hide";
+"toast.itemsHidden" = "Hidden. Show Hidden Files brings it back, Undo removes the rule.";
+"settings.tab.hiddenItems" = "Hidden Items";
+"settings.hidden.note" = "Hide items by name or path. Hidden items return with Show Hidden Files; excluded items never show. Files on disk do not change. Use * ? and [a-z]. A pattern with a / matches the full path.";
+"settings.hidden.add" = "Add Rule";
+"settings.hidden.pattern" = "Pattern";
+"settings.hidden.everywhere" = "Everywhere";
+"settings.hidden.enable" = "Use rule %@";
+"settings.hidden.remove" = "Remove rule %@";
+"settings.hidden.effect" = "Effect";
+"settings.hidden.effect.hide" = "Hide";
+"settings.hidden.effect.exclude" = "Exclude";
+"settings.hidden.target" = "Applies to";
+"settings.hidden.target.any" = "All items";
+"settings.hidden.target.files" = "Files";
+"settings.hidden.target.folders" = "Folders";

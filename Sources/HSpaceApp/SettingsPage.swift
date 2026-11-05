@@ -18,5 +18,6 @@ enum SettingsPages {
         FileColorsSettingsPage(),
         KindGroupsSettingsPage(),
         SidePanelSettingsPage(),
+        HiddenItemsSettingsPage(),
     ]
 }

@@ -197,6 +197,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         if let select { grid.activePane.reveal(select) }
         installKeyMonitor()
         ProblemAlert.show(ViewStylesHost.store.takeProblem())
+        ProblemAlert.show(HiddenItems.store.takeProblem())
     }
 
     @available(*, unavailable)
