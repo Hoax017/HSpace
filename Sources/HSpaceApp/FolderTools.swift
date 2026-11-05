@@ -25,6 +25,10 @@ final class FolderTools {
     /// the plan's folders still hold what was not moved.
     @discardableResult
     func run(_ plan: FolderPlan) async -> Bool {
+        await coordinator.historyGroup(L10n.t("history.group.folders")) { await execute(plan) }
+    }
+
+    private func execute(_ plan: FolderPlan) async -> Bool {
         var finished = true
         if !plan.moves.isEmpty {
             finished = await withCheckedContinuation { done in

@@ -7,13 +7,18 @@ import Transfer
 import LocalOps
 import ArchiveEngine
 import SessionStore
+import FolderSync
 import Frecency
+import OperationHistory
+import Scheduler
 import TrashLedger
 import Eraser
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let kernel = OperationKernel()
+    /// Who starts next: shared by the kernel and the task window
+    let scheduler: Scheduler
+    let kernel: OperationKernel
     /// Conflict arbitration sheet (the kernel's only arbiter): held strongly here, the kernel keeps only a weak-semantics reference
     private let conflictSheet = ConflictSheet()
     private var windowControllers: [MainWindowController] = []
@@ -26,6 +31,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// com.apple.provenance, mdls shows no origin, Finder's own AppleScript `original item` returns -1728),
     /// so supporting put-back means keeping our own records.
     let trashLedger = TrashLedger(directory: AppDelegate.supportDirectory)
+    /// What was done and how to take it back (shared app-wide)
+    let historyStore = HistoryStore(directory: AppDelegate.supportDirectory)
+    /// Saved folder sync settings
+    let syncPresetStore = SyncPresetStore(directory: AppDelegate.supportDirectory)
     /// Colour rules and other metadata settings (shared app-wide)
     let metadataStore = MetadataStore(directory: AppDelegate.supportDirectory)
     /// Rename presets and log (L11), shared app-wide
@@ -54,6 +63,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingExternalOpens: [ExternalRequest] = []
     private let externalOpenWorker = ExternalOpenWorker()
 
+    override init() {
+        let scheduler = Scheduler(maxConcurrent: Preferences.maxConcurrentOperations)
+        self.scheduler = scheduler
+        kernel = OperationKernel(queue: SchedulerRunQueue(scheduler))
+        super.init()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         ExternalOpenHistory.purgeStoredPath(from: .standard)
         NSApp.mainMenu = MainMenu.build()
@@ -67,13 +83,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         GlobalHotkey.apply()
         // Composition root (BG-2): declaratively inject the What: pod nodes + conflict arbiter + progress subscription
         Task { @MainActor in
-            await kernel.register(TransferNode(), for: [.copy, .move, .duplicate])
+            await kernel.register(TransferNode(pauseGate: { [scheduler] in scheduler.waitWhilePaused($0) }),
+                                  for: [.copy, .move, .duplicate])
             await kernel.register(LocalOpsNode(), for: [.rename, .newFolder, .newFile, .trash])
             await kernel.register(ArchiveEngineNode(), for: [.compress, .extract])
             // Permanent delete gets its own node: an irreversible operation does not share a mature node with the other local operations
             await kernel.register(EraserNode(), for: [.delete])
             await kernel.setArbiter(conflictSheet)
-            ProgressWindowController.shared.start(kernel: kernel)
+            ProgressWindowController.shared.start(kernel: kernel, scheduler: scheduler)
             #if DEBUG
             // Performance self-check entry (for north star acceptance, not a product path): HSPACE_PERF_DIRS=a:b:c:d navigates each quad pane to one directory
             if let spec = ProcessInfo.processInfo.environment["HSPACE_PERF_DIRS"], !spec.isEmpty {
@@ -294,6 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let wc = MainWindowController(kernel: kernel, frecencyStore: frecencyStore,
                                       trashLedger: trashLedger,
                                      initialDirectory: directory, select: selecting)
+        wc.coordinator.history = historyStore
         windowControllers.append(wc)
         wc.window?.delegate = self
         if orderFront { wc.showWindow(nil) }
@@ -311,6 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ProblemAlert.show(await sessionStore.takeProblem())
         ProblemAlert.show(await frecencyStore.takeProblem())
         ProblemAlert.show(await trashLedger.takeProblem())
+        ProblemAlert.show(await historyStore.takeProblem())
         await MetadataSettings.load(from: metadataStore)
         ProblemAlert.show(await metadataStore.takeProblem())
     }

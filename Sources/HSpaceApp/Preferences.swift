@@ -108,6 +108,12 @@ enum Preferences {
         set { d.set(newValue, forKey: "extractKeepArchive") }
     }
 
+    /// How many operations may run at once, when their paths do not overlap
+    static var maxConcurrentOperations: Int {
+        get { d.object(forKey: "maxConcurrentOperations") as? Int ?? 2 }
+        set { d.set(newValue, forKey: "maxConcurrentOperations") }
+    }
+
     /// Archive format choices (for the popup)
     static let archiveFormatOptions: [(id: String, nameKey: String)] = [
         ("zip", "settings.archiveFormat.zip"),

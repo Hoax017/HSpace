@@ -40,6 +40,7 @@ enum MainMenu {
         let newFileItem = fileMenu.addItem(withTitle: L10n.t("menu.newFile"),
                                            action: #selector(FileListViewController.newFileHere(_:)), keyEquivalent: "")
         KeyBindings.apply("newFile", to: newFileItem)
+        fileMenu.addItem(TemplateMenu.item())
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: L10n.t("menu.open"),
                          action: #selector(FileListViewController.openSelected(_:)), keyEquivalent: "o")
@@ -189,6 +190,11 @@ enum MainMenu {
         windowItem.submenu = windowMenu
         windowMenu.addItem(withTitle: L10n.t("menu.minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: L10n.t("menu.zoom"), action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        let tasksItem = windowMenu.addItem(withTitle: L10n.t("menu.taskList"),
+                                           action: #selector(ProgressWindowController.toggleVisible(_:)), keyEquivalent: "")
+        tasksItem.target = ProgressWindowController.shared
+        windowMenu.addItem(withTitle: L10n.t("menu.operationHistory"),
+                           action: #selector(MainWindowController.showOperationHistory(_:)), keyEquivalent: "")
         windowMenu.addItem(.separator())
         // Direct workspace digits ⌘1..9 (I-13; tag = workspace index, validate grays out items beyond the current count)
         for n in 1...9 {

@@ -25,8 +25,10 @@ func makePlan(_ spec: OperationSpec) throws -> TransferPlan {
             throw TransferError(.logic, "copy/move requires sources and a destination")
         }
         let mode: TransferPlan.Mode = spec.kind == .move ? .move : .copy
+        // `newName` lands a single source under another name; with several it could only make them collide
+        let newName = spec.sources.count == 1 ? spec.newName : nil
         return TransferPlan(mode: mode, entries: spec.sources.map {
-            .init(source: $0, destination: destDir.appendingPathComponent($0.lastPathComponent))
+            .init(source: $0, destination: destDir.appendingPathComponent(newName ?? $0.lastPathComponent))
         })
     case .duplicate:
         guard !spec.sources.isEmpty else { throw TransferError(.logic, "duplicate requires sources") }

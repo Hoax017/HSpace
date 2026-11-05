@@ -229,11 +229,11 @@ Owns `BreadcrumbBar.swift`, `PathEditorField.swift`, `SidebarViewController.swif
 
 Owns a new `Scheduler` pod and `ProgressWindowController.swift`. Depends on track A. L41 and L42 depend on L40.
 
-- [ ] **L40** (L) Scheduler: queue, priorities, per-path locks, pause and resume
-- [ ] **L41** (M) Task list window and toolbar status
-- [ ] **L42** (M) Operation history with undo groups
-- [ ] **L43** (L) Local folder sync: compare, filters, presets, direction, dry run. Must show a plan before any delete
-- [ ] **L44** (M) New file templates, with `$date(format)` names
+- [x] **L40** (L) Scheduler: queue, priorities, per-path locks, pause and resume
+- [x] **L41** (M) Task list window and toolbar status
+- [x] **L42** (M) Operation history with undo groups
+- [x] **L43** (L) Local folder sync: compare, filters, presets, direction, dry run. Must show a plan before any delete
+- [x] **L44** (M) New file templates, with `$date(format)` names
 
 ### Lane 6: Archives
 
@@ -415,6 +415,33 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Skip a clash during a merge: that folder stays, with the skipped file in it
 - [ ] Flatten a nested folder: same-named files become "name 2", and the empty subfolders are in the Trash, restorable with ⌘Z
 - [ ] Flatten across an unreadable subfolder: a clear error before anything moves
+
+### Operations
+
+- [ ] Copy a large folder and a second one to another folder at the same time: both progress
+- [ ] Copy into a folder, then rename an item being replaced there: the rename waits for the copy
+- [ ] Two copies with conflicts: one panel at a time
+- [ ] The tasks icon shows a count and a tooltip while work runs, and goes back to plain when idle; idle CPU stays at 0
+- [ ] Pause a cross-volume copy mid-file: bytes stop within a moment; Resume continues, Cancel leaves nothing
+- [ ] Pause All with a copy running and one queued, then add a third: nothing starts until Resume All
+- [ ] With 1 at once, queue two copies and set the second to High: it runs next
+- [ ] A failed task stays in the list until Clear Finished; finished ones go by themselves
+- [ ] Window > Operation History after a copy, a move, a rename and a Trash: each is listed, and Undo takes each back, also after a restart
+- [ ] Undo a copy: the copy goes to the Trash. Undo a copy that merged into a folder: the folder stays
+- [ ] Undo a move when the original place is taken: nothing changes, and the sheet says why
+- [ ] Flatten a folder, then Undo its one history line: the files return and the emptied folders come back
+- [ ] Folder Sync in `~/nspace-test` with Dry Run on: Compare lists every action, Dry Run reports them, and no file changes
+- [ ] Mirror with Dry Run off: the delete question lists the extras, Return does nothing, and Cancel leaves everything
+- [ ] After a Mirror, Compare again: nothing to do. Undo its one history line: everything is back, the extras too
+- [ ] Mirror from an empty folder: the warning names the risk of a wrong folder or an unmounted volume
+- [ ] Edit a file after Compare, then Sync: it is left alone and the report says so
+- [ ] Sync with an unreadable subfolder: the summary says so, and the plan holds no delete
+- [ ] Cancel during Compare with Contents on a large folder, and during Sync: it stops, and a second Compare shows what is left
+- [ ] Save a preset with folders, reopen the sheet, choose it: everything returns. Delete Preset removes it
+- [ ] Save a file as a template, name it `Log $date(yyyy-MM-dd).md` in the templates folder: the menu shows today's name, and New from Template selects it for renaming
+- [ ] New from Template twice in one folder: the second gets "2", with no panel. A folder template copies whole
+- [ ] New from Template in list, icon and column views, from the File menu and the right-click menu; grayed out in the Trash
+- [ ] The task list works in light and dark mode, and with VoiceOver: Pause, Priority and Cancel are named
 
 ### Overall feel
 

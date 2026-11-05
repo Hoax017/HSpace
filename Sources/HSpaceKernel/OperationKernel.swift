@@ -4,6 +4,46 @@ import HSpaceContracts
 // Node contracts (NodeEvent/NodeContext/OperationNode/ConflictArbiter) live in the HSpaceContracts vocabulary;
 // this kernel provides only generic mechanisms: queueing / scheduling / cancellation / progress aspect / atomic Run state machine commits (BG-3: zero business branches).
 
+// MARK: - Run queue (who starts next; a generic seam, so that the kernel knows no scheduling policy, BG-3)
+
+/// Decides which submitted operations may start. Implementations must be thread-safe and must not call back synchronously.
+public protocol RunQueue: AnyObject, Sendable {
+    func enqueue(_ id: UUID, spec: OperationSpec)
+    /// The operations that may start now; the queue counts them as running until `finished`
+    func takeRunnable() -> [UUID]
+    /// The operation was cancelled, whether it is running or not
+    func withdraw(_ id: UUID)
+    func finished(_ id: UUID)
+    /// `handler` runs after anything that may let an operation start
+    func setWakeHandler(_ handler: @escaping @Sendable () -> Void)
+}
+
+/// Default queue: one at a time, first come first served.
+public final class SerialRunQueue: RunQueue, @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiting: [UUID] = []
+    private var running: UUID?
+
+    public init() {}
+
+    public func enqueue(_ id: UUID, spec: OperationSpec) { lock.withLock { waiting.append(id) } }
+
+    public func takeRunnable() -> [UUID] {
+        lock.withLock {
+            guard running == nil, !waiting.isEmpty else { return [] }
+            let next = waiting.removeFirst()
+            running = next
+            return [next]
+        }
+    }
+
+    public func withdraw(_ id: UUID) { lock.withLock { waiting.removeAll { $0 == id } } }
+
+    public func finished(_ id: UUID) { lock.withLock { if running == id { running = nil } } }
+
+    public func setWakeHandler(_ handler: @escaping @Sendable () -> Void) {}
+}
+
 // MARK: - Kernel (sole Commit Owner: atomic commits of the Run state machine, BG-5)
 
 public actor OperationKernel {
@@ -27,11 +67,16 @@ public actor OperationKernel {
     private var receipts: [UUID: OperationReceipt] = [:]
     private var order: [UUID] = []
     private var observers: [UUID: AsyncStream<OperationProjection>.Continuation] = [:]
-    /// Serial execution: predictable disk I/O; parallelism left for later configuration
-    private var executing = false
-    private var waiting: [UUID] = []
+    private let queue: any RunQueue
+    /// The conflict panel shows one question at a time, however many operations run
+    private var arbitrationTail: Task<Void, Never>?
 
-    public init() {}
+    public init(queue: any RunQueue = SerialRunQueue()) {
+        self.queue = queue
+        queue.setWakeHandler { [weak self] in
+            Task { await self?.pump() }
+        }
+    }
 
     // MARK: Orchestration config (the What is injected declaratively at app startup, BG-2)
 
@@ -49,7 +94,7 @@ public actor OperationKernel {
         runs[id] = Run(id: id, spec: spec)
         order.append(id)
         publish(id)
-        waiting.append(id)
+        queue.enqueue(id, spec: spec)
         pump()
         return id
     }
@@ -58,11 +103,13 @@ public actor OperationKernel {
         guard var run = runs[id], !run.state.isTerminal else { return }
         if let task = run.task {
             task.cancel()
+            queue.withdraw(id)
         } else {
-            waiting.removeAll { $0 == id }
             run.state = .cancelled
             runs[id] = run
             publish(id)
+            queue.withdraw(id)
+            pump()
         }
     }
 
@@ -95,14 +142,22 @@ public actor OperationKernel {
     private func removeObserver(_ key: UUID) { observers[key] = nil }
 
     private func pump() {
-        guard !executing, !waiting.isEmpty else { return }
-        let id = waiting.removeFirst()
-        guard var run = runs[id], run.state == .pending else { pump(); return }
+        for id in queue.takeRunnable() { start(id) }
+    }
+
+    private func start(_ id: UUID) {
+        guard var run = runs[id], run.state == .pending else {
+            queue.finished(id)
+            pump()
+            return
+        }
         guard let node = nodes[run.spec.kind] else {
             run.state = .failed(message: "no node registered for \(run.spec.kind.rawValue)", errorClass: .logic)
-            runs[id] = run; publish(id); pump(); return
+            runs[id] = run; publish(id)
+            queue.finished(id)
+            pump()
+            return
         }
-        executing = true
         run.state = .scanning
         let spec = run.spec
         run.task = Task { [weak self] in
@@ -147,14 +202,20 @@ public actor OperationKernel {
         } catch {
             commit(id) { $0.state = .failed(message: error.localizedDescription, errorClass: .transient) }
         }
-        executing = false
+        queue.finished(id)
         pump()
     }
 
     private func arbitrateConflicts(id: UUID, conflicts: [FileConflict]) async -> [URL: ConflictDecision]? {
         guard let arbiter else { return [:] }  // no arbiter = no conflict policy; by default everything is skipped and left to the node
         commit(id) { $0.state = .awaitingConflict }
-        let decisions = await arbiter.arbitrate(operation: id, conflicts: conflicts)
+        let previous = arbitrationTail
+        let turn = Task { () -> [URL: ConflictDecision]? in
+            await previous?.value
+            return await arbiter.arbitrate(operation: id, conflicts: conflicts)
+        }
+        arbitrationTail = Task { _ = await turn.value }
+        let decisions = await turn.value
         commit(id) { if !$0.state.isTerminal { $0.state = .running } }
         return decisions
     }
