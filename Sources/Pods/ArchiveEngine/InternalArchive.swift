@@ -51,7 +51,9 @@ extension ArchiveEngineNode {
         defer { try? fm.removeItem(at: staging) }
         let stagedArchive = staging.appendingPathComponent(finalName)
 
-        let names = spec.sources.map(\.lastPathComponent)
+        // Always "./name": a name such as -TTpython3 must not become an option, because zip -T -TT runs a program.
+        // "--" is not enough: with it, both zip and tar still fail the option-like names in ArchiveSafetyTests.
+        let names = spec.sources.map { "./" + $0.lastPathComponent }
         do {
             if isTarGz {
                 // tar has no built-in encryption: the password is ignored (noted in Contract)

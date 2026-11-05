@@ -71,6 +71,24 @@ import HSpaceTestSupport
             context: context)
     }
 
+    /// Compresses `names` from `work`, extracts into `out`, and returns what landed there by name.
+    static func roundTrip(_ names: [String], format: String, in work: URL, out: URL) async throws -> [String: String] {
+        for name in names {
+            try FaultFixture.write(Data("body of \(name)".utf8), to: work.appendingPathComponent(name))
+        }
+        let receipt = try await ArchiveEngineNode().execute(
+            OperationSpec(kind: .compress, sources: names.map { work.appendingPathComponent($0) },
+                          newName: "bundle", archiveOptions: ArchiveOptions(format: format)),
+            context: Arbiter(answer: nil).context)
+        let archive = try #require(receipt.createdURLs.first)
+        _ = try await extract(archive, into: out, context: Arbiter(answer: nil).context)
+        var found: [String: String] = [:]
+        for name in try entries(out) {
+            found[name] = try read(out.appendingPathComponent(name))
+        }
+        return found
+    }
+
     static func expectClassified(_ body: () async throws -> Void) async {
         do {
             try await body()
@@ -267,5 +285,52 @@ import HSpaceTestSupport
             }
         }
         #expect(try Self.read(out.appendingPathComponent("a.txt")) == "old")
+    }
+
+    // MARK: B2 a file name is never read as an option
+
+    static let hostileNames = ["-", "-x", "-r", "-Cfoo", "-T", "@bar", "--help", "a.txt"]
+
+    @Test(arguments: ["zip", "tar.gz"])
+    func namesThatLookLikeOptionsRoundTrip(format: String) async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+
+        let found = try await Self.roundTrip(Self.hostileNames, format: format, in: work, out: out)
+
+        #expect(found == Dictionary(uniqueKeysWithValues: Self.hostileNames.map { ($0, "body of \($0)") }))
+    }
+
+    /// `zip -T -TTprogram` runs program on the new archive, and python3 runs a __main__.py found in a zip.
+    /// Before B2, selecting these three files and compressing them executed the script.
+    @Test func zipTestCommandIsNotReachableThroughFileNames() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let names = ["-T", "-TTpython3", "__main__.py"]
+        for name in names {
+            try FaultFixture.write(Data("open('pwned', 'w').close()\n".utf8), to: work.appendingPathComponent(name))
+        }
+
+        let receipt = try await ArchiveEngineNode().execute(
+            OperationSpec(kind: .compress, sources: names.map { work.appendingPathComponent($0) },
+                          newName: "bundle", archiveOptions: ArchiveOptions(format: "zip")),
+            context: Arbiter(answer: nil).context)
+
+        #expect(!FileManager.default.fileExists(atPath: work.appendingPathComponent("pwned").path))
+        let archive = try #require(receipt.createdURLs.first)
+        _ = try await Self.extract(archive, into: out, context: Arbiter(answer: nil).context)
+        #expect(try Self.entries(out) == names.sorted())
+    }
+
+    @Test func archiveNameStartingWithADashExtracts() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let archive = try Self.zipFixture(["a.txt": "new"], in: work)
+        let dashed = work.appendingPathComponent("-x.zip")
+        try FileManager.default.moveItem(at: archive, to: dashed)
+
+        _ = try await Self.extract(dashed, into: out, context: Arbiter(answer: nil).context)
+
+        #expect(try Self.read(out.appendingPathComponent("a.txt")) == "new")
     }
 }
