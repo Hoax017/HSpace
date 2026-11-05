@@ -149,7 +149,7 @@ Owns `ConflictSheet.swift` and the drop handlers in the three view controllers.
 Owns `.github`, `scripts`, docs.
 
 - [ ] **G1** (M) Run build, tests and lints on every pull request.
-- [ ] **G2** (S) Pin workflow actions to commit hashes, and restrict token permissions. `release.yml:15,36`
+- [x] **G2** (S) Pin workflow actions to commit hashes, and restrict token permissions. `release.yml:15,36`
 - [ ] **G3** (S) Install the pre-commit checks the docs promise, or remove the claims.
 - [ ] **G4** (S) `ui-smoke.sh` must not kill a running HSpace. `ui-smoke.sh:7`
 - [ ] **G5** (S) Fix `build-app.sh` path handling and `run.sh` install order. `build-app.sh:48`, `run.sh:8`

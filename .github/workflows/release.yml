@@ -5,16 +5,18 @@ on:
   push:
     tags: ['v*']
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   release:
-    runs-on: macos-latest
+    runs-on: macos-26
+    permissions:
+      contents: write   # the only permission this job uses: creating the Release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0   # build-app.sh uses the git commit count as the build number
+          persist-credentials: false
 
       - name: Swift version
         run: swift --version
@@ -33,7 +35,7 @@ jobs:
           cat release-body.md
 
       - name: Create the Release and upload assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           body_path: release-body.md
           files: |
