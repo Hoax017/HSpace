@@ -29,8 +29,8 @@ Finder's information density is too low; QSpace Pro stutters on recent systems a
 - **Custom-drawn top deck**: workspace tab bar plus icon toolbar, running flush with the full-height sidebar (a Finder-style see-through look)
 - **Stash shelf**: drag files onto a stack to hold them, then batch copy / move / AirDrop across directories (action bar appears on hover)
 - **Focused search**: ⌘F for the current directory / ⇧⌘F global; name + content + kind filters; **a dedicated hidden-file search channel** (a custom scan outside Spotlight, going beyond QSpace)
-- **File operation kernel**: copyfile clone acceleration, byte-level progress, conflict resolution (replace / skip / keep both / merge), undo, operation receipts
-- **Archives**: compress to zip / tar.gz (encryption available), extract 20+ formats, wrap-in-folder semantics
+- **File operation kernel**: copyfile clone acceleration, byte-level progress, conflict resolution (replace / keep both / merge / cancel, one at a time or per folder), undo, operation receipts
+- **Archives**: compress to zip / tar.gz, extract zip, tar, gzip, bzip2 and xz with the tools in `/usr/bin`, wrap-in-folder semantics. Password-protected archives are not supported
 - **Take over "reveal in file manager"**: Reveal requests from third-party apps land in HSpace with the target selected (same mechanism as QSpace, can be turned off)
 - **Global show/hide hotkey**: bring HSpace to the front or hide it from any app with one key (no Accessibility permission needed)
 - Every shortcut is configurable (registry + recorder), columns are selectable and sortable, Space for preview, double-click uses the system default app, light and dark follow the system
@@ -47,7 +47,7 @@ Only the Xcode Command Line Tools are required (no full Xcode):
 git clone https://github.com/Hoax017/HSpace.git && cd HSpace
 ./scripts/build-app.sh     # build and sign build/HSpace.app
 ./scripts/test.sh          # unit tests
-./scripts/ui-smoke.sh      # real-effect UI assertions (closes any running HSpace first)
+./scripts/ui-smoke.sh      # real-effect UI assertions (refuses to run while HSpace is open)
 ```
 
 ## Architecture
@@ -60,7 +60,8 @@ Sources/
 ├─ HSpaceKernel/      operation kernel: Run state machine + conflict resolution + progress stream (sole state committer)
 ├─ Pods/              DirectoryReader · Transfer · LocalOps · ArchiveEngine · DirectoryWatch
 │                     BookmarkStore · StashStore · SessionStore · SearchEngine · FolderSize
-│                     IconThumb · VolumeInfo · PathComplete
+│                     IconThumb · VolumeInfo · PathComplete · Frecency
+│                     Eraser · TrashLedger
 └─ HSpaceApp/         AppKit presentation layer (code-only UI, semantic color tokens, 4pt grid enforced by grid-lint)
 ```
 

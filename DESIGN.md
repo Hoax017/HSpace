@@ -44,18 +44,18 @@ spacing:
   lg: "16px"
   xl: "20px"
   row: "24px"       # address bar/status bar/sidebar row
-  tab-row: "28px"   # workspace tab bar / traffic-light row
+  tab-row: "40px"   # workspace tab bar / traffic-light row
   toolbar-row: "36px"  # icon toolbar
 components:
   workspace-tab-active:
     backgroundColor: "{colors.accent}"   # @ 18% alpha (see the accent ladder under Colors)
     textColor: "{colors.ink-primary}"
     rounded: "{rounded.tab}"
-    height: "20px"
+    height: "28px"
   workspace-tab-inactive:
     textColor: "{colors.ink-secondary}"
     rounded: "{rounded.tab}"
-    height: "20px"
+    height: "28px"
   icon-button:
     textColor: "{colors.ink-secondary}"  # contentTintColor; SF Symbol pointSize 13 / .regular
     size: "24px"
@@ -145,7 +145,7 @@ The palette is **system semantic colors + a single dynamic accent**: there is no
 
 ```
 ┌───────────────┬────────────────────────────────────────────────────────────────┐
-│ ●●●      (28) │ [Workspace 1][Workspace 2]                            [+] (28) │ workspace tab bar
+│ ●●●      (40) │ [Workspace 1][Workspace 2]                            [+] (40) │ workspace tab bar
 │───────────────│─────────────────────────hairline───────────────────────────────│
 │  Stash shelf  │ [◫] │ [◀ ▶ ⌃] │ [⊞ ≡ ▥] ──space── [⤴ ⌘ ⇅ 🗑] │ [▭▯▯▤⊞] (36)    │ icon toolbar
 │  (148)        │─────────────────────────hairline───────────────────────────────│
@@ -159,7 +159,7 @@ The palette is **system semantic colors + a single dynamic accent**: there is no
 ```
 
 - **Left column (full-height sidebar)**: `NSVisualEffectView(.sidebar)`, reserving 36pt at the top (traffic-light row + top gap, `stashView.top = 36`) → stash shelf area 148pt (constant height, no jump between empty and full) → hairline → source-list outline of bookmarks/iCloud/locations (row size `.small`, QSpace-style compact). Width is managed by a handwritten `NSSplitView` (min 160 / max 320 / collapsible).
-- **Right column (content column)**: at the top, the custom-drawn deck `TopDeckView` = **two rows** inside `NSVisualEffectView(.titlebar)`: workspace tab bar 28pt + hairline + icon toolbar 36pt + hairline. Below the deck is the pane matrix (`PaneGridController`), with the status bar at the very bottom. **`NSToolbar` is dropped** and the entire top bar is custom-drawn (M17 decision).
+- **Right column (content column)**: at the top, the custom-drawn deck `TopDeckView` = **two rows** inside `NSVisualEffectView(.titlebar)`: workspace tab bar 40pt + hairline + icon toolbar 36pt + hairline. Below the deck is the pane matrix (`PaneGridController`), with the status bar at the very bottom. **`NSToolbar` is dropped** and the entire top bar is custom-drawn (M17 decision).
 - **Each pane has its own address bar**: pane = address bar 24pt (breadcrumbs ⟷ path editing) + hairline + content view + bottom status bar 24pt. There is only one layer of tabs, on the deck (the workspace tab bar).
 - **Window structure**: no title bar (`titleVisibility=.hidden`, `titlebarAppearsTransparent`, `.fullSizeContentView`, `toolbar=nil`); traffic lights stay at the system default position (inline at the top of the left column). **When the sidebar is collapsed**, the tab row's leading edge yields 80pt to the traffic lights (`trafficLightInset`, collapsed state only). Blank deck areas drag the window with `performDrag`; double-click zooms according to the system `AppleActionOnDoubleClick`.
 
@@ -171,9 +171,9 @@ All new UI sizes (constraint constants / spacing / the four `NSEdgeInsets` sides
 1. **Multiples of 4**: on the scale, pass straight through.
 2. **|value| ≤ 2**: hairlines and optical/center-of-gravity fine-tuning (such as tab stack `spacing=2`, title `centerY` constant `-1`, address bar inset `2`).
 3. **Fractional values**: 0.5 hairlines.
-4. **Legacy/intentional exceptions** are registered in `scripts/grid-lint-allow.txt` (format `filename:value`, with the reason in an inline `#`); anything unregistered fails.
+4. **Legacy/intentional exceptions** would be registered in `scripts/grid-lint-allow.txt` (format `filename:value`, with the reason in an inline `#`). That file does not exist today: there are no registered exceptions, and anything else fails.
 
-`grid-lint.sh` defaults to **incremental mode** (checks only the `Sources/*.swift` staged this time, with pre-commit semantics); `GRID_LINT_ALL=1` is a full audit (CI/acceptance gate). The current baseline (`grid-lint-allow.txt`) has only existing deviations left in the settings pages (`*SettingsPage.swift`, `SettingsWindowController.swift`), `Toast.swift`, `FileCellViews.swift:6` and the like, planned to reach zero in M18; **files in M17 scope (deck/sidebar/stash/tabs/status bar) have fully converged and don't rely on the baseline**.
+`grid-lint.sh` defaults to **incremental mode** (checks only the `Sources/*.swift` staged this time, with pre-commit semantics); `GRID_LINT_ALL=1` is a full audit (CI/acceptance gate). The full audit passes today with no exceptions.
 
 ### Spacing rhythm (examples)
 - Icon grid: item spacing/line spacing 8, section inset 12.
@@ -232,7 +232,7 @@ Constrained by official SF Symbols and semantic colors, each component's shape, 
 - **Action validation (FG-1, no fake buttons)**: AirDrop/Trash are enabled only with a selection; Terminal/Tasks are always available. Responder-chain actions use `target=nil` to bubble up to the active pane.
 
 ### Workspace tabs (`TabBarView` / `TabItemView`)
-- **Capsule**: 5px radius, 20pt tall, 160pt max width. **Active** = `Theme.accent @ 18%` background + `labelColor` text; **inactive** = transparent background + `secondaryLabelColor`. Font size 11.
+- **Capsule**: 5px radius, 28pt tall in the deck (`itemHeight`; 20pt is the `TabBarView` default), 160pt max width. **Active** = `Theme.accent @ 18%` background + `labelColor` text; **inactive** = transparent background + `secondaryLabelColor`. Font size 11.
 - **hover-reveal close button** (`xmark`, SF7): hidden at rest, shown only on mouse enter (and only when closable, `titles.count > 1`); middle-click closes directly.
 - When reused inside the deck, `useTransparentBackground()` lets the `.titlebar` material show through; the trailing `+` creates a new one.
 
@@ -278,7 +278,7 @@ Notes for contributors adding UI. **Any new UI must pass both `grid-lint` and th
 
 ### Don't:
 - **Don't** hardcode brand hex or flashy web color schemes; apart from rendering `Theme.accentPalette` dots, the presentation layer may not contain `NSColor(hex:)`/`srgbRed:` literals.
-- **Don't** use non-4pt sizes without registering them in `grid-lint-allow.txt`. **Files in M17 scope may not add new entries** (pre-commit will block them).
+- **Don't** use non-4pt sizes without registering them in `grid-lint-allow.txt`. **Files in M17 scope may not add new entries.**
 - **Don't** custom-draw icon paths, use emoji or text as icons, or place icons first and add the function later.
 - **Don't** add persistent shadows, borders or nested rounded cards to surfaces at rest; the only structural shadow is the stash hover float bar.
 - **Don't** introduce persistent animations, timers or polling (north star: 0.0% idle CPU with four panes).
