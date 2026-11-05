@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 import HSpaceContracts
 import IconThumb
 import FileMetadata
+import KeyboardSelection
 import ViewStyles
 
 /// Icon grid collection view that reports interaction: a click requests activation of the owning pane; context menu hook;
@@ -15,6 +16,8 @@ final class IconGridCollectionView: NSCollectionView {
     var menuProvider: ((IndexPath?) -> NSMenu?)?
     var onSpace: (() -> Void)?
     var onDoubleClick: ((IndexPath) -> Void)?
+    /// An arrow key while keyboard selection is under way. True = handled.
+    var onCursorKey: ((NSEvent) -> Bool)?
 
     override func mouseDown(with event: NSEvent) {
         onInteract?()
@@ -62,6 +65,7 @@ final class IconGridCollectionView: NSCollectionView {
             NSSound.beep()
             return
         }
+        if onCursorKey?(event) == true { return }
         super.keyDown(with: event)
     }
 }
@@ -213,6 +217,9 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     private let emptyLabel = NSTextField(labelWithString: "")
     private let sizeSlider = NSSlider()
     private let optionsButton = NSButton()
+    /// The item Space acts on, while keyboard selection is under way
+    private var keyboardCursor: IndexPath? { didSet { placeKeyboardCursor() } }
+    private let keyboardCursorView = KeyboardCursorView()
 
     /// Target to reveal (select) after an operation completes; the icon view has no inline rename, so the rename flag is ignored
     private var pendingReveal: (url: URL, rename: Bool)?
@@ -274,6 +281,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         collectionView.onInteract = { [weak self] in self?.onInteract?() }
         collectionView.menuProvider = { [weak self] _ in self?.buildMenu() }
         collectionView.onSpace = { [weak self] in self?.toggleQuickLook(nil) }
+        collectionView.onCursorKey = { [weak self] event in self?.handleCursorKey(event) ?? false }
         collectionView.onDoubleClick = { [weak self] ip in
             guard let self, let file = self.fileItem(at: ip) else { return }
             self.open(file)
@@ -419,6 +427,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         flowLayout.minimumLineSpacing = CGFloat(iconLayout.spacing)
         for item in collectionView.visibleItems() { (item as? FileIconItem)?.apply(iconLayout) }
         flowLayout.invalidateLayout()
+        keyboardCursor = nil
     }
 
     var testFlowLayout: NSCollectionViewFlowLayout? { flowLayout }
@@ -450,6 +459,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         // Same-directory refreshes clear the thumbnail overlay too: file contents may have changed (the IconThumb cache key includes mtime)
         thumbOverlay.removeAll()
         emptyLabel.isHidden = true
+        keyboardCursor = nil           // Positions mean something else after a refresh
         let kept = selectionURLCache   // I-32: source of truth for the actual pre-delete selection (not the shifted selectionIndexPaths)
         rebuildSections()              // M26 v2: rebuild the section ↔ model mapping when grouped (before reloadData)
         collectionView.reloadData()
@@ -643,6 +653,62 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         }
     }
 
+    // MARK: Keyboard selection (Space toggles the item at the cursor and moves on)
+
+    private var orderedPaths: [IndexPath] {
+        sections.enumerated().flatMap { section, group in
+            group.indices.indices.map { IndexPath(item: $0, section: section) }
+        }
+    }
+
+    func toggleSelectionAtCursor() {
+        let paths = orderedPaths
+        let last = collectionView.selectionIndexPaths.max().flatMap(paths.firstIndex)
+        guard let step = KeyboardSelection.step(cursor: keyboardCursor.flatMap(paths.firstIndex), lastSelected: last,
+                                                count: paths.count, isItem: { _ in true }) else { return }
+        let path = paths[step.toggle]
+        if collectionView.selectionIndexPaths.contains(path) {
+            collectionView.deselectItems(at: [path])
+        } else {
+            collectionView.selectItems(at: [path], scrollPosition: [])
+        }
+        // Programmatic changes reach no delegate
+        selectionDidChange()
+        showCursor(at: paths[step.next])
+    }
+
+    /// Moves the cursor by items, leaving the selection as built
+    func moveKeyboardCursor(by offset: Int) {
+        let paths = orderedPaths
+        guard let cursor = keyboardCursor.flatMap(paths.firstIndex) else { return }
+        showCursor(at: paths[KeyboardSelection.move(cursor: cursor, by: offset, count: paths.count, isItem: { _ in true })])
+    }
+
+    private func showCursor(at path: IndexPath) {
+        keyboardCursor = path
+        collectionView.scrollToItems(at: [path], scrollPosition: .nearestHorizontalEdge)
+    }
+
+    private func handleCursorKey(_ event: NSEvent) -> Bool {
+        guard keyboardCursor != nil, event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty else { return false }
+        let cell = flowLayout.itemSize.width + flowLayout.minimumInteritemSpacing
+        let inner = collectionView.bounds.width - flowLayout.sectionInset.left - flowLayout.sectionInset.right
+        let perRow = max(1, Int((inner + flowLayout.minimumInteritemSpacing) / cell))
+        switch event.keyCode {
+        case 123: moveKeyboardCursor(by: -1)
+        case 124: moveKeyboardCursor(by: 1)
+        case 125: moveKeyboardCursor(by: perRow)
+        case 126: moveKeyboardCursor(by: -perRow)
+        default: return false
+        }
+        return true
+    }
+
+    private func placeKeyboardCursor() {
+        let frame = keyboardCursor.flatMap { collectionView.layoutAttributesForItem(at: $0)?.frame }
+        keyboardCursorView.show(around: frame, in: collectionView)
+    }
+
     // MARK: Selection state
 
     var selectedItems: [FileItem] {
@@ -790,6 +856,10 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     private var quickLookDismissing = false
 
     @objc func toggleQuickLook(_ sender: Any?) {
+        if SpaceKey.togglesSelection {
+            toggleSelectionAtCursor()
+            return
+        }
         guard let panel = QLPreviewPanel.shared() else { return }
         if panel.isVisible {
             quickLookDismissing = true
@@ -913,10 +983,12 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
     }
 
     func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
+        keyboardCursor = nil
         selectionDidChange()
     }
 
     func collectionView(_ collectionView: NSCollectionView, didDeselectItemsAt indexPaths: Set<IndexPath>) {
+        keyboardCursor = nil
         selectionDidChange()
     }
 

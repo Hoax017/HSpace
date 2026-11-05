@@ -40,6 +40,9 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
         let grouping = checkRow("settings.behavior.listGrouping",
             checked: Preferences.listGrouping, action: #selector(listGroupingChanged(_:)))
 
+        let spaceSelects = checkRow("settings.behavior.spaceSelects",
+            checked: Preferences.spaceSelects, action: #selector(spaceSelectsChanged(_:)))
+
         // M28: smart focused-search ranking by usage (on by default)
         let smartSearch = checkRow("settings.behavior.smartSearchSort",
             checked: Preferences.searchSmartSort, action: #selector(smartSearchSortChanged(_:)))
@@ -69,7 +72,7 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
         let openNote = note("settings.behavior.openTarget.note")
 
         let stack = NSStackView(views: [
-            enterRow, backspaceRow, dragRow, blank, grouping, smartSearch, folderSizes, sortRow,
+            enterRow, backspaceRow, dragRow, blank, spaceSelects, grouping, smartSearch, folderSizes, sortRow,
             NSBox.separatorLine(), wsLimitRow, tabLimitNote,
             NSBox.separatorLine(), openHeader, openRow, openNote,
         ])
@@ -218,6 +221,10 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
 
     @objc private func smartSearchSortChanged(_ sender: NSButton) {
         Preferences.searchSmartSort = sender.state == .on   // takes effect on the next search (read by restartSearch)
+    }
+
+    @objc private func spaceSelectsChanged(_ sender: NSButton) {
+        Preferences.spaceSelects = sender.state == .on
     }
 
     @objc private func folderSizesChanged(_ sender: NSPopUpButton) {

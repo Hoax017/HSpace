@@ -211,7 +211,7 @@ Owns the view controllers and `Sources/Pods/IconThumb`.
 - [x] **L23** (M) Custom hidden items and exclusion rules
 - [x] **L24** (M) Folder sizes in list view, with a setting
 - [x] **L25** (M) Icon view options: size, spacing, label position
-- [ ] **L26** (S) Keyboard selection with Space
+- [x] **L26** (S) Keyboard selection with Space
 - [ ] **L27** (M) Photos library browsing
 
 ### Lane 4: Navigation
@@ -477,6 +477,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Both also work grouped by date, in light and dark mode, and with a long file name in two lines
 - [ ] Remember a folder in icon view with its own size and spacing: another folder keeps the general setting
 - [ ] Icon Options are gray in list and column views
+- [ ] Settings > Behavior: turn on "Space selects items". In list, icon and column views, Space toggles the item and moves on; an outline shows the next item; arrows move the outline and keep the selection
+- [ ] A click, or an arrow with no outline showing, returns to normal selection. Group headers are skipped
+- [ ] With the setting on, Shift-Space previews, and Space closes an open preview. With it off, Space previews as before
+- [ ] In column view, picking one folder with Space opens its column, like a click; the cursor stays in the column you are in
+- [ ] The outline stays visible in light and dark mode
 
 ### Overall feel
 

@@ -242,6 +242,12 @@ enum Preferences {
         }
     }
 
+    /// Space toggles the selection of the item at a keyboard cursor, and Shift-Space previews. Off = Space previews, as in Finder.
+    static var spaceSelects: Bool {
+        get { d.bool(forKey: "spaceSelects") }
+        set { d.set(newValue, forKey: "spaceSelects") }
+    }
+
     // MARK: Side panel
 
     static var previewPanelVisible: Bool {

@@ -839,6 +839,10 @@ final class FileListViewController: NSViewController, FileRevealTarget {
     private var quickLookDismissing = false
 
     @objc func toggleQuickLook(_ sender: Any?) {
+        if SpaceKey.togglesSelection {
+            tableView.toggleSelectionAtCursor()
+            return
+        }
         guard let panel = QLPreviewPanel.shared() else { return }
         if panel.isVisible {
             quickLookDismissing = true
@@ -1064,6 +1068,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
+        self.tableView.noteSelectionChanged()
         // I-32: selection source-of-truth bookkeeping (user clicks and programmatic selects both come here; reloadData itself doesn't, so the cache keeps the pre-delete value)
         selectionURLCache = Set(selectedURLs)
         onSelectionChange?()

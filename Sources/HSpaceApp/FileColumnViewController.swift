@@ -467,6 +467,10 @@ final class FileColumnViewController: NSViewController {
     private var quickLookDismissing = false
 
     @objc func toggleQuickLook(_ sender: Any?) {
+        if SpaceKey.togglesSelection {
+            (focusTarget as? FocusReportingTableView)?.toggleSelectionAtCursor()
+            return
+        }
         guard let panel = QLPreviewPanel.shared() else { return }
         if panel.isVisible {
             quickLookDismissing = true
@@ -785,6 +789,7 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
+        self.tableView.noteSelectionChanged()
         guard !isProgrammaticSelection else { return }
         owner?.selectionChanged(in: self)
     }

@@ -834,3 +834,6 @@
 "iconGrid.spacing.wider" = "Wider Spacing";
 "iconGrid.label.bottom" = "Name Below Icon";
 "iconGrid.label.right" = "Name Beside Icon";
+
+/* Keyboard selection (L26) */
+"settings.behavior.spaceSelects" = "Space selects items (Shift-Space previews)";
