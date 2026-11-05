@@ -26,6 +26,7 @@ enum FileContextMenuBuilder {
         add(menu, "menu.paste", #selector(FileListViewController.pasteItems(_:)), target,
             key: "v", mods: .command, symbol: "doc.on.clipboard")
         menu.addItem(.separator())
+        menu.addItem(BatchToolsMenu.item())
         add(menu, "menu.getInfo", #selector(FileListViewController.getInfo(_:)), target,
             key: "i", mods: .command, symbol: "info.circle")
         add(menu, "menu.openInTerminal", #selector(FileListViewController.openInTerminal(_:)), target,

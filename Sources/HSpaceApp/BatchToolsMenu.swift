@@ -19,6 +19,10 @@ enum BatchToolsMenu {
         menu.addItem(withTitle: L10n.t("menu.renameLog"),
                      action: #selector(MainWindowController.showRenameLog(_:)), keyEquivalent: "")
         menu.addItem(.separator())
+        let pattern = menu.addItem(withTitle: L10n.t("menu.selectByPattern"),
+                                   action: #selector(MainWindowController.showSelectByPattern(_:)), keyEquivalent: "")
+        KeyBindings.apply("selectByPattern", to: pattern)
+        menu.addItem(.separator())
         menu.addItem(withTitle: L10n.t("menu.fileHash"),
                      action: #selector(MainWindowController.showFileHash(_:)), keyEquivalent: "")
         menu.addItem(withTitle: L10n.t("menu.imageConvert"),
@@ -51,6 +55,32 @@ extension PaneViewController {
         case .list: return activeTab.listVC.selectedItems
         case .icons: return activeTab.iconVC?.selectedItems ?? []
         case .columns: return activeTab.columnVC?.selectedItems ?? []
+        }
+    }
+
+    /// The column the keyboard is in, whose items are "this folder" in column view
+    private var toolColumn: ColumnUnit? {
+        guard let view = activeTab.columnVC else { return nil }
+        return view.columns.last { $0.directory == view.currentDirectory }
+    }
+
+    /// Everything shown in the current folder, in order
+    var toolItems: [FileItem] {
+        activeTab.viewMode == .columns ? toolColumn?.items ?? [] : activeTab.model.items
+    }
+
+    /// Replaces the selection in whichever view mode this pane is showing
+    func applyToolSelection(_ urls: [URL]) {
+        switch activeTab.viewMode {
+        case .list:
+            activeTab.listVC.select(urls: urls)
+        case .icons:
+            activeTab.iconVC?.select(urls: urls)
+        case .columns:
+            guard let column = toolColumn else { return }
+            let wanted = Set(urls)
+            let rows = IndexSet(column.items.indices.filter { wanted.contains(column.items[$0].url) })
+            column.tableView.selectRowIndexes(rows, byExtendingSelection: false)
         }
     }
 }
@@ -90,6 +120,14 @@ extension MainWindowController {
         let images = selectedImages
         guard !images.isEmpty, let window else { NSSound.beep(); return }
         ImageConvertSheetController.present(sources: images, coordinator: coordinator, in: window)
+    }
+
+    @objc func showSelectByPattern(_ sender: Any?) {
+        guard let window else { return }
+        let pane = grid.activePane
+        SelectByPatternSheetController.present(items: pane.toolItems, selected: pane.toolSelection, in: window) { [weak pane] urls in
+            pane?.applyToolSelection(urls)
+        }
     }
 
     @objc func showRenameLog(_ sender: Any?) {

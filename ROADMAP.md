@@ -197,7 +197,7 @@ New pods `BatchRename`, `FileHash`, `ImageConvert`.
 - [x] **L12** (S) Quick rename variant for a few files
 - [x] **L13** (M) File hash: MD5, SHA-1, SHA-256, compare, cancel
 - [x] **L14** (M) Image conversion and resize. Vision-based actions stay a later option
-- [ ] **L15** (M) Match and select by pattern
+- [x] **L15** (M) Match and select by pattern
 - [ ] **L16** (S) Text processing of selected names
 - [ ] **L17** (S) Merge and flatten folders, depends on A8
 
@@ -376,6 +376,9 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Convert a photo taken in portrait: it stays upright. Convert an animated GIF to GIF: it still plays
 - [ ] Convert to a folder on a nearly full drive: a clear error, and no hidden leftovers in that folder
 - [ ] ⌘Z after converting: the new files go to the Trash and the originals stay; ⇧⌘Z brings them back
+
+- [ ] Select by Pattern with `*.jpg; *.png` in list, icon and column views: the count is live, and the status bar shows the new selection
+- [ ] Add to and remove from a selection with the same sheet; a bad regular expression is explained in place
 
 ### Overall feel
 
