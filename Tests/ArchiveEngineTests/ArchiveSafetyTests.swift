@@ -1,0 +1,271 @@
+import Testing
+import Foundation
+import ArchiveEngine
+import HSpaceContracts
+import HSpaceTestSupport
+
+/// Safety baseline for track B: real system tools and real file system, through the Contract only.
+@Suite struct ArchiveSafetyTests {
+
+    /// Answers the conflict panel with a fixed decision and records what it was shown.
+    final class Arbiter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var seen: [FileConflict] = []
+        private let answer: ConflictDecision?
+        private let cancels: Bool
+
+        init(answer: ConflictDecision?, cancels: Bool = false) {
+            self.answer = answer
+            self.cancels = cancels
+        }
+
+        var conflicts: [FileConflict] { lock.withLock { seen } }
+
+        var context: NodeContext {
+            NodeContext(operationID: UUID(), report: { _ in }, resolveConflicts: { [self] conflicts in
+                lock.withLock { seen += conflicts }
+                if cancels { return nil }
+                guard let answer else { return [:] }
+                return Dictionary(uniqueKeysWithValues: conflicts.map { ($0.source, answer) })
+            })
+        }
+    }
+
+    static func read(_ url: URL) throws -> String {
+        String(decoding: try Data(contentsOf: url), as: UTF8.self)
+    }
+
+    static func entries(_ dir: URL) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
+    }
+
+    static func tool(_ path: String, _ args: [String], cwd: URL? = nil) throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = args
+        p.currentDirectoryURL = cwd
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        try p.run()
+        p.waitUntilExit()
+        #expect(p.terminationStatus == 0)
+    }
+
+    /// Writes `files` (relative path to contents) to a scratch folder and zips them into `<dir>/fixture.zip`.
+    static func zipFixture(_ files: [String: String], in dir: URL) throws -> URL {
+        let src = try FaultFixture.tempDir("hspace-ar-src")
+        defer { FaultFixture.remove(src) }
+        for (name, body) in files {
+            try FaultFixture.write(Data(body.utf8), to: src.appendingPathComponent(name))
+        }
+        let archive = dir.appendingPathComponent("fixture.zip")
+        try tool("/usr/bin/zip", ["-r", "-q", archive.path, "."], cwd: src)
+        return archive
+    }
+
+    static func extract(_ archive: URL, into out: URL, wrapper: Bool = false,
+                        context: NodeContext) async throws -> OperationReceipt {
+        try await ArchiveEngineNode().execute(
+            OperationSpec(kind: .extract, sources: [archive],
+                          archiveOptions: ArchiveOptions(extractInto: out, createWrapper: wrapper)),
+            context: context)
+    }
+
+    static func expectClassified(_ body: () async throws -> Void) async {
+        do {
+            try await body()
+            Issue.record("Expected an error")
+        } catch is any ClassifiedError {
+        } catch {
+            Issue.record("Unclassified error: \(error)")
+        }
+    }
+
+    // MARK: B1 extraction never deletes an existing item without a decision
+
+    @Test func collisionWithoutDecisionKeepsBoth() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let archive = try Self.zipFixture(["a.txt": "new"], in: work)
+        try FaultFixture.write(Data("old".utf8), to: out.appendingPathComponent("a.txt"))
+
+        let arbiter = Arbiter(answer: nil)   // the kernel answers [:] when no panel is attached
+        let receipt = try await Self.extract(archive, into: out, context: arbiter.context)
+
+        #expect(try Self.read(out.appendingPathComponent("a.txt")) == "old")
+        #expect(try Self.read(out.appendingPathComponent("a 2.txt")) == "new")
+        #expect(receipt.createdURLs.map(\.lastPathComponent) == ["a 2.txt"])
+        #expect(try Self.entries(out) == ["a 2.txt", "a.txt"])
+    }
+
+    @Test func collisionAsksThePanelAboutTheRealItem() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let archive = try Self.zipFixture(["a.txt": "new", "tree/x": "new"], in: work)
+        try FaultFixture.write(Data("old".utf8), to: out.appendingPathComponent("a.txt"))
+        try FaultFixture.write(Data("old".utf8), to: out.appendingPathComponent("tree/y"))
+
+        let arbiter = Arbiter(answer: .keepBoth)
+        _ = try await Self.extract(archive, into: out, context: arbiter.context)
+
+        let byName = Dictionary(uniqueKeysWithValues: arbiter.conflicts.map { ($0.existing.lastPathComponent, $0) })
+        #expect(byName.count == 2)
+        #expect(byName["a.txt"]?.existing == out.appendingPathComponent("a.txt"))
+        #expect(byName["a.txt"]?.bothDirectories == false)
+        #expect(byName["tree"]?.bothDirectories == true)
+    }
+
+    @Test func singleStreamCollisionKeepsBoth() async throws {
+        let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(out) }
+        let plain = out.appendingPathComponent("notes.txt")
+        try FaultFixture.write(Data("new".utf8), to: plain)
+        try Self.tool("/usr/bin/gzip", [plain.path])
+        try FaultFixture.write(Data("old".utf8), to: plain)
+
+        _ = try await ArchiveEngineNode().execute(
+            OperationSpec(kind: .extract, sources: [out.appendingPathComponent("notes.txt.gz")]),
+            context: Arbiter(answer: nil).context)
+
+        #expect(try Self.read(plain) == "old")
+        #expect(try Self.read(out.appendingPathComponent("notes 2.txt")) == "new")
+    }
+
+    @Test func danglingLinkCountsAsACollision() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let archive = try Self.zipFixture(["a.txt": "new"], in: work)
+        let link = try FaultFixture.danglingLink(at: out.appendingPathComponent("a.txt"))
+        let target = try FileManager.default.destinationOfSymbolicLink(atPath: link.path)
+
+        let arbiter = Arbiter(answer: nil)
+        _ = try await Self.extract(archive, into: out, context: arbiter.context)
+
+        #expect(arbiter.conflicts.count == 1)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == target)
+        #expect(try Self.read(out.appendingPathComponent("a 2.txt")) == "new")
+    }
+
+    @Test func replaceDecisionReplaces() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let archive = try Self.zipFixture(["tree/new": "new"], in: work)
+        try FaultFixture.write(Data("old".utf8), to: out.appendingPathComponent("tree/old"))
+
+        _ = try await Self.extract(archive, into: out, context: Arbiter(answer: .replace).context)
+
+        #expect(try Self.entries(out.appendingPathComponent("tree")) == ["new"])
+        #expect(try Self.entries(out) == ["tree"])
+    }
+
+    @Test func failedReplaceKeepsTheOldItem() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let archive = try Self.zipFixture(["tree/new": "new"], in: work)
+        let old = out.appendingPathComponent("tree")
+        try FaultFixture.write(Data("old".utf8), to: old.appendingPathComponent("old"))
+
+        // A read-only folder cannot be reparented, so the replace fails at its first step.
+        await Self.expectClassified {
+            try await FaultFixture.withReadOnly(old) {
+                _ = try await Self.extract(archive, into: out, context: Arbiter(answer: .replace).context)
+            }
+        }
+
+        #expect(try Self.read(old.appendingPathComponent("old")) == "old")
+        #expect(try Self.entries(out) == ["tree"])
+    }
+
+    @Test func skipDecisionLeavesTheExistingItem() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let archive = try Self.zipFixture(["a.txt": "new", "b.txt": "new"], in: work)
+        try FaultFixture.write(Data("old".utf8), to: out.appendingPathComponent("a.txt"))
+
+        let receipt = try await Self.extract(archive, into: out, context: Arbiter(answer: .skip).context)
+
+        #expect(try Self.read(out.appendingPathComponent("a.txt")) == "old")
+        #expect(try Self.read(out.appendingPathComponent("b.txt")) == "new")
+        #expect(receipt.createdURLs.map(\.lastPathComponent) == ["b.txt"])
+        #expect(try Self.entries(out) == ["a.txt", "b.txt"])
+    }
+
+    @Test func renameDecisionNeverLandsOnAnExistingName() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let archive = try Self.zipFixture(["a.txt": "new"], in: work)
+        try FaultFixture.write(Data("old".utf8), to: out.appendingPathComponent("a.txt"))
+        try FaultFixture.write(Data("taken".utf8), to: out.appendingPathComponent("b.txt"))
+
+        _ = try await Self.extract(archive, into: out, context: Arbiter(answer: .rename("../b.txt")).context)
+
+        #expect(try Self.read(out.appendingPathComponent("a.txt")) == "old")
+        #expect(try Self.read(out.appendingPathComponent("b.txt")) == "taken")
+        #expect(try Self.read(out.appendingPathComponent("b 2.txt")) == "new")
+    }
+
+    @Test func cancelInThePanelChangesNothing() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let archive = try Self.zipFixture(["a.txt": "new", "b.txt": "new"], in: work)
+        try FaultFixture.write(Data("old".utf8), to: out.appendingPathComponent("a.txt"))
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await Self.extract(archive, into: out,
+                                       context: Arbiter(answer: nil, cancels: true).context)
+        }
+
+        #expect(try Self.read(out.appendingPathComponent("a.txt")) == "old")
+        #expect(try Self.entries(out) == ["a.txt"])
+    }
+
+    @Test func mergeKeepsOtherItemsAndReplacesFileOverFileOnly() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let archive = try Self.zipFixture(["tree/same.txt": "new", "tree/added.txt": "new",
+                                           "tree/sub/in.txt": "new", "tree/kind": "new file"], in: work)
+        let tree = out.appendingPathComponent("tree")
+        try FaultFixture.write(Data("old".utf8), to: tree.appendingPathComponent("same.txt"))
+        try FaultFixture.write(Data("old".utf8), to: tree.appendingPathComponent("mine.txt"))
+        try FaultFixture.write(Data("old".utf8), to: tree.appendingPathComponent("sub/mine.txt"))
+        try FaultFixture.write(Data("old".utf8), to: tree.appendingPathComponent("kind/keep.txt"))
+
+        _ = try await Self.extract(archive, into: out, context: Arbiter(answer: .mergeFolders).context)
+
+        #expect(try Self.read(tree.appendingPathComponent("same.txt")) == "new")
+        #expect(try Self.read(tree.appendingPathComponent("added.txt")) == "new")
+        #expect(try Self.read(tree.appendingPathComponent("mine.txt")) == "old")
+        #expect(try Self.read(tree.appendingPathComponent("sub/in.txt")) == "new")
+        #expect(try Self.read(tree.appendingPathComponent("sub/mine.txt")) == "old")
+        // A file never takes the place of a folder: both stay.
+        #expect(try Self.read(tree.appendingPathComponent("kind/keep.txt")) == "old")
+        #expect(try Self.read(tree.appendingPathComponent("kind 2")) == "new file")
+        #expect(try Self.entries(out) == ["tree"])
+    }
+
+    @Test func mergeIsNotApplicableToAFile() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let archive = try Self.zipFixture(["a.txt": "new"], in: work)
+        try FaultFixture.write(Data("old".utf8), to: out.appendingPathComponent("a.txt"))
+
+        _ = try await Self.extract(archive, into: out, context: Arbiter(answer: .mergeFolders).context)
+
+        #expect(try Self.read(out.appendingPathComponent("a.txt")) == "old")
+        #expect(try Self.read(out.appendingPathComponent("a 2.txt")) == "new")
+    }
+
+    @Test func unwritableTargetReportsAClassifiedError() async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let archive = try Self.zipFixture(["a.txt": "new"], in: work)
+        try FaultFixture.write(Data("old".utf8), to: out.appendingPathComponent("a.txt"))
+
+        await Self.expectClassified {
+            try await FaultFixture.withReadOnly(out) {
+                _ = try await Self.extract(archive, into: out, context: Arbiter(answer: .replace).context)
+            }
+        }
+        #expect(try Self.read(out.appendingPathComponent("a.txt")) == "old")
+    }
+}

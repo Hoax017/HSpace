@@ -101,7 +101,7 @@ Owns `Sources/Pods/Transfer`. Sequential within the track.
 
 Owns `Sources/Pods/ArchiveEngine`.
 
-- [ ] **B1** (M) Extraction must not delete an existing item without asking. `InternalArchive.swift:177`
+- [x] **B1** (M) Extraction must not delete an existing item without asking. `InternalArchive.swift:177`
 - [ ] **B2** (S) Pass `--` before file names so a name starting with `-` is not read as an option; check zip `-TT` exposure. `InternalArchive.swift:59,63`
 - [ ] **B3** (S) Read process pipes while running to avoid a hang on large output. `InternalProcess.swift:35,71`
 - [ ] **B4** (M) Stop putting passwords on the command line, and stop accepting a password for tar.gz. `InternalArchive.swift:58,62,141`

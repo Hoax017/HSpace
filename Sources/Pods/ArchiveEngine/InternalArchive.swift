@@ -109,7 +109,7 @@ extension ArchiveEngineNode {
         var bytesDone: Int64 = 0
         for src in spec.sources {
             context.report(.progress(filesDone: done, bytesDone: bytesDone, currentPath: src.lastPathComponent))
-            let landed = try await extractOne(src, options: options)
+            let landed = try await extractOne(src, options: options, context: context)
             created.append(contentsOf: landed)
             done += 1
             bytesDone += Self.fileSize(src)
@@ -120,7 +120,7 @@ extension ArchiveEngineNode {
     }
 
     /// Extracts one archive and returns the landed top-level URLs (for UI selection). The staging directory ensures cancel or error leaves nothing half-finished.
-    private func extractOne(_ archive: URL, options: ArchiveOptions) async throws -> [URL] {
+    private func extractOne(_ archive: URL, options: ArchiveOptions, context: NodeContext) async throws -> [URL] {
         let fm = FileManager.default
         guard let format = ArchiveFormat.detect(archive) else {
             throw ArchiveError(.logic, "Unrecognized archive format:\(archive.lastPathComponent)", path: archive.path)
@@ -157,27 +157,22 @@ extension ArchiveEngineNode {
         }
 
         // Top-level entries inside staging = what was really extracted (more reliable than a pre-read listing)
-        let children = (try? fm.contentsOfDirectory(at: staging,
-            includingPropertiesForKeys: nil, options: [])) ?? []
+        let children = try Self.contents(of: staging)
         let topCount = children.count
 
         var landed: [URL] = []
         if options.createWrapper && topCount > 1 {
             // Wrapper semantics: more than one top-level entry → create a same-named wrapper folder first (by renaming the whole staging directory to the wrapper)
             let stem = Self.archiveStemName(archive, format: format)
-            let wrapperName = uniqueArchiveName(base: stem, ext: "", in: targetBaseDir)
+            let wrapperName = uniqueArchiveName(base: stem, ext: "", in: targetBaseDir, exists: Self.itemExists)
             let wrapper = targetBaseDir.appendingPathComponent(wrapperName)
-            try fm.moveItem(at: staging, to: wrapper)
+            try Self.move(staging, to: wrapper)
             stagingAlive = false   // staging was renamed to the wrapper, so defer no longer deletes it
             landed = [wrapper]
         } else {
-            // Only one entry (or no wrapper wanted) → skip the wrapper and move entries into the target directory one by one (same name overwrites, matching unzip -o semantics)
-            for child in children {
-                let dest = targetBaseDir.appendingPathComponent(child.lastPathComponent)
-                if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
-                try fm.moveItem(at: child, to: dest)
-                landed.append(dest)
-            }
+            // Only one entry (or no wrapper wanted) → skip the wrapper; a name already taken goes to the conflict panel
+            landed = try await land(children, in: targetBaseDir, staging: staging, context: context,
+                                    stagingAlive: &stagingAlive)
         }
         return landed
     }
