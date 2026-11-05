@@ -91,7 +91,7 @@ Owns `Sources/Pods/Transfer`. Sequential within the track.
 - [x] **A1** (L) Atomic replace: copy to a temporary name, then swap, so a failed copy keeps the old target. `InternalEngine.swift:75`
 - [x] **A2** (M) Stop treating unreadable folders as empty, which can delete the source on a cross-volume move. `InternalEngine.swift:119`
 - [x] **A3** (M) Delete the source of a cross-volume move only after verifying the copy. `InternalEngine.swift:97`
-- [ ] **A4** (M) Block a folder moved or copied into itself, and moves that replace a parent of the source. `InternalPlan.swift:166`
+- [x] **A4** (M) Block a folder moved or copied into itself, and moves that replace a parent of the source. `InternalPlan.swift:166`
 - [ ] **A5** (M) Preserve symlinks as symlinks, handle cycles and dangling links. `InternalEngine.swift:109,206`
 - [ ] **A6** (S) Copy with `COPYFILE_EXCL` so a file that appears after the conflict check is not overwritten.
 - [ ] **A7** (M) Remove partial output when a folder copy is cancelled.

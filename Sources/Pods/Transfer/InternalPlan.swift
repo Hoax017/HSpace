@@ -40,6 +40,29 @@ func makePlan(_ spec: OperationSpec) throws -> TransferPlan {
     }
 }
 
+/// Whether `url` is `folder` or lies inside it. Compared by inode along the resolved path, so symlink and case aliases cannot hide it.
+/// A symlink is not a folder here: what it points at is not part of it.
+func isInside(_ url: URL, folder: URL) -> Bool {
+    var folderInfo = stat()
+    guard lstat(folder.path, &folderInfo) == 0, folderInfo.st_mode & S_IFMT == S_IFDIR,
+          let resolved = realpath(url.path, nil) else { return false }
+    defer { free(resolved) }
+    var current = String(cString: resolved)
+    while true {
+        var info = stat()
+        if stat(current, &info) == 0, info.st_dev == folderInfo.st_dev, info.st_ino == folderInfo.st_ino { return true }
+        if current == "/" { return false }
+        current = (current as NSString).deletingLastPathComponent
+    }
+}
+
+/// A folder copied into itself would recurse until the path is too long.
+func rejectSelfNesting(_ plan: TransferPlan) throws {
+    for entry in plan.entries where isInside(entry.destination.deletingLastPathComponent(), folder: entry.source) {
+        throw TransferError(.external, "Cannot put \(entry.source.lastPathComponent) inside itself.", path: entry.source.path)
+    }
+}
+
 struct ScanTotals { var files = 0; var bytes: Int64 = 0 }
 
 /// Pre-scan: file count + total bytes (walks directories; progress denominator), keeping per-source subtotals for move fast-path accounting
@@ -105,7 +128,8 @@ func resolveConflicts(plan: TransferPlan, context: NodeContext) async throws -> 
     for entry in plan.entries {
         if fm.fileExists(atPath: entry.destination.path) {
             // Disk conflict: apply the decision (applyDecision dedups via existsOrClaimed)
-            if let resolved = try applyDecision(decisions[entry.source] ?? .skip, to: entry, claimed: &claimed) {
+            if let resolved = try applyDecision(decisions[entry.source] ?? .skip, to: entry,
+                                                allSources: plan.entries.map(\.source), claimed: &claimed) {
                 claimed.insert(resolved.destination.standardizedFileURL.path)
                 result.append(resolved)
             }
@@ -142,16 +166,32 @@ func isSameFile(_ a: URL, _ b: URL) -> Bool {
         .compare(b.resolvingSymlinksInPath().standardizedFileURL.path, options: .caseInsensitive) == .orderedSame
 }
 
+private extension ConflictDecision {
+    var overwritesDestination: Bool {
+        switch self {
+        case .replace, .mergeFolders: return true
+        case .skip, .keepBoth, .rename: return false
+        }
+    }
+}
+
 /// Applies one conflict decision (includes the M27-B self-source safety rule: when destination is the source itself,
 /// "Replace"/"Merge" would delete or self-merge the file being copied from → always neutralized to "Keep Both" renaming, the source is never deleted).
 /// Returns nil = skip this entry. Replace only sets a flag; the actual target deletion is deferred to transfer time in micro-step 3 (so batch cancellation cannot lose untransferred targets).
 private func applyDecision(_ decision: ConflictDecision,
                           to entry: TransferPlan.Entry,
+                          allSources: [URL],
                           claimed: inout Set<String>) throws -> TransferPlan.Entry? {
     var entry = entry
     let dir = entry.destination.deletingLastPathComponent()
     // Self-source check is inode-level (lexical path comparison can be bypassed by symlink/case aliases → source deleted, data lost)
     let isSelf = isSameFile(entry.destination, entry.source)
+    // Replacing or merging over a folder that holds a source would delete or rewrite that source, which no fallback name can repair
+    if decision.overwritesDestination, !isSelf,
+       let held = allSources.first(where: { isInside($0.deletingLastPathComponent(), folder: entry.destination) }) {
+        throw TransferError(.external, "Cannot overwrite \(entry.destination.lastPathComponent): it contains \(held.lastPathComponent).",
+                            path: entry.destination.path)
+    }
     // keepBoth/rename dedup also treats names claimed in this batch as existing
     let exists: (URL) -> Bool = { u in
         FileManager.default.fileExists(atPath: u.path) || claimed.contains(u.standardizedFileURL.path)

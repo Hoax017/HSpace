@@ -8,6 +8,7 @@ public struct TransferNode: OperationNode {
     public func execute(_ spec: OperationSpec, context: NodeContext) async throws -> OperationReceipt {
         let started = Date()
         let plan = try makePlan(spec)
+        try rejectSelfNesting(plan)
 
         // Micro-step 1: pre-scan totals (progress denominator)
         let scan = try preScan(sources: plan.entries.map(\.source))

@@ -239,4 +239,84 @@ import HSpaceTestSupport
         #expect(!FileManager.default.fileExists(atPath: source.path))
         #expect(try Self.text(volume.url.appendingPathComponent("d/sub/a.txt")) == "a")
     }
+
+    // MARK: A4 self-nesting
+
+    @Test(arguments: [OperationSpec.Kind.copy, .move])
+    func folderCannotGoIntoItself(kind: OperationSpec.Kind) async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let folder = base.appendingPathComponent("d")
+        let sub = folder.appendingPathComponent("sub")
+        try FaultFixture.write(Data("x".utf8), to: sub.appendingPathComponent("f.txt"))
+
+        for destination in [sub, folder] {
+            await #expect(throws: TransferError.self) {
+                try await Self.run(kind, [folder], to: destination, Self.context(.keepBoth))
+            }
+        }
+        #expect(try Self.names(in: folder) == ["sub"])
+        #expect(try Self.names(in: sub) == ["f.txt"])
+    }
+
+    @Test func folderCannotGoIntoItselfThroughAlias() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let folder = base.appendingPathComponent("d")
+        let sub = folder.appendingPathComponent("sub")
+        try FaultFixture.write(Data("x".utf8), to: sub.appendingPathComponent("f.txt"))
+        let alias = base.appendingPathComponent("alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: sub)
+
+        await #expect(throws: TransferError.self) {
+            try await Self.run(.copy, [folder], to: alias)
+        }
+        #expect(try Self.names(in: sub) == ["f.txt"])
+    }
+
+    @Test(arguments: [(OperationSpec.Kind.copy, ConflictDecision.replace),
+                      (.move, .replace), (.copy, .mergeFolders), (.move, .mergeFolders)])
+    func cannotOverwriteFolderHoldingTheSource(kind: OperationSpec.Kind, decision: ConflictDecision) async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let outer = base.appendingPathComponent("x")
+        let source = outer.appendingPathComponent("y/x")
+        let file = source.appendingPathComponent("f.txt")
+        try FaultFixture.write(Data("keep".utf8), to: file)
+        let sibling = outer.appendingPathComponent("sibling.txt")
+        try FaultFixture.write(Data("keep".utf8), to: sibling)
+
+        await #expect(throws: TransferError.self) {
+            try await Self.run(kind, [source], to: base, Self.context(decision))
+        }
+        #expect(try Self.text(file) == "keep")
+        #expect(try Self.text(sibling) == "keep")
+    }
+
+    @Test func replaceCannotDeleteAnotherSourceOfTheBatch() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let incoming = base.appendingPathComponent("src/a")
+        try FaultFixture.write(Data("new".utf8), to: incoming.appendingPathComponent("n.txt"))
+        let destination = base.appendingPathComponent("dst")
+        let nested = destination.appendingPathComponent("a/z.txt")
+        try FaultFixture.write(Data("keep".utf8), to: nested)
+
+        await #expect(throws: TransferError.self) {
+            try await Self.run(.move, [incoming, nested], to: destination, Self.context(.replace))
+        }
+        #expect(try Self.text(nested) == "keep")
+    }
+
+    @Test func linkToFolderCanMoveIntoThatFolder() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let folder = base.appendingPathComponent("d")
+        try FaultFixture.write(Data("x".utf8), to: folder.appendingPathComponent("f.txt"))
+        let link = base.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: folder)
+
+        try await Self.run(.move, [link], to: folder)
+        #expect(try Self.names(in: folder) == ["f.txt", "link"])
+    }
 }
