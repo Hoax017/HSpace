@@ -81,6 +81,41 @@ import HSpaceTestSupport
         #expect(many.isEmpty)
     }
 
+    // MARK: Nothing lands in the Trash without a record (C4)
+
+    @Test func trashGuardCoversRootAndDescendantsOnly() throws {
+        let dir = try FaultFixture.tempDir("hspace-tl-guard")
+        defer { FaultFixture.remove(dir) }
+        let trash = dir.appendingPathComponent(".Trash")
+        let nested = trash.appendingPathComponent("folder/sub")
+        let lookalike = dir.appendingPathComponent(".Trash-old")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: lookalike, withIntermediateDirectories: true)
+
+        #expect(TrashGuard.isInside(trash, anyOf: [trash]))
+        #expect(TrashGuard.isInside(nested, anyOf: [dir.appendingPathComponent("other"), trash]))
+        #expect(!TrashGuard.isInside(lookalike, anyOf: [trash]))
+        #expect(!TrashGuard.isInside(dir, anyOf: [trash]))
+    }
+
+    @Test func trashGuardSeesThroughSymlinks() throws {
+        let dir = try FaultFixture.tempDir("hspace-tl-guard")
+        defer { FaultFixture.remove(dir) }
+        let trash = dir.appendingPathComponent(".Trash")
+        let inner = trash.appendingPathComponent("inner")
+        try FileManager.default.createDirectory(at: inner, withIntermediateDirectories: true)
+        let alias = dir.appendingPathComponent("alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: trash)
+        let safe = dir.appendingPathComponent("safe")
+        try FileManager.default.createDirectory(at: safe, withIntermediateDirectories: true)
+        let wayOut = inner.appendingPathComponent("wayOut")
+        try FileManager.default.createSymbolicLink(at: wayOut, withDestinationURL: safe)
+
+        #expect(TrashGuard.isInside(alias, anyOf: [trash]))
+        #expect(TrashGuard.isInside(alias.appendingPathComponent("inner"), anyOf: [trash]))
+        #expect(!TrashGuard.isInside(wayOut, anyOf: [trash]))        // a link out of the Trash lands outside it
+    }
+
     // MARK: Empty Trash record lifetime (C3)
 
     @Test func itemsThatFailedToEraseKeepTheirRecord() async throws {

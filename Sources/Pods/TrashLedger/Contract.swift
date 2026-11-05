@@ -34,6 +34,25 @@ public struct TrashLedgerError: ClassifiedError {
     }
 }
 
+/// "Not into the Trash": a copy or move into a Trash would leave items with no ledger record and no undo.
+/// The node has no idea where Trash lives: the caller supplies the roots.
+public enum TrashGuard {
+    public static func isInside(_ url: URL, anyOf roots: [URL]) -> Bool {
+        let path = physicalPath(url)
+        return roots.contains { root in
+            let r = physicalPath(root)
+            return path == r || path.hasPrefix(r.hasSuffix("/") ? r : r + "/")
+        }
+    }
+
+    /// Real location with symlinks resolved; the spelled path when it cannot be resolved (it does not exist).
+    private static func physicalPath(_ url: URL) -> String {
+        guard let resolved = realpath(url.path, nil) else { return url.standardizedFileURL.path }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+}
+
 /// What a move back from the Trash really did. Decided from the receipt and the disk, never assumed.
 public enum TrashRestoreStep: Sendable, Equatable {
     /// The item is still in the Trash: the move failed, was cancelled, or the user chose Skip.
