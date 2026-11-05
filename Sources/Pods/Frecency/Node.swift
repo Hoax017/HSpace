@@ -61,6 +61,31 @@ public actor FrecencyStore {
         return problem
     }
 
+    /// Forgets every recorded path: the ledger, its file, and any damaged copy kept aside (they hold the same paths).
+    /// Memory is cleared even when removing a file fails; the thrown error tells the caller to retry.
+    public func clear() throws {
+        entries = [:]
+        loaded = true
+        unusableFileReason = nil
+        problem = nil
+        let dir = fileURL.deletingLastPathComponent()
+        let name = fileURL.lastPathComponent
+        let fm = FileManager.default
+        do {
+            let names: [String]
+            do {
+                names = try fm.contentsOfDirectory(atPath: dir.path)
+            } catch CocoaError.fileReadNoSuchFile {
+                return
+            }
+            for file in names where file == name || file.hasPrefix("\(name).corrupt-") {
+                try fm.removeItem(at: dir.appendingPathComponent(file))
+            }
+        } catch {
+            throw FrecencyError(.external, "Could not clear the history of opened paths: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: Private: load / evict / atomic persistence
 
     private func ensureLoaded() {

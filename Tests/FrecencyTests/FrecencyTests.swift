@@ -219,3 +219,80 @@ private func keptFiles(_ dir: URL, _ name: String) throws -> [URL] {
         #expect(await store.takeProblem() == nil)
     }
 }
+
+/// D3: the local history of opened paths can be cleared.
+@Suite struct FrecencyClearTests {
+    let path = URL(fileURLWithPath: "/tmp/private-project")
+
+    @Test func clearForgetsEverythingAcrossLaunches() async throws {
+        let dir = try FaultFixture.tempDir("hspace-fr")
+        defer { FaultFixture.remove(dir) }
+        let store = FrecencyStore(directory: dir)
+        await store.record(path)
+        try await store.clear()
+        #expect(await store.count() == 0)
+        #expect(await FrecencyStore(directory: dir).count() == 0)
+        #expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("frecency.json").path))
+    }
+
+    @Test func clearAlsoRemovesCopiesKeptAside() async throws {
+        let dir = try FaultFixture.tempDir("hspace-fr")
+        defer { FaultFixture.remove(dir) }
+        try FaultFixture.write(Data("{ /private-project".utf8), to: dir.appendingPathComponent("frecency.json"))
+        let store = FrecencyStore(directory: dir)
+        #expect(await store.count() == 0)
+        #expect(try keptFiles(dir, "frecency.json").count == 1)
+        try await store.clear()
+        #expect(try keptFiles(dir, "frecency.json").isEmpty)
+    }
+
+    @Test func clearLeavesOtherFilesAlone() async throws {
+        let dir = try FaultFixture.tempDir("hspace-fr")
+        defer { FaultFixture.remove(dir) }
+        let other = dir.appendingPathComponent("frecency.json-notes")
+        try FaultFixture.write(to: other)
+        let store = FrecencyStore(directory: dir)
+        await store.record(path)
+        try await store.clear()
+        #expect(FileManager.default.fileExists(atPath: other.path))
+    }
+
+    @Test func clearWithNothingStoredSucceeds() async throws {
+        let dir = try FaultFixture.tempDir("hspace-fr")
+        defer { FaultFixture.remove(dir) }
+        let store = FrecencyStore(directory: dir.appendingPathComponent("never-created"))
+        try await store.clear()
+        await store.record(path)
+        #expect(await store.count() == 1)
+    }
+
+    @Test func recordingResumesAfterClear() async throws {
+        let dir = try FaultFixture.tempDir("hspace-fr")
+        defer { FaultFixture.remove(dir) }
+        let store = FrecencyStore(directory: dir)
+        await store.record(path)
+        try await store.clear()
+        await store.record(URL(fileURLWithPath: "/tmp/next"))
+        let entries = await FrecencyStore(directory: dir).snapshot()
+        #expect(Array(entries.keys) == ["/tmp/next"])
+    }
+
+    @Test func failedClearIsThrownAndForgetsInMemoryAnyway() async throws {
+        let dir = try FaultFixture.tempDir("hspace-fr")
+        defer { FaultFixture.remove(dir) }
+        let store = FrecencyStore(directory: dir)
+        await store.record(path)
+        try await FaultFixture.withReadOnly(dir) { () async throws in
+            do {
+                try await store.clear()
+                Issue.record("expected a failure")
+            } catch {
+                #expect(error.localizedDescription.contains("Could not clear"))
+            }
+            #expect(await store.count() == 0)
+        }
+        // The file is still there, so the caller can retry
+        try await store.clear()
+        #expect(await FrecencyStore(directory: dir).count() == 0)
+    }
+}
