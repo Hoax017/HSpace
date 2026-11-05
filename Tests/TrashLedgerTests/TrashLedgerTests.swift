@@ -81,6 +81,30 @@ import HSpaceTestSupport
         #expect(many.isEmpty)
     }
 
+    // MARK: Put Back record lifetime (C2)
+
+    @Test func failedPutBackKeepsTheRecordAcrossRestart() async throws {
+        let f = try Self.restoreFixture()
+        defer { FaultFixture.remove(f.root) }
+        let led = TrashLedger(directory: f.root)
+        await led.record([(original: f.item.original, trashed: f.item.trashed)])
+        // The original folder is gone or read-only: the move throws and the kernel has no receipt
+        let step = TrashRestorePolicy.step(after: nil, of: f.item, landedWasOccupied: false)
+        await led.settle(step, for: f.item.trashed)
+        #expect(await TrashLedger(directory: f.root).origin(of: f.item.trashed) != nil)
+    }
+
+    @Test func successfulPutBackDropsTheRecord() async throws {
+        let f = try Self.restoreFixture()
+        defer { FaultFixture.remove(f.root) }
+        let led = TrashLedger(directory: f.root)
+        await led.record([(original: f.item.original, trashed: f.item.trashed)])
+        try FileManager.default.moveItem(at: f.item.trashed, to: TrashRestorePolicy.landedURL(of: f.item))
+        let step = TrashRestorePolicy.step(after: Self.okReceipt, of: f.item, landedWasOccupied: false)
+        await led.settle(step, for: f.item.trashed)
+        #expect(await led.count() == 0)
+    }
+
     // MARK: Restore decision (C1)
 
     /// A Trash holding "report 10.txt", whose original was "report.txt" in `home`.

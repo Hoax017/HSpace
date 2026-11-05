@@ -195,9 +195,11 @@ final class FileOpsCoordinator {
                 return
             }
             // Reuses the existing "move back + rename to the original name if needed" chain (the same one Trash undo uses)
-            self.restore(known.map { TrashedItem(original: $0.original, trashed: $0.trashed) })
-            await led.forget(known.map(\.trashed))
-            Toast.show(L10n.f("toast.putBackN", known.count), in: self.grid?.view.window)
+            self.restore(known.map { TrashedItem(original: $0.original, trashed: $0.trashed) }) { restored in
+                // Items that stayed in the Trash keep their record; the progress window reports why they failed
+                guard restored > 0 else { return }
+                Toast.show(L10n.f("toast.putBackN", restored), in: self.grid?.view.window)
+            }
         }
     }
 
@@ -397,7 +399,7 @@ final class FileOpsCoordinator {
 
     /// internal rather than private: Put Back reuses the same move-back chain (not a second copy,
     /// or the two would drift: undo could restore the original name while Put Back couldn't, the same bug fixed in only one place)
-    func restore(_ items: [TrashedItem]) {
+    func restore(_ items: [TrashedItem], onComplete: (@MainActor (_ restored: Int) -> Void)? = nil) {
         // Register redo: move to the Trash again (undo/redo cycle)
         undoManager.registerUndo(withTarget: self) { coord in
             MainActor.assumeIsolated { coord.moveToTrash(items.map(\.original)) }
@@ -405,12 +407,18 @@ final class FileOpsCoordinator {
         undoManager.setActionName(L10n.t("undo.trash"))
         // One at a time: each item's "is the path free" check must see where the previous item landed
         Task { @MainActor in
-            for item in items { await restoreOne(item) }
+            var restored = 0
+            for item in items {
+                let step = await restoreOne(item)
+                await trashLedger?.settle(step, for: item.trashed)
+                if step != .notRestored { restored += 1 }
+            }
+            onComplete?(restored)
         }
     }
 
     /// Moves one item back, then renames it only when the move proves that is safe (TrashRestorePolicy).
-    private func restoreOne(_ item: TrashedItem) async {
+    private func restoreOne(_ item: TrashedItem) async -> TrashRestoreStep {
         let occupied = TrashRestorePolicy.isOccupied(TrashRestorePolicy.landedURL(of: item))
         let parent = item.original.deletingLastPathComponent()
         let receipt = await runToEnd(OperationSpec(kind: .move, sources: [item.trashed], destination: parent))
@@ -419,6 +427,7 @@ final class FileOpsCoordinator {
         if case .rename(let landed, let name) = step {
             _ = await runToEnd(OperationSpec(kind: .rename, sources: [landed], newName: name))
         }
+        return step
     }
 
     // MARK: Internal: submit + wait for terminal state + refresh

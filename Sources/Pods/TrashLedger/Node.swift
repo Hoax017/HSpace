@@ -63,6 +63,13 @@ public actor TrashLedger {
         if changed { persist() }
     }
 
+    /// Closes the record of a restore attempt: dropped only once the item has left the Trash,
+    /// so a failed or skipped Put Back can be tried again, including after a restart.
+    public func settle(_ step: TrashRestoreStep, for trashedURL: URL) async {
+        guard step != .notRestored else { return }
+        await forget([trashedURL])
+    }
+
     // MARK: Internals
 
     private static func key(_ url: URL) -> String { url.standardizedFileURL.path }
