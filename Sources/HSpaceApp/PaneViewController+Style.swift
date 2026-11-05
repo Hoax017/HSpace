@@ -15,7 +15,8 @@ extension PaneViewController {
     var currentStyle: ViewStyle {
         let tab = activeTab
         return ViewStyle(viewMode: tab.viewMode.rawValue, sortKey: tab.model.sort.key.rawValue,
-                         sortAscending: tab.model.sort.ascending, includeHidden: tab.model.includeHidden)
+                         sortAscending: tab.model.sort.ascending, includeHidden: tab.model.includeHidden,
+                         iconLayout: tab.viewMode == .icons ? tab.iconVC?.iconLayout ?? tab.folderIconLayout : tab.folderIconLayout)
     }
 
     /// What the pane would show without any rule
@@ -57,6 +58,8 @@ extension PaneViewController {
         if let key = style.sortKey.flatMap(SortSpec.Key.init(rawValue:)) { sort.key = key }
         if let ascending = style.sortAscending { sort.ascending = ascending }
         model.setViewOptions(sort: sort, includeHidden: style.includeHidden ?? model.includeHidden)
+        activeTab.folderIconLayout = style.iconLayout
+        activeTab.iconVC?.setFolderLayout(style.iconLayout)
     }
 
     /// Applies a style to this folder right away, and to the rule when the folder has one
@@ -102,6 +105,8 @@ extension PaneViewController {
             }
         } else {
             if activeTab.styleBaseline == nil { activeTab.styleBaseline = currentStyle }
+            activeTab.iconVC?.keepLayoutWithFolder()
+            activeTab.folderIconLayout = activeTab.iconVC?.iconLayout
             saveRule(FolderViewRule(style: currentStyle), for: path)
         }
     }

@@ -1,6 +1,7 @@
 import Foundation
 import FileMetadata
 import FolderSize
+import ViewStyles
 
 /// Centralized app-layer preferences (single entry for externalized config, no hard-coding scattered around; the pod layer must not use this type and gets values by constructor injection).
 /// All keys are registered here and the settings window renders from this; a new configurable item = one more static property.
@@ -224,6 +225,21 @@ enum Preferences {
     static var folderSizeMode: FolderSizeMode {
         get { d.string(forKey: "folderSizeMode").flatMap(FolderSizeMode.init(rawValue:)) ?? .localOnly }
         set { d.set(newValue.rawValue, forKey: "folderSizeMode") }
+    }
+
+    /// The icon view's layout for folders without a style of their own
+    static var iconLayout: IconLayout {
+        get {
+            let size = d.object(forKey: "iconGridSize") as? Double ?? Double(IconLayout.standard.iconSize)
+            let spacing = d.object(forKey: "iconGridSpacing") as? Int ?? IconLayout.standard.spacing
+            let label = d.string(forKey: "iconLabelPosition").flatMap(IconLabelPosition.init(rawValue:)) ?? .bottom
+            return IconLayout(iconSize: Int(size), spacing: spacing, label: label)
+        }
+        set {
+            d.set(Double(newValue.iconSize), forKey: "iconGridSize")
+            d.set(newValue.spacing, forKey: "iconGridSpacing")
+            d.set(newValue.label.rawValue, forKey: "iconLabelPosition")
+        }
     }
 
     // MARK: Side panel

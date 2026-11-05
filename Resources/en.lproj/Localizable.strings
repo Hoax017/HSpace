@@ -825,3 +825,12 @@
 "settings.behavior.folderSizes.all" = "All folders";
 "settings.behavior.folderSizes.localOnly" = "Local volumes only";
 "settings.behavior.folderSizes.never" = "Never";
+
+/* Icon view options (L25) */
+"menu.iconOptions" = "Icon Options";
+"iconGrid.spacing.tight" = "Tight Spacing";
+"iconGrid.spacing.normal" = "Normal Spacing";
+"iconGrid.spacing.wide" = "Wide Spacing";
+"iconGrid.spacing.wider" = "Wider Spacing";
+"iconGrid.label.bottom" = "Name Below Icon";
+"iconGrid.label.right" = "Name Beside Icon";

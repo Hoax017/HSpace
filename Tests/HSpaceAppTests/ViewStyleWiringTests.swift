@@ -36,7 +36,8 @@ import ViewStyles
         FaultFixture.remove(fixture.dir)
     }
 
-    private let iconsBySize = ViewStyle(viewMode: PaneViewMode.icons.rawValue, sortKey: "size", sortAscending: false, includeHidden: true)
+    private let iconsBySize = ViewStyle(viewMode: PaneViewMode.icons.rawValue, sortKey: "size", sortAscending: false, includeHidden: true,
+                                        iconLayout: IconLayout(iconSize: 96, spacing: 16, label: .bottom))
 
     @Test func enteringARememberedFolderUsesItsViewAndLeavingGivesThePanesBack() throws {
         let f = try setup()

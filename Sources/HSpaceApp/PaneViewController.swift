@@ -24,6 +24,8 @@ final class PaneViewController: NSViewController {
         var columnVC: FileColumnViewController?
         /// The pane's own view options, while a folder rule has replaced them
         var styleBaseline: ViewStyle?
+        /// What a folder rule says about the icon view, for an icon view not built yet
+        var folderIconLayout: IconLayout?
 
         init(browser: BrowserState, model: DirectoryViewModel, listVC: FileListViewController) {
             self.browser = browser
@@ -271,6 +273,8 @@ final class PaneViewController: NSViewController {
         vc.coordinator = coordinator
         vc.onNavigate = { [weak self] target in self?.navigate(to: target) }
         vc.onInteract = { [weak self] in self?.onRequestFocus?() }
+        vc.onLayoutChange = { [weak self] in self?.rememberViewChange() }
+        vc.setFolderLayout(tab.folderIconLayout)
         vc.onContentChange = { [weak self, weak tab] in
             guard let self, let tab, self.tab === tab else { return }
             self.updateStatusCounts()

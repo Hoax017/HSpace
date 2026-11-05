@@ -210,7 +210,7 @@ Owns the view controllers and `Sources/Pods/IconThumb`.
 - [x] **L22** (M) View options per folder, and saved view styles with a manager
 - [x] **L23** (M) Custom hidden items and exclusion rules
 - [x] **L24** (M) Folder sizes in list view, with a setting
-- [ ] **L25** (M) Icon view options: size, spacing, label position
+- [x] **L25** (M) Icon view options: size, spacing, label position
 - [ ] **L26** (S) Keyboard selection with Space
 - [ ] **L27** (M) Photos library browsing
 
@@ -472,6 +472,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Hide the Size column: no folder is walked
 - [ ] A folder without permission shows "—" and is not retried while you scroll
 - [ ] Select a folder whose size is known: the status bar total includes it. Sorting by size still orders folders by name, since most sizes are unknown at that moment
+- [ ] Icon view: the slider runs from 32 to 256; images stay sharp when large
+- [ ] The button beside the slider, and View > View Options > Icon Options: spacing changes at once, and Name Beside Icon reflows the grid; the selection stays
+- [ ] Both also work grouped by date, in light and dark mode, and with a long file name in two lines
+- [ ] Remember a folder in icon view with its own size and spacing: another folder keeps the general setting
+- [ ] Icon Options are gray in list and column views
 
 ### Overall feel
 

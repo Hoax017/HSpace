@@ -1,6 +1,39 @@
 import AppKit
 import ViewStyles
 
+/// Spacing and label position of the icon view. The commands live on the icon view, so without one in the
+/// responder chain they gray out, which is right: they mean nothing in the other views.
+@MainActor
+enum IconOptionsMenu {
+    private static let spacings: [(value: Int, key: String)] = [
+        (4, "iconGrid.spacing.tight"), (8, "iconGrid.spacing.normal"), (16, "iconGrid.spacing.wide"), (24, "iconGrid.spacing.wider"),
+    ]
+
+    static func item() -> NSMenuItem {
+        let item = NSMenuItem(title: L10n.t("menu.iconOptions"), action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: L10n.t("menu.iconOptions"))
+        addItems(to: menu, target: nil)
+        item.submenu = menu
+        return item
+    }
+
+    static func addItems(to menu: NSMenu, target: AnyObject?) {
+        for spacing in spacings {
+            let entry = menu.addItem(withTitle: L10n.t(spacing.key),
+                                     action: #selector(FileIconGridViewController.setIconSpacing(_:)), keyEquivalent: "")
+            entry.tag = spacing.value
+            entry.target = target
+        }
+        menu.addItem(.separator())
+        for position in IconLabelPosition.allCases {
+            let entry = menu.addItem(withTitle: L10n.t("iconGrid.label.\(position.rawValue)"),
+                                     action: #selector(FileIconGridViewController.setIconLabelPosition(_:)), keyEquivalent: "")
+            entry.representedObject = position.rawValue
+            entry.target = target
+        }
+    }
+}
+
 /// "View Options" in the View menu. It reads the store each time it opens.
 @MainActor
 final class ViewStyleMenu: NSObject, NSMenuDelegate {
@@ -27,6 +60,8 @@ final class ViewStyleMenu: NSObject, NSMenuDelegate {
             entry.representedObject = style.id
         }
         if !styles.isEmpty { menu.addItem(.separator()) }
+        menu.addItem(IconOptionsMenu.item())
+        menu.addItem(.separator())
         menu.addItem(withTitle: L10n.t("menu.saveViewStyle"),
                      action: #selector(MainWindowController.saveViewStyle(_:)), keyEquivalent: "")
         menu.addItem(withTitle: L10n.t("menu.manageViewStyles"),
