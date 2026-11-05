@@ -196,7 +196,7 @@ New pods `BatchRename`, `FileHash`, `ImageConvert`.
 - [x] **L11** (M) Batch rename presets and logs, with undo
 - [x] **L12** (S) Quick rename variant for a few files
 - [x] **L13** (M) File hash: MD5, SHA-1, SHA-256, compare, cancel
-- [ ] **L14** (M) Image conversion and resize, with Vision-based actions as a later option
+- [x] **L14** (M) Image conversion and resize. Vision-based actions stay a later option
 - [ ] **L15** (M) Match and select by pattern
 - [ ] **L16** (S) Text processing of selected names
 - [ ] **L17** (S) Merge and flatten folders, depends on A8
@@ -371,6 +371,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 
 - [ ] File Hash on a large file: the bar moves, Cancel stops it at once, and the digest matches `shasum -a 256`
 - [ ] Paste a digest copied from a download page: the matching cell turns green; in dark mode too
+
+- [ ] Convert a folder of photos to JPEG at 50%: progress moves, Cancel stops after the current image, and the originals are untouched
+- [ ] Convert a photo taken in portrait: it stays upright. Convert an animated GIF to GIF: it still plays
+- [ ] Convert to a folder on a nearly full drive: a clear error, and no hidden leftovers in that folder
+- [ ] ⌘Z after converting: the new files go to the Trash and the originals stay; ⇧⌘Z brings them back
 
 ### Overall feel
 

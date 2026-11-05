@@ -21,6 +21,8 @@ enum BatchToolsMenu {
         menu.addItem(.separator())
         menu.addItem(withTitle: L10n.t("menu.fileHash"),
                      action: #selector(MainWindowController.showFileHash(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.t("menu.imageConvert"),
+                     action: #selector(MainWindowController.showImageConvert(_:)), keyEquivalent: "")
         item.submenu = menu
         return item
     }
@@ -34,6 +36,8 @@ enum BatchToolsMenu {
             return (window.renamableSelection?.count ?? .max) <= QuickRenameSheetController.itemLimit
         case #selector(MainWindowController.showFileHash(_:)):
             return !window.grid.activePane.toolSelection.isEmpty
+        case #selector(MainWindowController.showImageConvert(_:)):
+            return !window.selectedImages.isEmpty
         default:
             return nil
         }
@@ -76,6 +80,16 @@ extension MainWindowController {
         let files = grid.activePane.toolSelection.map(\.url)
         guard !files.isEmpty, let window else { NSSound.beep(); return }
         FileHashSheetController.present(files: files, in: window)
+    }
+
+    var selectedImages: [URL] {
+        grid.activePane.toolSelection.filter(ImageConvertModel.isImage).map(\.url)
+    }
+
+    @objc func showImageConvert(_ sender: Any?) {
+        let images = selectedImages
+        guard !images.isEmpty, let window else { NSSound.beep(); return }
+        ImageConvertSheetController.present(sources: images, coordinator: coordinator, in: window)
     }
 
     @objc func showRenameLog(_ sender: Any?) {

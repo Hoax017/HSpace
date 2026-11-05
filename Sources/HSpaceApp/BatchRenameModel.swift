@@ -40,6 +40,9 @@ final class BatchRenameModel {
         }
     }
 
+    /// Waits for the plan of the latest `setSteps`.
+    func settle() async { await pending?.value }
+
     func refresh() async {
         generation += 1
         let current = generation

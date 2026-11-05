@@ -133,12 +133,12 @@ import Testing
         #expect(model.summary == L10n.t("rename.summary.none"))
 
         model.setSteps([.replace(ReplaceStep(find: "a", replacement: "c"))])
-        await model.refresh()
+        await model.settle()
         #expect(model.canApply)
         #expect(model.plan?.rows.first?.newName == "c.txt")
 
         model.setSteps([.replace(ReplaceStep(find: "a", replacement: "b"))])
-        await model.refresh()
+        await model.settle()
         #expect(!model.canApply)
         #expect(model.plan?.blockedCount == 1)
     }
