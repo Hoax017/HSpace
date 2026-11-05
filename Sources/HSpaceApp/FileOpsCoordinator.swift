@@ -66,7 +66,10 @@ final class FileOpsCoordinator {
     }
 
     func paste(into directory: URL, revealIn list: FileRevealTarget? = nil) {
-        guard !Self.isTrashDestination(directory) else { NSSound.beep(); return }
+        guard !Self.isTrashDestination(directory) else {
+            Toast.show(L10n.t("toast.notIntoTrash"), in: grid?.view.window)
+            return
+        }
         let urls = readPasteboardURLs()
         // With no files on the clipboard, paste the **content** as a new file (text/image/PDF/RTF).
         // The old version just beeped, so anything copied from a browser or a screenshot had nowhere to land.
@@ -371,7 +374,9 @@ final class FileOpsCoordinator {
         }
         // Drops, F5/F6 and the stash all arrive here. Items placed in the Trash this way would have no ledger record and no undo.
         guard !Self.isTrashDestination(dest) else {
-            NSSound.beep(); onComplete?(false); return
+            Toast.show(L10n.t("toast.notIntoTrash"), in: grid?.view.window)
+            onComplete?(false)
+            return
         }
         // All items already in the destination: moving is a no-op; copying goes through a normal copy, triggering the self-source conflict panel (matches paste semantics, M27-B)
         if move, urls.allSatisfy({ $0.standardizedFileURL.deletingLastPathComponent().path == dest.path }) {

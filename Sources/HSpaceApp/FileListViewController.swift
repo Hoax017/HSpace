@@ -999,6 +999,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
         guard urls.allSatisfy({ !FileOpsCoordinator.isSelfOrDescendant(destination: target, ofSource: $0) }) else {
             cancelSpringLoad(); return []
         }
+        guard !DropFeedback.refusesTrash(target, in: view.window) else { cancelSpringLoad(); return [] }
         // With ⌥ held, AppKit has already filtered the source mask to .copy
         let optionCopy = info.draggingSourceOperationMask == .copy
         // Move or copy at the destination: decided uniformly from the drag preference + ⌥ (visual feedback and the actual submission share the logic)
