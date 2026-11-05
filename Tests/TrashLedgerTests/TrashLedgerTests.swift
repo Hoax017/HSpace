@@ -2,6 +2,7 @@ import Testing
 import Foundation
 import TrashLedger
 import HSpaceContracts
+import HSpaceTestSupport
 
 /// Black-box acceptance: real temp directory + real persistence (no fakes or mocks)
 @Suite struct TrashLedgerTests {
@@ -78,5 +79,96 @@ import HSpaceContracts
         #expect(await led.origin(of: dir.appendingPathComponent("stranger.txt")) == nil)
         let many = await led.origins(of: [dir.appendingPathComponent("a"), dir.appendingPathComponent("b")])
         #expect(many.isEmpty)
+    }
+
+    // MARK: Restore decision (C1)
+
+    /// A Trash holding "report 10.txt", whose original was "report.txt" in `home`.
+    static func restoreFixture() throws -> (root: URL, home: URL, item: TrashedItem) {
+        let root = try FaultFixture.tempDir("hspace-tl-restore")
+        let home = root.appendingPathComponent("home")
+        let trashed = root.appendingPathComponent("Trash/report 10.txt")
+        try FaultFixture.write(to: trashed)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        return (root, home, TrashedItem(original: home.appendingPathComponent("report.txt"), trashed: trashed))
+    }
+    static let okReceipt = OperationReceipt(id: UUID(), filesDone: 1, bytesDone: 0, duration: 0)
+
+    @Test func failedMoveNeverRenamesAnUnrelatedFile() throws {
+        let f = try Self.restoreFixture()
+        defer { FaultFixture.remove(f.root) }
+        try FaultFixture.write(to: f.home.appendingPathComponent("report 10.txt"))  // a stranger with the Trash name
+        #expect(TrashRestorePolicy.step(after: nil, of: f.item, landedWasOccupied: true) == .notRestored)
+    }
+
+    @Test func failedMoveWithFreePathIsNotRestored() throws {
+        let f = try Self.restoreFixture()
+        defer { FaultFixture.remove(f.root) }
+        #expect(TrashRestorePolicy.step(after: nil, of: f.item, landedWasOccupied: false) == .notRestored)
+    }
+
+    @Test func skippedConflictIsNotRestored() throws {
+        let f = try Self.restoreFixture()
+        defer { FaultFixture.remove(f.root) }
+        try FaultFixture.write(to: f.home.appendingPathComponent("report 10.txt"))
+        // Skip finishes cleanly with an empty receipt, and the item stays in the Trash
+        let skipped = OperationReceipt(id: UUID(), filesDone: 0, bytesDone: 0, duration: 0)
+        #expect(TrashRestorePolicy.step(after: skipped, of: f.item, landedWasOccupied: true) == .notRestored)
+    }
+
+    @Test func keepBothLeavesTheStrangerAlone() throws {
+        let f = try Self.restoreFixture()
+        defer { FaultFixture.remove(f.root) }
+        try FaultFixture.write(to: f.home.appendingPathComponent("report 10.txt"))
+        try FileManager.default.moveItem(at: f.item.trashed, to: f.home.appendingPathComponent("report 10 2.txt"))
+        #expect(TrashRestorePolicy.step(after: Self.okReceipt, of: f.item, landedWasOccupied: true) == .restored)
+    }
+
+    @Test func partialFailureIsNotRestored() throws {
+        let f = try Self.restoreFixture()
+        defer { FaultFixture.remove(f.root) }
+        let partial = OperationReceipt(id: UUID(), filesDone: 0, bytesDone: 0, duration: 0, failures: [
+            OperationFailure(url: f.item.trashed, errorClass: .external, message: "no"),
+        ])
+        #expect(TrashRestorePolicy.step(after: partial, of: f.item, landedWasOccupied: false) == .notRestored)
+    }
+
+    @Test func cleanMoveWithTrashNameIsRenamedBack() throws {
+        let f = try Self.restoreFixture()
+        defer { FaultFixture.remove(f.root) }
+        let landed = TrashRestorePolicy.landedURL(of: f.item)
+        try FileManager.default.moveItem(at: f.item.trashed, to: landed)
+        #expect(TrashRestorePolicy.step(after: Self.okReceipt, of: f.item, landedWasOccupied: false)
+                == .rename(landed: landed, to: "report.txt"))
+    }
+
+    @Test func emptyFolderMoveReportsNoFilesButIsStillRenamedBack() throws {
+        let f = try Self.restoreFixture()
+        defer { FaultFixture.remove(f.root) }
+        let trashedDir = f.root.appendingPathComponent("Trash/empty 10")
+        try FileManager.default.createDirectory(at: trashedDir, withIntermediateDirectories: true)
+        let item = TrashedItem(original: f.home.appendingPathComponent("empty"), trashed: trashedDir)
+        let landed = TrashRestorePolicy.landedURL(of: item)
+        try FileManager.default.moveItem(at: trashedDir, to: landed)
+        let none = OperationReceipt(id: UUID(), filesDone: 0, bytesDone: 0, duration: 0)
+        #expect(TrashRestorePolicy.step(after: none, of: item, landedWasOccupied: false)
+                == .rename(landed: landed, to: "empty"))
+    }
+
+    @Test func sameNameNeedsNoRename() throws {
+        let f = try Self.restoreFixture()
+        defer { FaultFixture.remove(f.root) }
+        let trashed = f.root.appendingPathComponent("Trash/plain.txt")
+        try FaultFixture.write(to: f.home.appendingPathComponent("plain.txt"))
+        let item = TrashedItem(original: f.home.appendingPathComponent("plain.txt"), trashed: trashed)
+        #expect(TrashRestorePolicy.step(after: Self.okReceipt, of: item, landedWasOccupied: false) == .restored)
+    }
+
+    @Test func danglingLinkCountsAsOccupied() throws {
+        let f = try Self.restoreFixture()
+        defer { FaultFixture.remove(f.root) }
+        let link = try FaultFixture.danglingLink(at: f.home.appendingPathComponent("link"))
+        #expect(TrashRestorePolicy.isOccupied(link))
+        #expect(!TrashRestorePolicy.isOccupied(f.home.appendingPathComponent("nothing")))
     }
 }

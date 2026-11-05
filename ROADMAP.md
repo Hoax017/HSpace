@@ -111,7 +111,7 @@ Owns `Sources/Pods/ArchiveEngine`.
 
 Owns `FileOpsCoordinator.swift`, `Sources/Pods/Eraser`, `Sources/Pods/TrashLedger`.
 
-- [ ] **C1** (S) Use the move receipt in restore, so a failed move cannot rename an unrelated file. `FileOpsCoordinator.swift:408`
+- [x] **C1** (S) Use the move receipt in restore, so a failed move cannot rename an unrelated file. `FileOpsCoordinator.swift:408`
 - [ ] **C2** (S) Keep the Put Back record until restore succeeds. `FileOpsCoordinator.swift:198`
 - [ ] **C3** (S) Keep Put Back records for items that failed to delete. `FileOpsCoordinator.swift:175`
 - [ ] **C4** (M) Apply the "not into Trash" guard to drops, F5/F6 and the stash. `FileOpsCoordinator.swift:351`

@@ -403,16 +403,21 @@ final class FileOpsCoordinator {
             MainActor.assumeIsolated { coord.moveToTrash(items.map(\.original)) }
         }
         undoManager.setActionName(L10n.t("undo.trash"))
-        for item in items {
-            let parent = item.original.deletingLastPathComponent()
-            run(OperationSpec(kind: .move, sources: [item.trashed], destination: parent)) { [weak self] _ in
-                // If the Trash renamed it because of a name clash → rename back to the original name after moving back
-                let landed = parent.appendingPathComponent(item.trashed.lastPathComponent)
-                if landed.lastPathComponent != item.original.lastPathComponent {
-                    self?.run(OperationSpec(kind: .rename, sources: [landed],
-                                            newName: item.original.lastPathComponent))
-                }
-            }
+        // One at a time: each item's "is the path free" check must see where the previous item landed
+        Task { @MainActor in
+            for item in items { await restoreOne(item) }
+        }
+    }
+
+    /// Moves one item back, then renames it only when the move proves that is safe (TrashRestorePolicy).
+    private func restoreOne(_ item: TrashedItem) async {
+        let occupied = TrashRestorePolicy.isOccupied(TrashRestorePolicy.landedURL(of: item))
+        let parent = item.original.deletingLastPathComponent()
+        let receipt = await runToEnd(OperationSpec(kind: .move, sources: [item.trashed], destination: parent))
+        // If the Trash renamed it because of a name clash → rename back to the original name after moving back
+        let step = TrashRestorePolicy.step(after: receipt, of: item, landedWasOccupied: occupied)
+        if case .rename(let landed, let name) = step {
+            _ = await runToEnd(OperationSpec(kind: .rename, sources: [landed], newName: name))
         }
     }
 
@@ -432,6 +437,13 @@ final class FileOpsCoordinator {
             }
             onComplete?(receipt)
             reloadLists()
+        }
+    }
+
+    /// `run` for callers that must act on the outcome before starting the next operation.
+    private func runToEnd(_ spec: OperationSpec) async -> OperationReceipt? {
+        await withCheckedContinuation { done in
+            run(spec) { done.resume(returning: $0) }
         }
     }
 
