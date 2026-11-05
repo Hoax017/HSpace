@@ -72,9 +72,10 @@ final class SidebarModel {
             await self.bookmarkStore.seedIfEmpty(Self.seedPlaces())
             // I-14 one-time reseed: old plain-array archives (non-empty counted as "already seeded") meant default seeds were never injected;
             // merge missing items once; after that, seeds the user deletes stay deleted, and "Restore Default Bookmarks" in settings can bring them back any time
-            if !UserDefaults.standard.bool(forKey: "seedsMergedV2") {
+            let seedsMergedKey = TestIsolation.defaultsKey("seedsMergedV2")
+            if !UserDefaults.standard.bool(forKey: seedsMergedKey) {
                 await self.bookmarkStore.restoreMissingSeeds(Self.seedPlaces())
-                UserDefaults.standard.set(true, forKey: "seedsMergedV2")
+                UserDefaults.standard.set(true, forKey: seedsMergedKey)
             }
             self.rebuild()
         }

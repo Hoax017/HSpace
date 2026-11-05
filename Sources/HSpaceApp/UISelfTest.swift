@@ -22,8 +22,11 @@ enum UISelfTest {
     }()
     private static var lines: [String] = []
     private static var failed = false
+    private static var userClipboard: PasteboardSnapshot?
 
     static func run(delegate: AppDelegate) {
+        DefaultsSandbox.standard.begin()
+        userClipboard = PasteboardSnapshot(of: .general)
         // Watchdog: if any scenario's await hangs (waiting on an interactive sheet, say), force a FAIL finish after 180 s; never hang forever
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(180))
@@ -3559,6 +3562,8 @@ enum UISelfTest {
         }
         let report = lines.joined(separator: "\n") + "\n"
         try? report.data(using: .utf8)?.write(to: outDir.appendingPathComponent("report.txt"))
+        userClipboard?.restore(to: .general)
+        DefaultsSandbox.standard.end()
         exit(failed ? 1 : 0)
     }
 }

@@ -150,6 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? fm.setAttributes([.modificationDate: date], ofItemAtPath: f.path)
             }
         }
+        DefaultsSandbox.standard.begin()   // Undone at quit, so the preview does not leave grouping on for the user
         Preferences.listGrouping = true
         let pane = wc.grid.activePane
         pane.setViewMode(.icons)
@@ -400,6 +401,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             done.signal()
         }
         _ = done.wait(timeout: .now() + 1)
+        #if DEBUG
+        DefaultsSandbox.standard.end()
+        #endif
         // Force preferences to disk so the last writes (window size, sidebar width, column visibility, etc.)
         // are persisted before the process exits (a fallback for cfprefsd not having flushed asynchronously)
         UserDefaults.standard.synchronize()
