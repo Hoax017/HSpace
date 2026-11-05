@@ -55,7 +55,7 @@ public actor BookmarkStore {
         do {
             data = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         } catch {
-            throw BookmarkError(.external, "Could not create bookmark:\(error.localizedDescription)")
+            throw BookmarkError(.external, "Could not create bookmark: \(error.localizedDescription)")
         }
         let item = BookmarkItem(name: name ?? url.lastPathComponent, bookmarkData: data)
         items.append(item)
@@ -95,7 +95,7 @@ public actor BookmarkStore {
         guard !seeded, items.isEmpty else {
             if !seeded {
                 seeded = true
-                try? persist()
+                persistReportingFailure()
             }
             return
         }
@@ -106,11 +106,12 @@ public actor BookmarkStore {
             items.append(BookmarkItem(name: name, bookmarkData: data))
         }
         seeded = true
-        try? persist()
+        persistReportingFailure()
     }
 
     /// Restores missing default seeds (I-14 user semantics: seeds are removable and restorable at any time).
     /// Dedups by resolved standardized path: existing targets are skipped, only missing ones are added; returns the number actually added.
+    /// A failed write adds nothing and returns 0, with the error waiting in takeProblem().
     /// Both the settings window's "Restore Default Bookmarks" and the app layer's one-time backfill for old archives go through here.
     @discardableResult
     public func restoreMissingSeeds(_ urls: [(URL, String)]) async -> Int {
@@ -124,9 +125,16 @@ public actor BookmarkStore {
             items.append(BookmarkItem(name: name, bookmarkData: data))
             added += 1
         }
-        if added > 0 {
-            seeded = true
-            try? persist()
+        guard added > 0 else { return 0 }
+        let wasSeeded = seeded
+        seeded = true
+        do {
+            try persist()
+        } catch {
+            items.removeLast(added)
+            seeded = wasSeeded
+            problem = error as? BookmarkError
+            return 0
         }
         return added
     }
@@ -176,6 +184,15 @@ public actor BookmarkStore {
         return nil
     }
 
+    /// For writes whose callers have nowhere to receive a throw: the error waits in takeProblem().
+    private func persistReportingFailure() {
+        do {
+            try persist()
+        } catch {
+            problem = error as? BookmarkError
+        }
+    }
+
     private func persist() throws {
         if let blocked = setAsideUnusableFile() { throw blocked }
         do {
@@ -185,7 +202,7 @@ public actor BookmarkStore {
             // Atomic replace: crash-safe (spec fault matrix: on persistence failure keep in-memory state; the thrown error is shown in place by the caller)
             try data.write(to: fileURL, options: .atomic)
         } catch {
-            throw BookmarkError(.external, "Could not save bookmarks:\(error.localizedDescription)")
+            throw BookmarkError(.external, "Could not save bookmarks: \(error.localizedDescription)")
         }
     }
 }

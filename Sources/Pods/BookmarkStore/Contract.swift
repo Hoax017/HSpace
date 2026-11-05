@@ -16,9 +16,11 @@ public struct BookmarkItem: Sendable, Hashable, Codable, Identifiable {
     }
 }
 
-public struct BookmarkError: ClassifiedError {
+public struct BookmarkError: ClassifiedError, LocalizedError {
     public let errorClass: ErrorClass
     public let localizedDescription: String
+    /// What `localizedDescription` gives on `any Error`, which is how the app receives it
+    public var errorDescription: String? { localizedDescription }
 
     init(_ cls: ErrorClass, _ message: String) {
         self.errorClass = cls

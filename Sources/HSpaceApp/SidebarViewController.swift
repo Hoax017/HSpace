@@ -150,7 +150,11 @@ final class SidebarViewController: NSViewController {
         guard let leaf = sender.representedObject as? SidebarLeafNode,
               case let .bookmark(item) = leaf.payload else { return }
         Task {
-            try? await model.bookmarkStore.remove(item.id)
+            do {
+                try await model.bookmarkStore.remove(item.id)
+            } catch {
+                showBanner(error.localizedDescription)
+            }
             model.rebuild()
         }
     }
@@ -228,7 +232,11 @@ extension SidebarViewController: NSOutlineViewDataSource {
         if let str = info.draggingPasteboard.string(forType: Self.reorderType), let from = Int(str) {
             let to = index > from ? index - 1 : index
             Task {
-                try? await model.bookmarkStore.move(from: from, to: to)
+                do {
+                    try await model.bookmarkStore.move(from: from, to: to)
+                } catch {
+                    showBanner(error.localizedDescription)
+                }
                 model.rebuild()
             }
             return true
@@ -237,7 +245,11 @@ extension SidebarViewController: NSOutlineViewDataSource {
         guard !urls.isEmpty else { return false }
         Task {
             for url in urls {
-                try? await model.bookmarkStore.add(url)
+                do {
+                    try await model.bookmarkStore.add(url)
+                } catch {
+                    showBanner(error.localizedDescription)
+                }
             }
             model.rebuild()
         }
@@ -425,7 +437,11 @@ extension SidebarViewController: NSTextFieldDelegate {
             return
         }
         Task {
-            try? await model.bookmarkStore.rename(item.id, to: newName)
+            do {
+                try await model.bookmarkStore.rename(item.id, to: newName)
+            } catch {
+                showBanner(error.localizedDescription)
+            }
             model.rebuild()
         }
     }

@@ -313,10 +313,22 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         guard !dirs.isEmpty else { NSSound.beep(); return }
         let store = sidebar.model.bookmarkStore
         Task { [weak self] in
-            for dir in dirs { try? await store.add(dir.url) }
+            var added = 0
+            var failure: (any Error)?
+            for dir in dirs {
+                do {
+                    try await store.add(dir.url)
+                    added += 1
+                } catch {
+                    failure = error
+                }
+            }
             self?.sidebar.model.rebuild()
-            Toast.show(String(format: L10n.t("toast.bookmarkAdded"), dirs.count),
-                       in: self?.window)
+            if let failure {
+                Toast.show(failure.localizedDescription, in: self?.window)
+            } else {
+                Toast.show(String(format: L10n.t("toast.bookmarkAdded"), added), in: self?.window)
+            }
         }
     }
 

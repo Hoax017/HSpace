@@ -195,3 +195,49 @@ private func keptFiles(_ dir: URL, _ name: String) throws -> [URL] {
         #expect(await store.takeProblem() == nil)
     }
 }
+
+/// D2: a failed write is reported, never shown as a success.
+@Suite struct BookmarkStoreFailedWriteTests {
+    func makeDirectory() throws -> (dir: URL, target: URL) {
+        let dir = try FaultFixture.tempDir("hspace-bm")
+        let target = dir.appendingPathComponent("target")
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        return (dir, target)
+    }
+
+    @Test func errorsKeepTheirMessageAsPlainErrors() async throws {
+        let (dir, target) = try makeDirectory()
+        defer { FaultFixture.remove(dir) }
+        let store = BookmarkStore(directory: dir)
+        try await FaultFixture.withReadOnly(dir) {
+            do {
+                try await store.add(target)
+                Issue.record("expected a failure")
+            } catch {
+                // The app shows `error.localizedDescription` on `any Error`
+                #expect(error.localizedDescription.contains("Could not save bookmarks: "))
+            }
+        }
+    }
+
+    @Test func failedSeedRestoreAddsNothingAndIsReported() async throws {
+        let (dir, target) = try makeDirectory()
+        defer { FaultFixture.remove(dir) }
+        let store = BookmarkStore(directory: dir)
+        try await FaultFixture.withReadOnly(dir) {
+            #expect(await store.restoreMissingSeeds([(target, "Target")]) == 0)
+            #expect(await store.all().isEmpty)
+            #expect(await store.takeProblem() != nil)
+        }
+    }
+
+    @Test func failedSeedingIsReported() async throws {
+        let (dir, target) = try makeDirectory()
+        defer { FaultFixture.remove(dir) }
+        let store = BookmarkStore(directory: dir)
+        try await FaultFixture.withReadOnly(dir) {
+            await store.seedIfEmpty([(target, "Target")])
+            #expect(await store.takeProblem() != nil)
+        }
+    }
+}
