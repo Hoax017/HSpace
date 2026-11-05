@@ -145,8 +145,13 @@ extension TransferNode {
                     throw TransferError(.external, "Could not create folder:\(error.localizedDescription)", path: dst.path)
                 }
             }
-            let children = (try? fm.contentsOfDirectory(at: src, includingPropertiesForKeys: [.isDirectoryKey],
-                                                        options: [])) ?? []
+            // A listing failure must stop the copy: treated as empty, it would count as copied and a move could delete the source
+            let children: [URL]
+            do {
+                children = try fm.contentsOfDirectory(at: src, includingPropertiesForKeys: [.isDirectoryKey], options: [])
+            } catch {
+                throw TransferError(.external, "Could not read folder:\(error.localizedDescription)", path: src.path)
+            }
             for child in children {
                 let childDst = dst.appendingPathComponent(child.lastPathComponent)
                 if merge, fm.fileExists(atPath: childDst.path) {

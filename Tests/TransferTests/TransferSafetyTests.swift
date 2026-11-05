@@ -114,4 +114,38 @@ import HSpaceTestSupport
         #expect(try Self.text(target) == "old")
         #expect(try Self.names(in: volume.url).filter { !$0.hasPrefix(".") } == ["big.bin"])
     }
+
+    // MARK: A2 unreadable folders
+
+    @Test func copyOfUnreadableFolderFails() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("src/d")
+        let secret = source.appendingPathComponent("secret")
+        try FaultFixture.write(Data("kept".utf8), to: secret.appendingPathComponent("s.txt"))
+        let destination = base.appendingPathComponent("dst")
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        await #expect(throws: TransferError.self) {
+            try await FaultFixture.withUnreadable(secret) {
+                try await Self.run(.copy, [source], to: destination)
+            }
+        }
+    }
+
+    @Test func crossVolumeMoveKeepsSourceWithUnreadableFolder() async throws {
+        let volume = try ScratchVolume()
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("d")
+        let secret = source.appendingPathComponent("secret")
+        try FaultFixture.write(Data("kept".utf8), to: secret.appendingPathComponent("s.txt"))
+
+        await #expect(throws: TransferError.self) {
+            try await FaultFixture.withUnreadable(secret) {
+                try await Self.run(.move, [source], to: volume.url)
+            }
+        }
+        #expect(try Self.text(secret.appendingPathComponent("s.txt")) == "kept")
+    }
 }
