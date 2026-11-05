@@ -179,6 +179,16 @@ public extension ArchiveEngineNode {
         try await extractEntries(entries, from: archive, into: directory)
     }
 
+    /// What Quick Look will take out at once, by the sizes the listing declares. Past this, extracting is the honest answer.
+    static let previewByteLimit: Int64 = 1 << 30
+
+    /// Extracts files for Quick Look. Only regular files come back, so a preview never follows a link planted in the archive.
+    /// Entries that are not files are skipped; more than `byteLimit` in total is refused before anything runs.
+    func extractForPreview(_ entries: [ArchiveEntry], from archive: URL, into directory: URL,
+                           byteLimit: Int64 = previewByteLimit) async throws -> [(entry: ArchiveEntry, url: URL)] {
+        try await extractPreview(entries, from: archive, into: directory, byteLimit: byteLimit)
+    }
+
     /// A new private folder (0700) in the temporary directory, for what is taken out of an archive
     static func makeScratchDirectory() throws -> URL {
         try createScratchDirectory()

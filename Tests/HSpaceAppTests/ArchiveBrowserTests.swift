@@ -90,6 +90,48 @@ private struct KeepBothArbiter: ConflictArbiter {
         #expect(ArchiveBrowserModel.topmost([folder, inner, other]).map(\.name) == ["sub", "sub2"])
     }
 
+    @Test func previewsComeOutOnceAndFoldersAreSkipped() async throws {
+        let dir = try FaultFixture.tempDir("hspace-browser")
+        defer { FaultFixture.remove(dir) }
+        let archive = try fixture(["sub/a.txt": "a", "b.txt": "b"], in: dir)
+        let model = ArchiveBrowserModel(archive: archive)
+        try await model.load()
+        defer { model.discardAll() }
+        let root = try #require(model.root)
+
+        let urls = try await model.previewURLs(root.children)
+        #expect(urls.map(\.lastPathComponent) == ["b.txt"])
+        #expect(try String(contentsOf: urls[0], encoding: .utf8) == "b")
+
+        // Served from the temporary folder: the archive is not read a second time
+        try Data("damaged".utf8).write(to: archive)
+        #expect(try await model.previewURLs(root.children) == urls)
+    }
+
+    @Test func nothingToPreviewIsNotAnError() async throws {
+        let dir = try FaultFixture.tempDir("hspace-browser")
+        defer { FaultFixture.remove(dir) }
+        let archive = try fixture(["sub/a.txt": "a"], in: dir)
+        let model = ArchiveBrowserModel(archive: archive)
+        try await model.load()
+        #expect(try await model.previewURLs(model.root?.children ?? []).isEmpty)
+    }
+
+    @Test func closingTheWindowEndsThePreviews() async throws {
+        let dir = try FaultFixture.tempDir("hspace-browser")
+        defer { FaultFixture.remove(dir) }
+        let archive = try fixture(["a.txt": "a"], in: dir)
+        let model = ArchiveBrowserModel(archive: archive)
+        try await model.load()
+        let urls = try await model.previewURLs(model.root?.children ?? [])
+
+        model.discardAll()
+
+        #expect(!FileManager.default.fileExists(atPath: urls[0].path))
+        #expect(try await model.previewURLs(model.root?.children ?? []).isEmpty == false)
+        model.discardAll()
+    }
+
     @Test func closingTheWindowRemovesWhatWasTakenOut() async throws {
         let dir = try FaultFixture.tempDir("hspace-browser")
         defer { FaultFixture.remove(dir) }

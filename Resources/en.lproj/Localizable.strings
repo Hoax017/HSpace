@@ -261,6 +261,7 @@
 "archive.extract.tooltip" = "Extract the selected items, or the whole archive when nothing is selected";
 "archive.status.reading" = "Reading archive…";
 "archive.status.extracting" = "Extracting…";
+"archive.status.preparing" = "Preparing preview…";
 "archive.status.items" = "%d items";
 "archive.problem.title" = "The archive could not be read";
 "archive.unsafe.tooltip" = "This path leads outside the extraction folder, so HSpace will not extract it";

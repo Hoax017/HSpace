@@ -240,7 +240,7 @@ Owns a new `Scheduler` pod and `ProgressWindowController.swift`. Depends on trac
 Owns `Sources/Pods/ArchiveEngine`. Depends on track B.
 
 - [x] **L50** (L) Browse inside archives without extracting
-- [ ] **L51** (M) Quick Look inside archives
+- [x] **L51** (M) Quick Look inside archives
 - [ ] **L52** (L) 7z and RAR extraction, after a license and dependency review
 - [ ] **L53** (M) Compression settings and password list stored in Keychain
 
@@ -346,6 +346,9 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Extract To with nothing selected extracts the whole archive
 - [ ] Open a large tar.gz in the browser and press Cancel or Escape: reading stops
 - [ ] The browser works with VoiceOver and the keyboard, in light and dark mode
+- [ ] In the browser, press Space on an image, a PDF and a text file: each previews, and arrows page through the list
+- [ ] Double-click a file in the browser: it previews. Press Space on a folder: only a beep
+- [ ] Close the browser: no `hspace-archive-` folder stays in the temporary directory
 
 ### App behaviour
 

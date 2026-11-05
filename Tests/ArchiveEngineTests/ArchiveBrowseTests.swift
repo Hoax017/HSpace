@@ -221,6 +221,59 @@ import Testing
         }
     }
 
+    // MARK: Preview
+
+    @Test func aPreviewOfAFileSwappedForALinkShowsNothing() async throws {
+        let dir = try FaultFixture.tempDir("hspace-browse")
+        defer { FaultFixture.remove(dir) }
+        let plain = try FaultFixture.tempDir("hspace-browse-a")
+        defer { FaultFixture.remove(plain) }
+        let linked = try FaultFixture.tempDir("hspace-browse-b")
+        defer { FaultFixture.remove(linked) }
+        try FaultFixture.write(Data("harmless".utf8), to: plain.appendingPathComponent("note.txt"))
+        try FileManager.default.createSymbolicLink(at: linked.appendingPathComponent("note.txt"),
+                                                   withDestinationURL: URL(fileURLWithPath: "/etc/hosts"))
+        let archive = dir.appendingPathComponent("swap.tar")
+        try Self.tar(["-cf", archive.path, "-C", plain.path, "note.txt"])
+        try Self.tar(["-rf", archive.path, "-C", linked.path, "note.txt"])
+        let out = try FaultFixture.tempDir("hspace-browse-out")
+        defer { FaultFixture.remove(out) }
+        let file = try #require(try await ArchiveEngineNode().list(archive).first { $0.kind == .file })
+
+        let preview = try await ArchiveEngineNode().extractForPreview([file], from: archive, into: out)
+
+        #expect(preview.isEmpty)
+    }
+
+    @Test func aPreviewPastTheLimitIsRefusedBeforeExtracting() async throws {
+        let dir = try FaultFixture.tempDir("hspace-browse")
+        defer { FaultFixture.remove(dir) }
+        let archive = try Self.archive(["a.txt": "12345"], ext: "zip", in: dir)
+        let entries = try await ArchiveEngineNode().list(archive)
+        let out = try FaultFixture.tempDir("hspace-browse-out")
+        defer { FaultFixture.remove(out) }
+
+        await #expect(throws: ArchiveError.self) {
+            try await ArchiveEngineNode().extractForPreview(entries, from: archive, into: out, byteLimit: 4)
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: out.path).isEmpty)
+        #expect(try await ArchiveEngineNode().extractForPreview(entries, from: archive, into: out, byteLimit: 5).count == 1)
+    }
+
+    @Test func aPreviewSkipsWhatIsNotAFile() async throws {
+        let listing = """
+        drwxr-xr-x  0 0  0  0 Jan  1  2020 folder/
+        lrwxr-xr-x  0 0  0  0 Jan  1  2020 link -> /etc/hosts
+        -rw-r--r--  0 0  0  1 Jan  1  2020 ../evil.txt
+        """
+        let dir = try FaultFixture.tempDir("hspace-browse")
+        defer { FaultFixture.remove(dir) }
+        let archive = try Self.archive(["a.txt": "a"], ext: "tar", in: dir)
+        let entries = try parseArchiveListing(Data(listing.utf8))
+
+        #expect(try await ArchiveEngineNode().extractForPreview(entries, from: archive, into: dir).isEmpty)
+    }
+
     // MARK: Scratch folders
 
     @Test func scratchFoldersArePrivateAndGoAwayEvenWhenReadOnly() throws {

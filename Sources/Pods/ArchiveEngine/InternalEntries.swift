@@ -24,6 +24,23 @@ extension ArchiveEngineNode {
         return try entries.map { try Self.landed($0, in: directory) }
     }
 
+    func extractPreview(_ entries: [ArchiveEntry], from archive: URL, into directory: URL,
+                        byteLimit: Int64) async throws -> [(entry: ArchiveEntry, url: URL)] {
+        let files = entries.filter { $0.kind == .file && $0.isSafe }
+        let total = files.reduce(Int64(0)) { $0.addingReportingOverflow($1.size ?? 0).partialValue }
+        guard total >= 0, total <= byteLimit else {
+            throw ArchiveError(.logic, "Too large to preview. Extract it instead.", path: archive.path)
+        }
+        let landed = try await extractEntries(files, from: archive, into: directory)
+        return zip(files, landed).filter { Self.isRegularFile($0.1) }.map { (entry: $0.0, url: $0.1) }
+    }
+
+    /// True only for a real file: a symlink is not one, whatever it points at
+    private static func isRegularFile(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
+    }
+
     private func extractWithTar(_ entries: [ArchiveEntry], from archive: URL, into directory: URL) async throws {
         let list = FileManager.default.temporaryDirectory.appendingPathComponent("hspace-entries-\(UUID().uuidString)")
         do {

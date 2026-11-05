@@ -1,6 +1,7 @@
 import AppKit
 import ArchiveEngine
 import HSpaceContracts
+import Quartz
 import UniformTypeIdentifiers
 
 /// Shows what an archive holds, without extracting it. A window of its own, because panes show real folders only
@@ -28,8 +29,12 @@ final class ArchiveBrowserWindowController: NSWindowController, NSWindowDelegate
     private let spinner = NSProgressIndicator()
     private let cancelButton = ToolUI.button(L10n.t("archive.cancel"), target: nil, action: nil)
     private let extractButton = ToolUI.button(L10n.t("menu.extractTo"), target: nil, action: nil)
+    private let previewButton = ToolUI.button(L10n.t("menu.quickLook"), target: nil, action: nil)
     private var work: Task<Void, Never>?
     private var icons: [String: NSImage] = [:]
+    /// What the Quick Look panel shows
+    private(set) var previewItems: [URL] = []
+    private var controlsPreviewPanel = false
 
     private enum Column {
         static let name = NSUserInterfaceItemIdentifier("name")
@@ -90,7 +95,12 @@ final class ArchiveBrowserWindowController: NSWindowController, NSWindowDelegate
         extractButton.action = #selector(extractTo(_:))
         extractButton.toolTip = L10n.t("archive.extract.tooltip")
 
-        let bar = NSStackView(views: [spinner, status, NSView(), cancelButton, extractButton])
+        previewButton.target = self
+        previewButton.action = #selector(toggleQuickLook(_:))
+        previewButton.isEnabled = false
+        outline.onSpace = { [weak self] in self?.toggleQuickLook(nil) }
+
+        let bar = NSStackView(views: [spinner, status, NSView(), cancelButton, previewButton, extractButton])
         bar.orientation = .horizontal
         bar.spacing = 8
         bar.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
@@ -141,7 +151,7 @@ final class ArchiveBrowserWindowController: NSWindowController, NSWindowDelegate
             } catch {
                 failure = error
             }
-            guard let self, !Task.isCancelled || failure != nil else { return }
+            guard let self, !Task.isCancelled else { return }
             self.work = nil
             self.setBusy(nil)
             self.showCounts()
@@ -192,8 +202,56 @@ final class ArchiveBrowserWindowController: NSWindowController, NSWindowDelegate
     }
 
     @objc private func openRow(_ sender: Any?) {
-        guard let node = outline.item(atRow: outline.clickedRow) as? ArchiveTreeNode, node.isFolder else { return }
+        guard let node = outline.item(atRow: outline.clickedRow) as? ArchiveTreeNode else { return }
+        guard node.isFolder else {
+            showPreview()
+            return
+        }
         if outline.isItemExpanded(node) { outline.collapseItem(node) } else { outline.expandItem(node) }
+    }
+
+    // MARK: Quick Look (the file is taken out to a private temporary folder first)
+
+    /// Same selector as the file views, so the Quick Look menu item and its shortcut reach this window too
+    @objc func toggleQuickLook(_ sender: Any?) {
+        if let panel = QLPreviewPanel.shared(), panel.isVisible {
+            panel.orderOut(nil)
+        } else {
+            showPreview()
+        }
+    }
+
+    private func showPreview() {
+        begin(L10n.t("archive.status.preparing")) { [weak self] in
+            guard let self else { return }
+            try await self.loadPreview()
+            guard !self.previewItems.isEmpty else {
+                NSSound.beep()
+                return
+            }
+            QLPreviewPanel.shared()?.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    private func loadPreview() async throws {
+        let urls = try await model.previewURLs(selectedNodes)
+        try Task.checkCancellation()
+        previewItems = urls
+    }
+
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
+
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        controlsPreviewPanel = true
+        panel.dataSource = self
+        panel.delegate = self
+        panel.reloadData()
+    }
+
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        controlsPreviewPanel = false
+        panel.dataSource = nil
+        panel.delegate = nil
     }
 
     /// Selected items, or the whole archive when nothing is selected
@@ -238,6 +296,7 @@ final class ArchiveBrowserWindowController: NSWindowController, NSWindowDelegate
     func windowWillClose(_ notification: Notification) {
         work?.cancel()
         work = nil
+        if controlsPreviewPanel { QLPreviewPanel.shared()?.orderOut(nil) }
         model.discardAll()
         Self.open.removeAll { $0 === self }
     }
@@ -292,6 +351,34 @@ extension ArchiveBrowserWindowController: NSOutlineViewDataSource, NSOutlineView
         cell.imageView?.image = column == Column.name ? icon(for: node) : nil
         return cell
     }
+
+    func outlineViewSelectionDidChange(_ notification: Notification) {
+        previewButton.isEnabled = selectedNodes.contains { $0.entry.kind == .file && $0.entry.isSafe }
+        guard controlsPreviewPanel else { return }
+        // Arrow keys page through the archive with the panel open. A file still coming out gives way to the newer selection.
+        begin(L10n.t("archive.status.preparing")) { [weak self] in
+            try await self?.loadPreview()
+            QLPreviewPanel.shared()?.reloadData()
+        }
+    }
+}
+
+extension ArchiveBrowserWindowController: @preconcurrency QLPreviewPanelDataSource, @preconcurrency QLPreviewPanelDelegate {
+    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
+        previewItems.count
+    }
+
+    func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
+        guard previewItems.indices.contains(index) else { return nil }
+        return previewItems[index] as NSURL
+    }
+
+    /// Up and down go to the list, to move through the archive, as in the file views
+    func previewPanel(_ panel: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
+        guard event.type == .keyDown, event.keyCode == 125 || event.keyCode == 126 else { return false }
+        outline.keyDown(with: event)
+        return true
+    }
 }
 
 /// Text cell, with an icon in the name column
@@ -331,7 +418,19 @@ private final class ArchiveCell: NSTableCellView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 }
 
-final class ArchiveOutlineView: NSOutlineView {}
+final class ArchiveOutlineView: NSOutlineView {
+    var onSpace: (() -> Void)?
+
+    /// Space would otherwise go to type-select, when the Quick Look shortcut is bound to something else
+    override func keyDown(with event: NSEvent) {
+        if event.charactersIgnoringModifiers == " ",
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty {
+            onSpace?()
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+}
 
 extension MainWindowController {
     /// The one selected item, when it is an archive that can be browsed

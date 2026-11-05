@@ -12,6 +12,9 @@ final class ArchiveBrowserModel {
     private(set) var itemCount = 0
     /// Temporary folders still on disk
     private var scratchFolders: Set<URL> = []
+    /// One folder for all previews, so that going back to a file does not extract it again
+    private var previewFolder: URL?
+    private var previewed: [ArchiveEntry: URL] = [:]
 
     init(archive: URL) {
         self.archive = archive
@@ -36,9 +39,33 @@ final class ArchiveBrowserModel {
         }
     }
 
+    /// The files among `nodes`, ready for Quick Look, in the same order. Folders and links have no preview.
+    func previewURLs(_ nodes: [ArchiveTreeNode]) async throws -> [URL] {
+        let entries = nodes.map(\.entry).filter { $0.kind == .file && $0.isSafe }
+        let missing = entries.filter { previewed[$0] == nil }
+        if !missing.isEmpty {
+            let folder = try previewFolder ?? makePreviewFolder()
+            for result in try await engine.extractForPreview(missing, from: archive, into: folder) {
+                previewed[result.entry] = result.url
+            }
+        }
+        return entries.compactMap { previewed[$0] }
+    }
+
+    private func makePreviewFolder() throws -> URL {
+        let folder = try ArchiveEngineNode.makeScratchDirectory()
+        scratchFolders.insert(folder)
+        previewFolder = folder
+        return folder
+    }
+
     /// A failure here leaves a file in the temporary folder, which holds no data of its own, so it only gets reported.
     func discard(_ scratch: URL) {
         scratchFolders.remove(scratch)
+        if scratch == previewFolder {
+            previewFolder = nil
+            previewed = [:]
+        }
         do {
             try ArchiveEngineNode.discardScratchDirectory(scratch)
         } catch {
