@@ -1,9 +1,14 @@
 import Foundation
 import HSpaceContracts
 
-/// Transfer node (copy / move / duplicate). Zero-argument construction injection (Axiom 2: no global mutable state).
+/// Transfer node (copy / move / duplicate). Constructor injection only (Axiom 2: no global mutable state).
 public struct TransferNode: OperationNode {
-    public init() {}
+    private let pauseGate: (@Sendable (UUID) -> Void)?
+
+    /// `pauseGate` is called on an I/O thread before each file and during long ones, and may block there to pause the operation.
+    public init(pauseGate: (@Sendable (UUID) -> Void)? = nil) {
+        self.pauseGate = pauseGate
+    }
 
     public func execute(_ spec: OperationSpec, context: NodeContext) async throws -> OperationReceipt {
         let started = Date()
@@ -19,7 +24,7 @@ public struct TransferNode: OperationNode {
         sweepLeftovers(in: Set(resolved.map { $0.destination.deletingLastPathComponent() }))
 
         // Micro-step 3: per-file transfer (cooperative cancellation reaches the copyfile callback via CancelFlag)
-        let flag = CancelFlag()
+        let flag = CancelFlag(operationID: context.operationID, pauseGate: pauseGate)
         let progress = ProgressAggregator(report: context.report)
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()

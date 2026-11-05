@@ -8,12 +8,15 @@ import LocalOps
 import ArchiveEngine
 import SessionStore
 import Frecency
+import Scheduler
 import TrashLedger
 import Eraser
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let kernel = OperationKernel()
+    /// Who starts next: shared by the kernel and the task window
+    let scheduler: Scheduler
+    let kernel: OperationKernel
     /// Conflict arbitration sheet (the kernel's only arbiter): held strongly here, the kernel keeps only a weak-semantics reference
     private let conflictSheet = ConflictSheet()
     private var windowControllers: [MainWindowController] = []
@@ -54,6 +57,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingExternalOpens: [ExternalRequest] = []
     private let externalOpenWorker = ExternalOpenWorker()
 
+    override init() {
+        let scheduler = Scheduler(maxConcurrent: Preferences.maxConcurrentOperations)
+        self.scheduler = scheduler
+        kernel = OperationKernel(queue: SchedulerRunQueue(scheduler))
+        super.init()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         ExternalOpenHistory.purgeStoredPath(from: .standard)
         NSApp.mainMenu = MainMenu.build()
@@ -67,7 +77,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         GlobalHotkey.apply()
         // Composition root (BG-2): declaratively inject the What: pod nodes + conflict arbiter + progress subscription
         Task { @MainActor in
-            await kernel.register(TransferNode(), for: [.copy, .move, .duplicate])
+            await kernel.register(TransferNode(pauseGate: { [scheduler] in scheduler.waitWhilePaused($0) }),
+                                  for: [.copy, .move, .duplicate])
             await kernel.register(LocalOpsNode(), for: [.rename, .newFolder, .newFile, .trash])
             await kernel.register(ArchiveEngineNode(), for: [.compress, .extract])
             // Permanent delete gets its own node: an irreversible operation does not share a mature node with the other local operations

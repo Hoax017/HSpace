@@ -229,7 +229,7 @@ Owns `BreadcrumbBar.swift`, `PathEditorField.swift`, `SidebarViewController.swif
 
 Owns a new `Scheduler` pod and `ProgressWindowController.swift`. Depends on track A. L41 and L42 depend on L40.
 
-- [ ] **L40** (L) Scheduler: queue, priorities, per-path locks, pause and resume
+- [x] **L40** (L) Scheduler: queue, priorities, per-path locks, pause and resume
 - [ ] **L41** (M) Task list window and toolbar status
 - [ ] **L42** (M) Operation history with undo groups
 - [ ] **L43** (L) Local folder sync: compare, filters, presets, direction, dry run. Must show a plan before any delete
@@ -415,6 +415,12 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Skip a clash during a merge: that folder stays, with the skipped file in it
 - [ ] Flatten a nested folder: same-named files become "name 2", and the empty subfolders are in the Trash, restorable with ⌘Z
 - [ ] Flatten across an unreadable subfolder: a clear error before anything moves
+
+### Operations
+
+- [ ] Copy a large folder and a second one to another folder at the same time: both progress
+- [ ] Copy into a folder, then rename an item being replaced there: the rename waits for the copy
+- [ ] Two copies with conflicts: one panel at a time
 
 ### Overall feel
 

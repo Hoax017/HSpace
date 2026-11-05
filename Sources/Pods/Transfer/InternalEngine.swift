@@ -8,8 +8,16 @@ import Darwin
 final class CancelFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var value = false
+    private let operationID: UUID
+    private let pauseGate: (@Sendable (UUID) -> Void)?
+    init(operationID: UUID, pauseGate: (@Sendable (UUID) -> Void)?) {
+        self.operationID = operationID
+        self.pauseGate = pauseGate
+    }
     func set() { lock.lock(); value = true; lock.unlock() }
     var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
+    /// Stops here while the operation is paused. Only for the I/O threads, which may block.
+    func waitWhilePaused() { pauseGate?(operationID) }
 }
 
 /// Progress aggregator: copyfile callbacks fire on the I/O thread; aggregates under a lock and throttles reports (only at >= 512KB or file boundaries)
@@ -60,8 +68,9 @@ final class ProgressAggregator: @unchecked Sendable {
     func snapshotBytes() -> Int64 { lock.lock(); defer { lock.unlock() }; return bytesCompleted }
 }
 
-/// Dedicated I/O queue: blocking copyfile calls stay off the Swift concurrency cooperative pool
-private let ioQueue = DispatchQueue(label: "com.hoax017.hspace.transfer.io", qos: .userInitiated)
+/// Dedicated I/O queue: blocking copyfile calls stay off the Swift concurrency cooperative pool.
+/// Concurrent, so that one paused or very long file does not hold up another operation.
+private let ioQueue = DispatchQueue(label: "com.hoax017.hspace.transfer.io", qos: .userInitiated, attributes: .concurrent)
 
 extension TransferNode {
     func transferEntry(_ entry: TransferPlan.Entry, mode: TransferPlan.Mode,
@@ -481,6 +490,7 @@ private final class CopyContext {
 
 private func copyOneFileSync(from src: URL, to dst: URL,
                              flag: CancelFlag, progress: ProgressAggregator) throws {
+    flag.waitWhilePaused()
     if flag.isSet { throw CancellationError() }
     let state = copyfile_state_alloc()
     defer { copyfile_state_free(state) }
@@ -492,6 +502,7 @@ private func copyOneFileSync(from src: URL, to dst: URL,
     let callback: copyfile_callback_t = { what, stage, state, _, _, ctxPtr in
         guard let ctxPtr else { return Int32(COPYFILE_CONTINUE) }
         let box = Unmanaged<CopyContext>.fromOpaque(ctxPtr).takeUnretainedValue()
+        box.flag.waitWhilePaused()
         if box.flag.isSet { return Int32(COPYFILE_QUIT) }
         // Returning CONTINUE at the error stage retries the failed write forever, which hangs on a full disk
         if what == COPYFILE_COPY_DATA, stage == COPYFILE_ERR { return Int32(COPYFILE_QUIT) }
