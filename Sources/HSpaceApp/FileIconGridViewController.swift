@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 import HSpaceContracts
 import IconThumb
 import FileMetadata
+import KeyboardSelection
+import ViewStyles
 
 /// Icon grid collection view that reports interaction: a click requests activation of the owning pane; context menu hook;
 /// space for Quick Look, double click to open; Return doesn't support rename (an honest beep, no pretending)
@@ -14,6 +16,8 @@ final class IconGridCollectionView: NSCollectionView {
     var menuProvider: ((IndexPath?) -> NSMenu?)?
     var onSpace: (() -> Void)?
     var onDoubleClick: ((IndexPath) -> Void)?
+    /// An arrow key while keyboard selection is under way. True = handled.
+    var onCursorKey: ((NSEvent) -> Bool)?
 
     override func mouseDown(with event: NSEvent) {
         onInteract?()
@@ -61,6 +65,7 @@ final class IconGridCollectionView: NSCollectionView {
             NSSound.beep()
             return
         }
+        if onCursorKey?(event) == true { return }
         super.keyDown(with: event)
     }
 }
@@ -76,6 +81,9 @@ final class FileIconItem: NSCollectionViewItem {
     private let tagDots = TagDotsView()
     private var baseInk = NSColor.labelColor
     private var tint: NSColor?
+    private var labelBelow: [NSLayoutConstraint] = []
+    private var labelBeside: [NSLayoutConstraint] = []
+    private var sideIconWidth: NSLayoutConstraint!
 
     override func loadView() {
         backdrop.wantsLayer = true
@@ -106,16 +114,27 @@ final class FileIconItem: NSCollectionViewItem {
             backdrop.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -2),
             backdrop.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 2),
             backdrop.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -2),
+            icon.heightAnchor.constraint(equalTo: icon.widthAnchor),
+            label.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -4),
+        ])
+        labelBelow = [
             // Icon area: 16 side padding makes a square (itemSize = icon side + 32)
             icon.topAnchor.constraint(equalTo: root.topAnchor, constant: 4),
             icon.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
             icon.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
-            icon.heightAnchor.constraint(equalTo: icon.widthAnchor),
             label.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: 4),
             label.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 4),
-            label.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -4),
             label.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor, constant: -4),
-        ])
+        ]
+        sideIconWidth = icon.widthAnchor.constraint(equalToConstant: 80)
+        labelBeside = [
+            sideIconWidth,
+            icon.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 4),
+            icon.centerYAnchor.constraint(equalTo: root.centerYAnchor),
+            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
+            label.centerYAnchor.constraint(equalTo: root.centerYAnchor),
+        ]
+        NSLayoutConstraint.activate(labelBelow)
         view = root
         imageView = icon
         textField = label
@@ -130,6 +149,15 @@ final class FileIconItem: NSCollectionViewItem {
         backdrop.layer?.backgroundColor = active
             ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.30).cgColor
             : NSColor.clear.cgColor
+    }
+
+    func apply(_ layout: IconLayout) {
+        _ = view
+        let beside = layout.label == .right
+        NSLayoutConstraint.deactivate(beside ? labelBelow : labelBeside)
+        NSLayoutConstraint.activate(beside ? labelBeside : labelBelow)
+        sideIconWidth.constant = CGFloat(layout.iconSize)
+        label.alignment = beside ? .left : .center
     }
 
     func configure(icon image: NSImage, name: String, dimmed: Bool) {
@@ -180,12 +208,18 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     var onInteract: (() -> Void)?
     var onSelectionChange: (() -> Void)?
     var onContentChange: (() -> Void)?
+    /// The owner changed the layout here, by slider or menu
+    var onLayoutChange: (() -> Void)?
 
     private let collectionView = IconGridCollectionView()
     private let flowLayout = NSCollectionViewFlowLayout()
     private let scrollView = NSScrollView()
     private let emptyLabel = NSTextField(labelWithString: "")
     private let sizeSlider = NSSlider()
+    private let optionsButton = NSButton()
+    /// The item Space acts on, while keyboard selection is under way
+    private var keyboardCursor: IndexPath? { didSet { placeKeyboardCursor() } }
+    private let keyboardCursorView = KeyboardCursorView()
 
     /// Target to reveal (select) after an operation completes; the icon view has no inline rename, so the rename flag is ignored
     private var pendingReveal: (url: URL, rename: Bool)?
@@ -208,15 +242,10 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     /// Thumbnail eligibility cached per UTType (no repeated conforms work on the scroll path)
     private static var thumbEligible: [String: Bool] = [:]
 
-    /// Icon size (app-level preference shared by all pane grids; aligned to the latest value on appear)
-    static var preferredIconSize: CGFloat {
-        get {
-            let v = UserDefaults.standard.double(forKey: "iconGridSize")
-            return (48...128).contains(v) ? CGFloat(v) : 80
-        }
-        set { UserDefaults.standard.set(Double(newValue), forKey: "iconGridSize") }
-    }
-    private var iconSize: CGFloat = FileIconGridViewController.preferredIconSize
+    /// What this view lays out now: the folder's style if it has one, otherwise the app-level preference shared by all pane grids
+    private(set) var iconLayout = Preferences.iconLayout
+    /// Set while a folder's style decides the layout. Changes then stay with the folder.
+    private var folderLayout: IconLayout?
 
     var focusTarget: NSView { collectionView }
 
@@ -235,8 +264,6 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
 
     override func loadView() {
-        flowLayout.minimumInteritemSpacing = 8
-        flowLayout.minimumLineSpacing = 8
         flowLayout.sectionInset = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
         flowLayout.sectionHeadersPinToVisibleBounds = true   // M26 v2: floating group headers (matches the list's floatsGroupRows)
 
@@ -254,6 +281,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         collectionView.onInteract = { [weak self] in self?.onInteract?() }
         collectionView.menuProvider = { [weak self] _ in self?.buildMenu() }
         collectionView.onSpace = { [weak self] in self?.toggleQuickLook(nil) }
+        collectionView.onCursorKey = { [weak self] event in self?.handleCursorKey(event) ?? false }
         collectionView.onDoubleClick = { [weak self] ip in
             guard let self, let file = self.fileItem(at: ip) else { return }
             self.open(file)
@@ -280,18 +308,27 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         let separator = NSBox()
         separator.boxType = .separator
         let bottomBar = NSView()
-        sizeSlider.minValue = 48
-        sizeSlider.maxValue = 128
-        sizeSlider.doubleValue = Double(iconSize)
+        sizeSlider.minValue = Double(IconLayout.sizes.lowerBound)
+        sizeSlider.maxValue = Double(IconLayout.sizes.upperBound)
+        sizeSlider.doubleValue = Double(iconLayout.iconSize)
         sizeSlider.isContinuous = true
         sizeSlider.controlSize = .small
         sizeSlider.target = self
         sizeSlider.action = #selector(sliderChanged(_:))
         sizeSlider.toolTip = L10n.t("iconGrid.sizeTooltip")
+        sizeSlider.setAccessibilityLabel(L10n.t("iconGrid.sizeTooltip"))
+        let optionsTitle = L10n.t("menu.iconOptions")
+        optionsButton.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: optionsTitle)
+        optionsButton.isBordered = false
+        optionsButton.toolTip = optionsTitle
+        optionsButton.setAccessibilityLabel(optionsTitle)
+        optionsButton.contentTintColor = .secondaryLabelColor
+        optionsButton.target = self
+        optionsButton.action = #selector(showOptionsMenu(_:))
         filterPill.target = self
         filterPill.action = #selector(clearGroupFilter(_:))
         filterPill.isHidden = true
-        for sub in [separator, sizeSlider, filterPill] {
+        for sub in [separator, sizeSlider, optionsButton, filterPill] {
             sub.translatesAutoresizingMaskIntoConstraints = false
             bottomBar.addSubview(sub)
         }
@@ -302,6 +339,8 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
             sizeSlider.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -8),
             sizeSlider.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
             sizeSlider.widthAnchor.constraint(equalToConstant: 120),
+            optionsButton.trailingAnchor.constraint(equalTo: sizeSlider.leadingAnchor, constant: -8),
+            optionsButton.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
             filterPill.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 8),
             filterPill.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
         ])
@@ -329,34 +368,83 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
             emptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: root.leadingAnchor, constant: 20),
         ])
         view = root
-        applyIconSize()
+        applyIconLayout()
         applySnapshot()   // The shared model usually already has a snapshot (the list loads first), so present it directly
     }
 
     override func viewWillAppear() {
         super.viewWillAppear()
-        // Another pane may have changed the app-level icon size preference: align on appear
-        let preferred = Self.preferredIconSize
-        if preferred != iconSize {
-            iconSize = preferred
-            sizeSlider.doubleValue = Double(preferred)
-            applyIconSize()
-        }
+        // Another pane may have changed the app-level preference: align on appear
+        if folderLayout == nil, Preferences.iconLayout != iconLayout { adopt(Preferences.iconLayout) }
     }
 
     // MARK: Icon size (slider, app-level UserDefaults)
 
     @objc private func sliderChanged(_ sender: NSSlider) {
-        let size = CGFloat(sender.doubleValue.rounded())
-        guard size != iconSize else { return }
-        iconSize = size
-        Self.preferredIconSize = size
-        applyIconSize()
+        change { $0.iconSize = Int(sender.doubleValue.rounded()) }
     }
 
-    private func applyIconSize() {
-        flowLayout.itemSize = NSSize(width: iconSize + 32, height: iconSize + 42)
+    /// The owner's change: stays with the folder when it has a layout, otherwise goes to the preference
+    private func change(_ edit: (inout IconLayout) -> Void) {
+        var next = iconLayout
+        edit(&next)
+        next = IconLayout(iconSize: next.iconSize, spacing: next.spacing, label: next.label)
+        guard next != iconLayout else { return }
+        if folderLayout != nil { folderLayout = next } else { Preferences.iconLayout = next }
+        adopt(next)
+        onLayoutChange?()
+    }
+
+    /// A folder's style took over, or (nil) let go
+    func setFolderLayout(_ layout: IconLayout?) {
+        folderLayout = layout
+        adopt(layout ?? Preferences.iconLayout)
+    }
+
+    /// From now on, changes to the layout stay with this folder
+    func keepLayoutWithFolder() { folderLayout = iconLayout }
+
+    private func adopt(_ layout: IconLayout) {
+        guard layout != iconLayout else { return }
+        let positionChanged = layout.label != iconLayout.label
+        let thumbnailChanged = layout.thumbnailSize != iconLayout.thumbnailSize
+        iconLayout = layout
+        guard isViewLoaded else { return }
+        sizeSlider.doubleValue = Double(layout.iconSize)
+        applyIconLayout()
+        if thumbnailChanged {
+            cancelDecorationWork()
+            thumbOverlay.removeAll()
+        }
+        if positionChanged || thumbnailChanged { rebuildAndReloadPreservingSelection() }
+        refreshVisibleDecorations()
+    }
+
+    private func applyIconLayout() {
+        let cell = iconLayout.itemSize
+        flowLayout.itemSize = NSSize(width: cell.width, height: cell.height)
+        flowLayout.minimumInteritemSpacing = CGFloat(iconLayout.spacing)
+        flowLayout.minimumLineSpacing = CGFloat(iconLayout.spacing)
+        for item in collectionView.visibleItems() { (item as? FileIconItem)?.apply(iconLayout) }
         flowLayout.invalidateLayout()
+        keyboardCursor = nil
+    }
+
+    var testFlowLayout: NSCollectionViewFlowLayout? { flowLayout }
+
+    // MARK: Icon options menu (the button beside the slider, and View > View Options)
+
+    @objc private func showOptionsMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        IconOptionsMenu.addItems(to: menu, target: self)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height), in: sender)
+    }
+
+    @objc func setIconSpacing(_ sender: NSMenuItem) { change { $0.spacing = sender.tag } }
+
+    @objc func setIconLabelPosition(_ sender: NSMenuItem) {
+        guard let position = sender.representedObject as? String, let label = IconLabelPosition(rawValue: position) else { return }
+        change { $0.label = label }
     }
 
     // MARK: Snapshot presentation
@@ -371,6 +459,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         // Same-directory refreshes clear the thumbnail overlay too: file contents may have changed (the IconThumb cache key includes mtime)
         thumbOverlay.removeAll()
         emptyLabel.isHidden = true
+        keyboardCursor = nil           // Positions mean something else after a refresh
         let kept = selectionURLCache   // I-32: source of truth for the actual pre-delete selection (not the shifted selectionIndexPaths)
         rebuildSections()              // M26 v2: rebuild the section ↔ model mapping when grouped (before reloadData)
         collectionView.reloadData()
@@ -547,13 +636,14 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
 
     private func requestThumbnail(_ url: URL) {
         guard thumbTasks[url] == nil else { return }
-        // Always request at the 128pt ceiling (x2 pixels internally): slider scaling affects display only and doesn't regenerate repeatedly
+        // Requested in two steps (x2 pixels internally): slider scaling affects display only and doesn't regenerate repeatedly
+        let side = CGFloat(iconLayout.thumbnailSize)
         thumbTasks[url] = Task { [weak self] in
-            let cg = await Engines.iconThumb.thumbnail(for: url, size: 128)
+            let cg = await Engines.iconThumb.thumbnail(for: url, size: side)
             guard let self, !Task.isCancelled else { return }
             self.thumbTasks[url] = nil
             guard let cg else { return }
-            let image = NSImage(cgImage: cg, size: NSSize(width: 128, height: 128))
+            let image = NSImage(cgImage: cg, size: NSSize(width: side, height: side))
             self.thumbOverlay[url] = image
             guard let idx = self.model.items.firstIndex(where: { $0.url == url }),
                   let ip = self.indexPath(forModelIndex: idx),
@@ -561,6 +651,62 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
             else { return }
             cell.setIcon(image)
         }
+    }
+
+    // MARK: Keyboard selection (Space toggles the item at the cursor and moves on)
+
+    private var orderedPaths: [IndexPath] {
+        sections.enumerated().flatMap { section, group in
+            group.indices.indices.map { IndexPath(item: $0, section: section) }
+        }
+    }
+
+    func toggleSelectionAtCursor() {
+        let paths = orderedPaths
+        let last = collectionView.selectionIndexPaths.max().flatMap(paths.firstIndex)
+        guard let step = KeyboardSelection.step(cursor: keyboardCursor.flatMap(paths.firstIndex), lastSelected: last,
+                                                count: paths.count, isItem: { _ in true }) else { return }
+        let path = paths[step.toggle]
+        if collectionView.selectionIndexPaths.contains(path) {
+            collectionView.deselectItems(at: [path])
+        } else {
+            collectionView.selectItems(at: [path], scrollPosition: [])
+        }
+        // Programmatic changes reach no delegate
+        selectionDidChange()
+        showCursor(at: paths[step.next])
+    }
+
+    /// Moves the cursor by items, leaving the selection as built
+    func moveKeyboardCursor(by offset: Int) {
+        let paths = orderedPaths
+        guard let cursor = keyboardCursor.flatMap(paths.firstIndex) else { return }
+        showCursor(at: paths[KeyboardSelection.move(cursor: cursor, by: offset, count: paths.count, isItem: { _ in true })])
+    }
+
+    private func showCursor(at path: IndexPath) {
+        keyboardCursor = path
+        collectionView.scrollToItems(at: [path], scrollPosition: .nearestHorizontalEdge)
+    }
+
+    private func handleCursorKey(_ event: NSEvent) -> Bool {
+        guard keyboardCursor != nil, event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty else { return false }
+        let cell = flowLayout.itemSize.width + flowLayout.minimumInteritemSpacing
+        let inner = collectionView.bounds.width - flowLayout.sectionInset.left - flowLayout.sectionInset.right
+        let perRow = max(1, Int((inner + flowLayout.minimumInteritemSpacing) / cell))
+        switch event.keyCode {
+        case 123: moveKeyboardCursor(by: -1)
+        case 124: moveKeyboardCursor(by: 1)
+        case 125: moveKeyboardCursor(by: perRow)
+        case 126: moveKeyboardCursor(by: -perRow)
+        default: return false
+        }
+        return true
+    }
+
+    private func placeKeyboardCursor() {
+        let frame = keyboardCursor.flatMap { collectionView.layoutAttributesForItem(at: $0)?.frame }
+        keyboardCursorView.show(around: frame, in: collectionView)
     }
 
     // MARK: Selection state
@@ -710,6 +856,10 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     private var quickLookDismissing = false
 
     @objc func toggleQuickLook(_ sender: Any?) {
+        if SpaceKey.togglesSelection {
+            toggleSelectionAtCursor()
+            return
+        }
         guard let panel = QLPreviewPanel.shared() else { return }
         if panel.isVisible {
             quickLookDismissing = true
@@ -764,6 +914,12 @@ extension FileIconGridViewController: @preconcurrency NSMenuItemValidation {
                                                       options: [.urlReadingFileURLsOnly: true])
         case #selector(newFolderHere(_:)), #selector(newFileHere(_:)):
             return !TrashLocation.isInsideTrash(model.directory)
+        case #selector(setIconSpacing(_:)):
+            menuItem.state = menuItem.tag == iconLayout.spacing ? .on : .off
+            return true
+        case #selector(setIconLabelPosition(_:)):
+            menuItem.state = menuItem.representedObject as? String == iconLayout.label.rawValue ? .on : .off
+            return true
         case #selector(toggleGrouping(_:)):
             menuItem.state = Preferences.listGrouping ? .on : .off
             return true
@@ -787,6 +943,7 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
                         itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
         let item = collectionView.makeItem(withIdentifier: FileIconItem.reuseID, for: indexPath)
         guard let cell = item as? FileIconItem, let file = fileItem(at: indexPath) else { return item }
+        cell.apply(iconLayout)
         let cut = coordinator?.isCut(file.url) ?? false
         // Fast path shows the type icon first; a delivered content thumbnail is used directly (upgrade path in requestThumbnail)
         cell.configure(icon: thumbOverlay[file.url] ?? Formatters.fullIcon(for: file),
@@ -826,10 +983,12 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
     }
 
     func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
+        keyboardCursor = nil
         selectionDidChange()
     }
 
     func collectionView(_ collectionView: NSCollectionView, didDeselectItemsAt indexPaths: Set<IndexPath>) {
+        keyboardCursor = nil
         selectionDidChange()
     }
 

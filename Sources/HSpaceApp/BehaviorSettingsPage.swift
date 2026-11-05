@@ -1,4 +1,5 @@
 import AppKit
+import FolderSize
 
 /// Behavior settings page (QSpace-aligned subset): Enter/Backspace/drag/double-click blank/default sort/workspace tab limit,
 /// plus the "Open Mode" section at the bottom (destination for external open-URL). All items go through Preferences and apply at once to new panes/new operations.
@@ -39,9 +40,18 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
         let grouping = checkRow("settings.behavior.listGrouping",
             checked: Preferences.listGrouping, action: #selector(listGroupingChanged(_:)))
 
+        let spaceSelects = checkRow("settings.behavior.spaceSelects",
+            checked: Preferences.spaceSelects, action: #selector(spaceSelectsChanged(_:)))
+
         // M28: smart focused-search ranking by usage (on by default)
         let smartSearch = checkRow("settings.behavior.smartSearchSort",
             checked: Preferences.searchSmartSort, action: #selector(smartSearchSortChanged(_:)))
+
+        let folderSizes = popupRow("settings.behavior.folderSizes",
+            optionKeys: ["settings.behavior.folderSizes.all", "settings.behavior.folderSizes.localOnly",
+                         "settings.behavior.folderSizes.never"],
+            selectedTag: FolderSizeMode.allCases.firstIndex(of: Preferences.folderSizeMode) ?? 0,
+            action: #selector(folderSizesChanged(_:)))
 
         let sortRow = makeSortRow()
 
@@ -62,7 +72,7 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
         let openNote = note("settings.behavior.openTarget.note")
 
         let stack = NSStackView(views: [
-            enterRow, backspaceRow, dragRow, blank, grouping, smartSearch, sortRow,
+            enterRow, backspaceRow, dragRow, blank, spaceSelects, grouping, smartSearch, folderSizes, sortRow,
             NSBox.separatorLine(), wsLimitRow, tabLimitNote,
             NSBox.separatorLine(), openHeader, openRow, openNote,
         ])
@@ -211,6 +221,17 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
 
     @objc private func smartSearchSortChanged(_ sender: NSButton) {
         Preferences.searchSmartSort = sender.state == .on   // takes effect on the next search (read by restartSearch)
+    }
+
+    @objc private func spaceSelectsChanged(_ sender: NSButton) {
+        Preferences.spaceSelects = sender.state == .on
+    }
+
+    @objc private func folderSizesChanged(_ sender: NSPopUpButton) {
+        let t = sender.selectedTag()
+        guard FolderSizeMode.allCases.indices.contains(t) else { return }
+        Preferences.folderSizeMode = FolderSizeMode.allCases[t]
+        NotificationCenter.default.post(name: .hspaceColumnsChanged, object: nil)  // open lists follow at once
     }
 
     @objc private func sortKeyChanged(_ sender: NSPopUpButton) {

@@ -20,6 +20,8 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
     let stashShelf: StashShelfController
     /// Custom top deck (M17): tab strip 28 + icon toolbar 36
     let deck = TopDeckView()
+    /// Right-hand side panel: preview and inspector
+    let detail = DetailPanelController()
     /// Workspace manager (M17): the window's [SessionWindow] + activeIndex; switch = snapshot current -> restore target
     private(set) var workspaces: WorkspaceManager!
 
@@ -96,14 +98,20 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         gridView.translatesAutoresizingMaskIntoConstraints = false
         contentColumn.addSubview(deck)
         contentColumn.addSubview(gridView)
+        let detailView = detail.view
+        detailView.translatesAutoresizingMaskIntoConstraints = false
+        contentColumn.addSubview(detailView)
         NSLayoutConstraint.activate([
             deck.topAnchor.constraint(equalTo: contentColumn.topAnchor),
             deck.leadingAnchor.constraint(equalTo: contentColumn.leadingAnchor),
             deck.trailingAnchor.constraint(equalTo: contentColumn.trailingAnchor),
             gridView.topAnchor.constraint(equalTo: deck.bottomAnchor),
             gridView.leadingAnchor.constraint(equalTo: contentColumn.leadingAnchor),
-            gridView.trailingAnchor.constraint(equalTo: contentColumn.trailingAnchor),
+            gridView.trailingAnchor.constraint(equalTo: detailView.leadingAnchor),
             gridView.bottomAnchor.constraint(equalTo: contentColumn.bottomAnchor),
+            detailView.topAnchor.constraint(equalTo: deck.bottomAnchor),
+            detailView.trailingAnchor.constraint(equalTo: contentColumn.trailingAnchor),
+            detailView.bottomAnchor.constraint(equalTo: contentColumn.bottomAnchor),
         ])
 
         for pane in [sidebarWrap, contentColumn] {
@@ -115,6 +123,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         host.view = NSView()
         host.addChild(sidebar)
         host.addChild(grid)
+        host.addChild(detail)
         mainSplit.translatesAutoresizingMaskIntoConstraints = false
         host.view.addSubview(mainSplit)
         NSLayoutConstraint.activate([
@@ -160,8 +169,13 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
             name: NSWindow.willCloseNotification, object: window)
 
         sidebar.onNavigate = { [weak self] url in self?.grid.activePane.navigate(to: url) }
+        detail.source = { [weak self] in
+            guard let pane = self?.grid.activePane else { return nil }
+            return DetailSource(directory: pane.activeTab.browser.current, selection: pane.currentSelectedItems(), pane: pane)
+        }
         grid.onActiveLocationChange = { [weak self] url in
             self?.updateTitle(for: url)
+            self?.detail.noteSelectionChanged()
             // The highlight follows the pane: the old sidebar highlight only showed "what was clicked last" and went on pointing at the old location after a directory change
             self?.sidebar.syncSelection(to: url)
             // I-47: persist on navigation (1s debounce); otherwise the location is saved only on clean exit, and an unclean exit (force quit/
@@ -171,6 +185,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         grid.onActiveStatusChange = { [weak self] in
             guard let self else { return }
             self.deck.validateActions(hasSelection: self.grid.activePane.currentSelectionCount > 0)
+            self.detail.noteSelectionChanged()
         }
 
         // Workspace manager: seed a single workspace from the current grid snapshot (grid.view has run loadView, pane pool in place)
@@ -181,6 +196,8 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         // so third-party "open file location" such as Antigravity reached the parent directory without selecting the file). The pending mechanism handles the first async directory read race.
         if let select { grid.activePane.reveal(select) }
         installKeyMonitor()
+        ProblemAlert.show(ViewStylesHost.store.takeProblem())
+        ProblemAlert.show(HiddenItems.store.takeProblem())
     }
 
     @available(*, unavailable)
@@ -201,6 +218,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
     /// Called by AppDelegate on window close (the event monitor must be torn down explicitly)
     func teardown() {
         NotificationCenter.default.removeObserver(self)
+        detail.teardown()
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
@@ -290,7 +308,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
     }
 
     /// Sync deck controls (fed back after active pane/location/layout/selection changes)
-    private func syncDeck() {
+    func syncDeck() {
         let pane = grid.activePane
         let b = pane.activeTab.browser
         deck.syncViewMode(pane.activeTab.viewMode.rawValue)
@@ -444,6 +462,8 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if let enabled = BatchToolsMenu.validate(item, in: self) { return enabled }
         if let enabled = TemplateMenu.validate(item, in: self) { return enabled }
+        if let enabled = DetailPanelMenu.validate(item, in: self) { return enabled }
+        if let enabled = ViewStyleMenu.validate(item, in: self) { return enabled }
         if item.action == #selector(switchWorkspaceByNumber(_:)) {
             item.state = item.tag == workspaces.activeIndex ? .on : .off
             return item.tag < workspaces.count

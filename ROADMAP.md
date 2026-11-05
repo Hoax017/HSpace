@@ -205,14 +205,14 @@ New pods `BatchRename`, `FileHash`, `ImageConvert`.
 
 Owns the view controllers and `Sources/Pods/IconThumb`.
 
-- [ ] **L20** (L) Side preview panel, with configurable actions
-- [ ] **L21** (L) File inspector panel
-- [ ] **L22** (M) View options per folder, and saved view styles with a manager
-- [ ] **L23** (M) Custom hidden items and exclusion rules
-- [ ] **L24** (M) Folder sizes in list view, with a setting
-- [ ] **L25** (M) Icon view options: size, spacing, label position
-- [ ] **L26** (S) Keyboard selection with Space
-- [ ] **L27** (M) Photos library browsing
+- [x] **L20** (L) Side preview panel, with configurable actions
+- [x] **L21** (L) File inspector panel
+- [x] **L22** (M) View options per folder, and saved view styles with a manager
+- [x] **L23** (M) Custom hidden items and exclusion rules
+- [x] **L24** (M) Folder sizes in list view, with a setting
+- [x] **L25** (M) Icon view options: size, spacing, label position
+- [x] **L26** (S) Keyboard selection with Space
+- [x] **L27** (M) Photos library browsing
 
 ### Lane 4: Navigation
 
@@ -486,6 +486,52 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] New from Template twice in one folder: the second gets "2", with no panel. A folder template copies whole
 - [ ] New from Template in list, icon and column views, from the File menu and the right-click menu; grayed out in the Trash
 - [ ] The task list works in light and dark mode, and with VoiceOver: Pause, Priority and Cancel are named
+
+### Viewing
+
+- [ ] View > Preview Panel (⌥⌘P): the panel opens right of the panes and previews the selection in list, icon and column views; the window size stays
+- [ ] Arrow quickly through a folder of large files: the preview keeps up and nothing stutters
+- [ ] Preview a video: it waits for play. Hide the panel while it plays: the sound stops
+- [ ] Select several items: a count and size show. Clear the selection: "No selection"
+- [ ] Drag the panel's left edge: it stops at its limits, and the width survives a restart
+- [ ] Settings > Side Panel: turn actions off, reorder them; the panel follows at once. Reset brings the defaults back
+- [ ] Panel buttons act on the selection of the active pane, and gray out in the Trash where the menus do. Move to Trash can be undone
+- [ ] The panel looks right in light and dark mode, and VoiceOver names each button
+- [ ] View > Inspector Panel (⌥⌘I): facts of the selection, or of the folder with nothing selected. With the preview on too, each takes half the column
+- [ ] Inspect an image, a video, a PDF, a symlink and a broken symlink: dimensions, duration, pages, target and "missing" show
+- [ ] Select a big folder: "Calculating…", then the size. Move on while it counts: it stops, with no CPU left running
+- [ ] Select several items with a folder among them: the total arrives, or says "At least" when part cannot be read
+- [ ] Values can be selected and copied; VoiceOver reads each with its label
+- [ ] View > View Options > Remember for This Folder: set icons sorted by size, leave, come back: the view returns. Other folders keep the pane's own view, also after Back
+- [ ] Include Subfolders: subfolders follow, until one has its own rule
+- [ ] Change the view in a remembered folder: the change sticks. Quit and reopen: it is still there
+- [ ] Save View as Style, apply it elsewhere from the menu. A duplicate or blank name is refused with a message
+- [ ] Manage Styles: rename, remove (asks first), forget a folder; keyboard and VoiceOver work in the sheet
+- [ ] Right-click > Hide: the item goes in every view mode, and ⌘Z brings it back. Show Hidden Files shows it dimmed
+- [ ] Settings > Hidden Items: add `*.log`: open panes update at once. Set it to Exclude: Show Hidden Files no longer brings it back
+- [ ] A rule with a scope applies in that folder and below only. Clearing a pattern says what is wrong and keeps the old rule on disk
+- [ ] Nothing changes in Finder: the rules only change what HSpace shows
+- [ ] List view: visible folders show "…", then their size. Scroll a big folder off screen: the walk stops
+- [ ] Settings > Behavior > Folder sizes: Never shows "—" at once; Local volumes only leaves a network share alone; All folders walks it
+- [ ] Hide the Size column: no folder is walked
+- [ ] A folder without permission shows "—" and is not retried while you scroll
+- [ ] Select a folder whose size is known: the status bar total includes it. Sorting by size still orders folders by name, since most sizes are unknown at that moment
+- [ ] Icon view: the slider runs from 32 to 256; images stay sharp when large
+- [ ] The button beside the slider, and View > View Options > Icon Options: spacing changes at once, and Name Beside Icon reflows the grid; the selection stays
+- [ ] Both also work grouped by date, in light and dark mode, and with a long file name in two lines
+- [ ] Remember a folder in icon view with its own size and spacing: another folder keeps the general setting
+- [ ] Icon Options are gray in list and column views
+- [ ] Settings > Behavior: turn on "Space selects items". In list, icon and column views, Space toggles the item and moves on; an outline shows the next item; arrows move the outline and keep the selection
+- [ ] A click, or an arrow with no outline showing, returns to normal selection. Group headers are skipped
+- [ ] With the setting on, Shift-Space previews, and Space closes an open preview. With it off, Space previews as before
+- [ ] In column view, picking one folder with Space opens its column, like a click; the cursor stays in the column you are in
+- [ ] The outline stays visible in light and dark mode
+- [ ] Go > Photos Library on a fresh permission: a message and Allow Access. The system prompt appears only after pressing it, and it gives the reason from Info.plist
+- [ ] Don't Allow: the window explains, Open System Settings goes to the Photos pane, and allowing there works when you return to the window
+- [ ] Allowed: albums on the left, thumbnails on the right, with a mark on videos; scrolling a large library stays smooth and downloads nothing
+- [ ] Select several, Copy to Active Pane: originals arrive in the active pane's folder under their own names; a taken name gets a number
+- [ ] An item stored only in iCloud downloads and arrives. Cancel during a copy: only finished files remain, no partial file
+- [ ] Limited access shows only the chosen photos. The library in Photos is unchanged. VoiceOver reads kind and date
 
 ### Overall feel
 

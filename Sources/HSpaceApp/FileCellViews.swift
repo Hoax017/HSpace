@@ -24,6 +24,16 @@ final class FocusReportingTableView: NSTableView {
     var isGroupRowProvider: ((Int) -> Bool)?
     /// Group header click (M26): toggles the collapse state of the row's group
     var onGroupRowClick: ((Int) -> Void)?
+    /// The row Space acts on, while keyboard selection is under way
+    var keyboardCursorRow: Int? { didSet { placeKeyboardCursor() } }
+    let keyboardCursorView = KeyboardCursorView()
+    var isTogglingFromKeyboard = false
+    var testCursorHidden: Bool { keyboardCursorView.isHidden }
+
+    override func layout() {
+        super.layout()
+        placeKeyboardCursor()
+    }
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {
         onDragExited?()
@@ -172,6 +182,7 @@ final class FocusReportingTableView: NSTableView {
             onSpace()
             return
         }
+        if moveKeyboardCursor(with: event) { return }
         // ← (123) / → (124): column view takes over moving between columns; otherwise back to default
         if event.keyCode == 123, let onArrowLeft {
             onArrowLeft()

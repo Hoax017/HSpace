@@ -52,6 +52,8 @@ enum KeyBindings {
         Entry(id: "searchHere", titleKey: "menu.searchHere", defaultKey: "f", defaultMods: [.command]),
         Entry(id: "searchGlobal", titleKey: "menu.searchGlobal", defaultKey: "f", defaultMods: [.command, .shift]),
         Entry(id: "toggleSidebar", titleKey: "menu.toggleSidebar", defaultKey: "s", defaultMods: [.command, .option]),
+        Entry(id: "togglePreviewPanel", titleKey: "menu.togglePreviewPanel", defaultKey: "p", defaultMods: [.command, .option]),
+        Entry(id: "toggleInspectorPanel", titleKey: "menu.toggleInspectorPanel", defaultKey: "i", defaultMods: [.command, .option]),
         // View modes (I-13: moved from hard-coded ⌘1/2/3 to the registry; defaults give way to workspace digits -> ⌥⌘1/2/3, rebindable)
         Entry(id: "viewAsIcons", titleKey: "menu.viewAsIcons", defaultKey: "1", defaultMods: [.command, .option]),
         Entry(id: "viewAsList", titleKey: "menu.viewAsList", defaultKey: "2", defaultMods: [.command, .option]),

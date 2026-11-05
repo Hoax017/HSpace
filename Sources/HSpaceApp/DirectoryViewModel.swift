@@ -5,6 +5,7 @@ import DirectoryWatch
 import FolderSize
 import IconThumb
 import FileMetadata
+import FileInspector
 
 /// App-wide shared engine instances (constructed once, injected globally): FolderSize's concurrency limit (=2) and cache apply globally,
 /// and IconThumb's LRU thumbnail cache is reused across panes and tabs. Both are Sendable, so static storage is safe.
@@ -12,6 +13,7 @@ enum Engines {
     static let folderSize = FolderSize()
     static let iconThumb = IconThumb()
     static let metadata = FileMetadata()
+    static let inspector = FileInspector()
 }
 
 /// Glue for one pane's content: subscribes to the DirectoryReader projection, holds the snapshot, and uses generations to block stale overwrites (spec 3.2).
@@ -33,8 +35,25 @@ final class DirectoryViewModel {
     private(set) var items: [FileItem] = []
     private(set) var isLoading = false
 
-    var includeHidden = false { didSet { reload() } }
-    var sort = SortSpec() { didSet { reload() } }
+    var includeHidden = false { didSet { viewOptionsChanged() } }
+    var sort = SortSpec() { didSet { viewOptionsChanged() } }
+    /// The user or a command changed the sort or hidden files. Not called for `setViewOptions`.
+    var onViewOptionsChange: (() -> Void)?
+    private var settingViewOptions = false
+
+    private func viewOptionsChanged() {
+        guard !settingViewOptions else { return }
+        reload()
+        onViewOptionsChange?()
+    }
+
+    /// Sets both without reading the folder, for a caller about to navigate or reload
+    func setViewOptions(sort: SortSpec, includeHidden: Bool) {
+        settingViewOptions = true
+        self.sort = sort
+        self.includeHidden = includeHidden
+        settingViewOptions = false
+    }
 
     /// Tags of this directory's items. Decoration: read after each snapshot, and a failed read only means no dots.
     private(set) var metadata: [URL: ItemMetadata] = [:]
@@ -46,6 +65,7 @@ final class DirectoryViewModel {
     private var metadataHandlers: [() -> Void] = []
     /// Set once in init; only deinit reads it again
     private nonisolated(unsafe) var colorObserver: (any NSObjectProtocol)?
+    private nonisolated(unsafe) var rulesObserver: (any NSObjectProtocol)?
 
     /// Subscribe to tag changes that leave the rows as they are, so a rename in progress is not interrupted
     func addOnMetadataChange(_ handler: @escaping () -> Void) { metadataHandlers.append(handler) }
@@ -68,7 +88,7 @@ final class DirectoryViewModel {
     /// Applies the tag filter and tag sort to a snapshot. Column view passes `applyFilter: false` for parent columns,
     /// where filtering would hide the folders the user drilled through.
     func arranged(_ items: [FileItem], metadata: [URL: ItemMetadata], applyFilter: Bool = true) -> [FileItem] {
-        var result = items
+        var result = HiddenItems.filter(items, includeHidden: includeHidden)
         if applyFilter, !tagFilter.isEmpty {
             result = result.filter { TagQuery.matches(metadata[$0.url]?.tags ?? [], anyOf: tagFilter) }
         }
@@ -98,6 +118,10 @@ final class DirectoryViewModel {
         colorObserver = NotificationCenter.default.addObserver(
             forName: .hspaceFileColorsChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.metadataHandlers.forEach { $0() } }
+        }
+        rulesObserver = NotificationCenter.default.addObserver(
+            forName: .hspaceHiddenRulesChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reload() }
         }
     }
 
@@ -214,6 +238,7 @@ final class DirectoryViewModel {
         watcher?.stop()
         metadataTask?.cancel()
         if let colorObserver { NotificationCenter.default.removeObserver(colorObserver) }
+        if let rulesObserver { NotificationCenter.default.removeObserver(rulesObserver) }
     }
 }
 

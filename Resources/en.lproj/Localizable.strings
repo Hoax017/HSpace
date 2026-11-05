@@ -783,3 +783,114 @@
 "menu.saveAsTemplate" = "Save Selection as Template";
 "menu.openTemplates" = "Open Templates Folder";
 "templates.none" = "No templates yet";
+
+/* Side panel (L20) */
+"menu.togglePreviewPanel" = "Preview Panel";
+"panel.preview.nothing" = "No selection";
+"panel.preview.count" = "%d items";
+"panel.preview.countSize" = "%1$d items, %2$@";
+"panel.preview.countFilesSize" = "%1$d items, %2$@ in files";
+"settings.tab.sidePanel" = "Side Panel";
+"settings.sidePanel.note" = "Choose which actions the preview panel offers, and their order.";
+"settings.sidePanel.reset" = "Reset";
+"settings.sidePanel.up" = "Move %@ up";
+"settings.sidePanel.down" = "Move %@ down";
+
+/* Inspector (L21) */
+"menu.toggleInspectorPanel" = "Inspector Panel";
+"inspector.onDisk" = "On disk";
+"inspector.items" = "Items";
+"inspector.itemCount" = "%d items";
+"inspector.dimensions" = "Dimensions";
+"inspector.pixels" = "%1$d × %2$d";
+"inspector.colorModel" = "Colour model";
+"inspector.dpi" = "Resolution (DPI)";
+"inspector.duration" = "Duration";
+"inspector.pages" = "Pages";
+"inspector.accessed" = "Last opened";
+"inspector.added" = "Date added";
+"inspector.permissions" = "Permissions";
+"inspector.owner" = "Owner";
+"inspector.group" = "Group";
+"inspector.linkTarget" = "Points to";
+"inspector.linkBroken" = "%@ (missing)";
+"inspector.locked" = "Locked";
+"inspector.hidden" = "Hidden";
+"inspector.yes" = "Yes";
+"inspector.calculating" = "Calculating…";
+"inspector.unreadable" = "Could not be read";
+"inspector.atLeast" = "At least %@";
+"inspector.problem" = "Problem";
+
+/* View options per folder and saved styles (L22) */
+"menu.viewOptions" = "View Options";
+"menu.rememberFolderView" = "Remember for This Folder";
+"menu.ruleIncludesSubfolders" = "Include Subfolders";
+"menu.saveViewStyle" = "Save View as Style…";
+"menu.manageViewStyles" = "Manage Styles…";
+"viewStyle.saveTitle" = "Save View as Style";
+"viewStyle.renameTitle" = "Rename Style";
+"viewStyle.namePlaceholder" = "Style name";
+"viewStyle.managerTitle" = "View Styles";
+"viewStyle.rename" = "Rename…";
+"viewStyle.remove" = "Remove";
+"viewStyle.column.name" = "Name";
+"viewStyle.column.type" = "Type";
+"viewStyle.kind.style" = "Saved style";
+"viewStyle.kind.folder" = "Folder";
+"viewStyle.kind.folderAndBelow" = "Folder and below";
+"viewStyle.deleteQuestion" = "Remove the style \"%@\"?";
+
+/* Hidden items and exclusion rules (L23) */
+"menu.hideItems" = "Hide";
+"toast.itemsHidden" = "Hidden. Show Hidden Files brings it back, Undo removes the rule.";
+"settings.tab.hiddenItems" = "Hidden Items";
+"settings.hidden.note" = "Hide items by name or path. Hidden items return with Show Hidden Files; excluded items never show. Files on disk do not change. Use * ? and [a-z]. A pattern with a / matches the full path.";
+"settings.hidden.add" = "Add Rule";
+"settings.hidden.pattern" = "Pattern";
+"settings.hidden.everywhere" = "Everywhere";
+"settings.hidden.enable" = "Use rule %@";
+"settings.hidden.remove" = "Remove rule %@";
+"settings.hidden.effect" = "Effect";
+"settings.hidden.effect.hide" = "Hide";
+"settings.hidden.effect.exclude" = "Exclude";
+"settings.hidden.target" = "Applies to";
+"settings.hidden.target.any" = "All items";
+"settings.hidden.target.files" = "Files";
+"settings.hidden.target.folders" = "Folders";
+
+/* Folder sizes in list view (L24) */
+"settings.behavior.folderSizes" = "Folder sizes in lists:";
+"settings.behavior.folderSizes.all" = "All folders";
+"settings.behavior.folderSizes.localOnly" = "Local volumes only";
+"settings.behavior.folderSizes.never" = "Never";
+
+/* Icon view options (L25) */
+"menu.iconOptions" = "Icon Options";
+"iconGrid.spacing.tight" = "Tight Spacing";
+"iconGrid.spacing.normal" = "Normal Spacing";
+"iconGrid.spacing.wide" = "Wide Spacing";
+"iconGrid.spacing.wider" = "Wider Spacing";
+"iconGrid.label.bottom" = "Name Below Icon";
+"iconGrid.label.right" = "Name Beside Icon";
+
+/* Keyboard selection (L26) */
+"settings.behavior.spaceSelects" = "Space selects items (Shift-Space previews)";
+
+/* Photos library (L27) */
+"menu.photosLibrary" = "Photos Library";
+"photos.title" = "Photos Library";
+"photos.albums" = "Albums";
+"photos.loading" = "Loading…";
+"photos.needsPermission" = "HSpace needs your permission to show the Photos library.";
+"photos.denied" = "HSpace may not read the Photos library. You can allow it in System Settings, under Privacy & Security, Photos.";
+"photos.restricted" = "This Mac's settings do not allow access to the Photos library.";
+"photos.allow" = "Allow Access…";
+"photos.openSettings" = "Open System Settings";
+"photos.copy" = "Copy to Active Pane";
+"photos.copied" = "%1$d copied to %2$@";
+"photos.copyFailed" = "%1$d items could not be copied. First problem: %2$@";
+"photos.noDestination" = "The active pane has no folder to copy into. Open a folder outside the Trash and try again.";
+"photos.kind.photo" = "Photo";
+"photos.kind.video" = "Video";
+"photos.all" = "All Photos";

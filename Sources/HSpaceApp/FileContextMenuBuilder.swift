@@ -71,6 +71,9 @@ enum FileContextMenuBuilder {
         }
 
         MetadataMenu.addItemEntries(to: menu, selection: selection, target: target)
+        let hide = menu.addItem(withTitle: L10n.t("menu.hideItems"),
+                                action: #selector(MainWindowController.hideSelection(_:)), keyEquivalent: "")
+        hide.image = NSImage(systemSymbolName: "eye.slash", accessibilityDescription: nil)
         menu.addItem(.separator())
 
         if single != nil {

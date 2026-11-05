@@ -15,6 +15,21 @@ public struct FolderSizeError: ClassifiedError {
     }
 }
 
+/// When the list adds up folders. Adding up walks the whole tree, so a slow volume can opt out.
+public enum FolderSizeMode: String, Sendable, CaseIterable {
+    case all, localOnly, never
+
+    /// `isLocal` is nil until the folder's volume is known, and an unknown volume is not walked
+    public func shouldMeasure(isLocal: Bool?, columnVisible: Bool) -> Bool {
+        guard columnVisible else { return false }
+        switch self {
+        case .all: return true
+        case .localOnly: return isLocal == true
+        case .never: return false
+        }
+    }
+}
+
 public protocol FolderSizing: Sendable {
     /// Recursively sums the allocated bytes of all regular files under url (prefers totalFileAllocatedSize, falls back to fileSize).
     /// Cache hits return directly; deep enumeration concurrency is bounded; cancellation is cooperative via Task.isCancelled and throws CancellationError.
