@@ -57,6 +57,9 @@ enum MainMenu {
         let commentItem = fileMenu.addItem(withTitle: L10n.t("menu.editComment"),
                                            action: #selector(FileListViewController.editComment(_:)), keyEquivalent: "")
         KeyBindings.apply("editComment", to: commentItem)
+        let folderIconItem = fileMenu.addItem(withTitle: L10n.t("menu.editFolderIcon"),
+                                              action: #selector(FileListViewController.editFolderIcon(_:)), keyEquivalent: "")
+        KeyBindings.apply("editFolderIcon", to: folderIconItem)
         let dupItem = fileMenu.addItem(withTitle: L10n.t("menu.duplicate"),
                          action: #selector(FileListViewController.duplicateItems(_:)), keyEquivalent: "")
         KeyBindings.apply("duplicate", to: dupItem)

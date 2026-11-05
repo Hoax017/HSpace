@@ -727,6 +727,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
     @objc func renameSelected(_ sender: Any?) { beginRenameSelected() }
     @objc func editTags(_ sender: Any?) { coordinator?.metadataActions.editTags(of: selectedItems, host: self) }
     @objc func editComment(_ sender: Any?) { coordinator?.metadataActions.editComment(of: selectedItems) }
+    @objc func editFolderIcon(_ sender: Any?) { coordinator?.metadataActions.editFolderIcon(of: selectedItems) }
     @objc func copyToOtherPane(_ sender: Any?) { coordinator?.copyToOtherPane(selectedURLs) }
     @objc func moveToOtherPane(_ sender: Any?) { coordinator?.moveToOtherPane(selectedURLs) }
 
@@ -849,6 +850,8 @@ extension FileListViewController: @preconcurrency NSMenuItemValidation {
              #selector(copy(_:)), #selector(cut(_:)), #selector(airdropSelected(_:)),
              #selector(compressItems(_:)), #selector(editTags(_:)), #selector(editComment(_:)):
             return hasSelection
+        case #selector(editFolderIcon(_:)):
+            return selectedItems.contains(where: MetadataActions.isFolder)
         case #selector(extractItems(_:)), #selector(extractItemsTo(_:)):
             return !selectedArchiveURLs.isEmpty
         case #selector(renameSelected(_:)):

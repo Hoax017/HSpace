@@ -66,6 +66,7 @@ enum Formatters {
     private static var kindCache: [String: String] = [:]
     private static var iconCache: [String: NSImage] = [:]
     private static var fullIconCache: [String: NSImage] = [:]
+    private static var customIconCache: [String: NSImage] = [:]
 
     static func kind(forTypeID id: String?, isDirectory: Bool) -> String {
         guard let id else { return isDirectory ? L10n.t("kind.folder") : L10n.t("kind.document") }
@@ -95,6 +96,19 @@ enum Formatters {
         iconCache[key] = image
         return image
     }
+
+    /// A folder's own icon. By path, so never in the per-type caches. The folder's date is part of the key because adding
+    /// its icon file changes it; `forgetCustomIcons` covers a replaced icon, which may not.
+    static func customIcon(for item: FileItem) -> NSImage {
+        let key = "\(item.url.path)|\(item.modified?.timeIntervalSinceReferenceDate ?? 0)"
+        if let cached = customIconCache[key] { return cached }
+        if customIconCache.count >= 256 { customIconCache.removeAll() }
+        let image = NSWorkspace.shared.icon(forFile: item.url.path)
+        customIconCache[key] = image
+        return image
+    }
+
+    static func forgetCustomIcons() { customIconCache.removeAll() }
 
     /// Large icon (for the icon grid and column preview): keeps the system's multi-resolution representations, size untouched.
     /// Cached separately from the 16pt list icons (NSImage.size is shared mutable state; mixing them would inflate list icons); NSImageView scales as needed for display

@@ -410,6 +410,7 @@ final class FileColumnViewController: NSViewController {
     @objc func newFolderHere(_ sender: Any?) { coordinator?.newFolder(in: currentDirectory, revealIn: nil) }
     @objc func editTags(_ sender: Any?) { coordinator?.metadataActions.editTags(of: selectedItems, host: self) }
     @objc func editComment(_ sender: Any?) { coordinator?.metadataActions.editComment(of: selectedItems) }
+    @objc func editFolderIcon(_ sender: Any?) { coordinator?.metadataActions.editFolderIcon(of: selectedItems) }
     @objc func newFileHere(_ sender: Any?) { coordinator?.newFile(in: currentDirectory, revealIn: nil) }
     @objc func copyToOtherPane(_ sender: Any?) { coordinator?.copyToOtherPane(selectedURLs) }
     @objc func moveToOtherPane(_ sender: Any?) { coordinator?.moveToOtherPane(selectedURLs) }

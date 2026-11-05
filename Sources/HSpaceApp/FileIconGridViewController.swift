@@ -144,6 +144,7 @@ final class FileIconItem: NSCollectionViewItem {
     func decorate(_ decoration: FileDecoration) {
         tagDots.show(decoration.tags)
         tint = decoration.tint
+        if let image = decoration.icon { icon.image = image }
         applyInk()
     }
 
@@ -392,7 +393,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         for ip in collectionView.indexPathsForVisibleItems() {
             guard let cell = collectionView.item(at: ip) as? FileIconItem,
                   let file = fileItem(at: ip) else { continue }
-            cell.decorate(FileDecoration(file, model.metadata[file.url]))
+            cell.decorate(FileDecoration(file, model.metadata[file.url], largeIcon: true))
         }
     }
 
@@ -404,7 +405,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
             let cut = coordinator?.isCut(file.url) ?? false
             cell.configure(icon: thumbOverlay[file.url] ?? Formatters.fullIcon(for: file),
                            name: file.name, dimmed: file.isHidden || cut)
-            cell.decorate(FileDecoration(file, model.metadata[file.url]))
+            cell.decorate(FileDecoration(file, model.metadata[file.url], largeIcon: true))
         }
     }
 
@@ -665,6 +666,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     @objc func newFolderHere(_ sender: Any?) { coordinator?.newFolder(in: model.directory, revealIn: self) }
     @objc func editTags(_ sender: Any?) { coordinator?.metadataActions.editTags(of: selectedItems, host: self) }
     @objc func editComment(_ sender: Any?) { coordinator?.metadataActions.editComment(of: selectedItems) }
+    @objc func editFolderIcon(_ sender: Any?) { coordinator?.metadataActions.editFolderIcon(of: selectedItems) }
     @objc func newFileHere(_ sender: Any?) { coordinator?.newFile(in: model.directory, revealIn: self) }
     @objc func copyToOtherPane(_ sender: Any?) { coordinator?.copyToOtherPane(selectedURLs) }
     @objc func moveToOtherPane(_ sender: Any?) { coordinator?.moveToOtherPane(selectedURLs) }
@@ -789,7 +791,7 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
         // Fast path shows the type icon first; a delivered content thumbnail is used directly (upgrade path in requestThumbnail)
         cell.configure(icon: thumbOverlay[file.url] ?? Formatters.fullIcon(for: file),
                        name: file.name, dimmed: file.isHidden || cut)
-        cell.decorate(FileDecoration(file, model.metadata[file.url]))
+        cell.decorate(FileDecoration(file, model.metadata[file.url], largeIcon: true))
         return item
     }
 

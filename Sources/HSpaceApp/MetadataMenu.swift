@@ -49,6 +49,22 @@ enum MetadataMenu {
         menu.addItem(comment)
 
         menu.addItem(colorMenu(urls: urls, loaded: loaded, actions: actions))
+
+        let folders = selection.filter(MetadataActions.isFolder)
+        guard !folders.isEmpty else { return }
+        let icon = NSMenuItem(title: L10n.t("menu.editFolderIcon"),
+                              action: #selector(MetadataActions.editFolderIconFromMenu(_:)), keyEquivalent: "")
+        icon.target = actions
+        icon.image = NSImage(systemSymbolName: "folder.badge.gearshape", accessibilityDescription: nil)
+        icon.representedObject = MetadataActions.EditTarget(items: folders, host: host)
+        menu.addItem(icon)
+        let custom = folders.filter { loaded[$0.url]?.hasCustomIcon == true }.map(\.url)
+        guard !custom.isEmpty else { return }
+        let remove = NSMenuItem(title: L10n.t("menu.removeFolderIcon"),
+                                action: #selector(MetadataActions.removeFolderIcon(_:)), keyEquivalent: "")
+        remove.target = actions
+        remove.representedObject = custom
+        menu.addItem(remove)
     }
 
     private static func colorMenu(urls: [URL], loaded: [URL: ItemMetadata], actions: MetadataActions) -> NSMenuItem {
@@ -204,6 +220,29 @@ final class MetadataActions: NSObject {
         CommentSheet.present(start: start, title: title, in: window) { [weak self] text in
             self?.coordinator?.applyMetadata(.comment(text), to: urls, actionName: L10n.t("undo.comment"))
         }
+    }
+
+    nonisolated static func isFolder(_ item: FileItem) -> Bool { item.isDirectory && !item.isPackage }
+
+    @objc func editFolderIconFromMenu(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? EditTarget else { return }
+        editFolderIcon(of: target.items)
+    }
+
+    func editFolderIcon(of items: [FileItem]) {
+        let folders = items.filter(Self.isFolder)
+        guard let window = coordinator?.grid?.view.window, !folders.isEmpty else { NSSound.beep(); return }
+        let title = folders.count == 1 ? L10n.f("folderIcon.titleOne", folders[0].name)
+                                       : L10n.f("folderIcon.titleN", folders.count)
+        let urls = folders.map(\.url)
+        FolderIconSheet.present(title: title, in: window) { [weak self] spec in
+            self?.coordinator?.applyMetadata(.folderIcon(spec), to: urls, actionName: L10n.t("undo.folderIcon"))
+        }
+    }
+
+    @objc func removeFolderIcon(_ sender: NSMenuItem) {
+        guard let urls = sender.representedObject as? [URL] else { return }
+        coordinator?.applyMetadata(.folderIcon(nil), to: urls, actionName: L10n.t("undo.folderIcon"))
     }
 
     @objc func setFileColor(_ sender: NSMenuItem) {

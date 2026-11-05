@@ -184,7 +184,7 @@ New pod `FileMetadata`.
 - [x] **L01** (M) Finder tags: read, set, filter, sort and a tag picker
 - [x] **L02** (S) Finder comments
 - [x] **L03** (M) File colours and rules
-- [ ] **L04** (M) Custom folder icons and emoji, folder styles
+- [x] **L04** (M) Custom folder icons and emoji, folder styles
 - [ ] **L05** (M) Kind groups with a manager
 - [ ] **L06** (S) Set default app per file kind
 
@@ -370,6 +370,10 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] File Color from the context menu: the name is coloured in list, icon and column views, in light and dark mode, stays readable on a selected row, and Undo works
 - [ ] Settings, File Colors: add, edit, reorder, disable and remove a rule. Open rows recolour at once, and the page fits the window
 - [ ] Corrupt `file-metadata.json` in a copy of the app data: a warning names the kept-aside file
+- [ ] Folder Icon with a colour, an emoji, both, and a picture: the preview matches, the list, icon and column views show it, and so does Finder
+- [ ] Emoji Picker button opens the system picker and the chosen emoji lands in the field
+- [ ] Remove Custom Icon, and Undo and Redo of an icon change
+- [ ] Set an icon on a folder in a read-only location: a toast explains the failure
 
 ### Needs a decision
 

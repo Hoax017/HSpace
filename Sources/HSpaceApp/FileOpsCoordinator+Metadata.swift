@@ -79,6 +79,7 @@ extension FileOpsCoordinator {
             let outcome = await task.result
             reveal.cancel()
             sheet.close()
+            Formatters.forgetCustomIcons()
             switch outcome {
             case .success(let result):
                 if !result.changed.isEmpty { onChanged(result.changed) }

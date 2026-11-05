@@ -49,11 +49,14 @@ public struct ItemMetadata: Sendable, Hashable {
     public var comment: String?
     /// The colour set on this item itself, which beats colour rules
     public var color: FileColor?
+    /// The folder has its own icon, so the icon for its type would be wrong
+    public var hasCustomIcon: Bool
 
-    public init(tags: [FinderTag] = [], comment: String? = nil, color: FileColor? = nil) {
+    public init(tags: [FinderTag] = [], comment: String? = nil, color: FileColor? = nil, hasCustomIcon: Bool = false) {
         self.tags = tags
         self.comment = comment
         self.color = color
+        self.hasCustomIcon = hasCustomIcon
     }
 }
 
@@ -65,6 +68,8 @@ public enum MetadataEdit: Sendable {
     case comment(String?)
     /// Sets or, with nil, clears the item's own colour
     case color(FileColor?)
+    /// Sets or, with nil, removes a folder's custom icon. Only for folders.
+    case folderIcon(FolderIconSpec?)
 }
 
 /// One stored value, as it was before a change. Giving it back to `restore` undoes the change.
@@ -72,6 +77,8 @@ public enum MetadataValue: Sendable, Hashable {
     case tags([FinderTag])
     case comment(String?)
     case color(FileColor?)
+    /// nil = the system icon
+    case folderIcon(Data?)
 }
 
 public struct MetadataChange: Sendable, Hashable {

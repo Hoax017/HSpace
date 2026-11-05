@@ -294,6 +294,7 @@ final class NameCellView: NSTableCellView {
     func decorate(_ decoration: FileDecoration) {
         tagDots.show(decoration.tags)
         tint = decoration.tint
+        if let icon = decoration.icon { iconView.image = icon }
         applyInk()
     }
 

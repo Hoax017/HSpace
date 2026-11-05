@@ -432,3 +432,16 @@
 "settings.rule.kind.2" = "Has tag";
 "settings.rule.kind.3" = "Is a folder";
 "settings.rule.kind.4" = "Changed within days";
+"menu.editFolderIcon" = "Folder Icon...";
+"menu.removeFolderIcon" = "Remove Custom Icon";
+"undo.folderIcon" = "Change Folder Icon";
+"folderIcon.titleOne" = "Icon of %@";
+"folderIcon.titleN" = "Icon of %d folders";
+"folderIcon.color" = "Color";
+"folderIcon.emoji" = "Emoji";
+"folderIcon.emojiPlaceholder" = "Type an emoji";
+"folderIcon.showEmoji" = "Emoji Picker";
+"folderIcon.emojiAlone" = "Emoji only, without the folder";
+"folderIcon.image" = "Picture";
+"folderIcon.chooseImage" = "Choose...";
+"folderIcon.preview" = "Icon preview";

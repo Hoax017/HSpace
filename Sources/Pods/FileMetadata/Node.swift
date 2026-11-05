@@ -27,7 +27,8 @@ public struct FileMetadata: Sendable {
                 await Task.yield()
             }
             let found = ItemMetadata(tags: (try? readTags(of: url)) ?? [], comment: try? readComment(of: url),
-                                     color: try? readColor(of: url))
+                                     color: try? readColor(of: url),
+                                     hasCustomIcon: (try? hasCustomIcon(url)) ?? false)
             if found != ItemMetadata() { result[url] = found }
         }
         try Task.checkCancellation()
@@ -48,8 +49,11 @@ public struct FileMetadata: Sendable {
                       progress: MetadataProgress = { _, _ in }) async throws -> MetadataBatchResult {
         switch edit {
         case .tags(let add, _): try validate(add)
-        case .comment, .color: break
+        case .comment, .color, .folderIcon: break
         }
+        // Drawn once, before any write: a bad spec must not stop halfway
+        var icon: Data?
+        if case .folderIcon(let spec?) = edit { icon = try FolderIconRenderer.render(spec) }
         return try await run(urls, progress: progress) { url in
             switch edit {
             case .tags(let add, let remove):
@@ -69,6 +73,11 @@ public struct FileMetadata: Sendable {
                 guard color != before else { return nil }
                 try writeColor(color, to: url)
                 return MetadataChange(url: url, before: .color(before))
+            case .folderIcon:
+                let before = try currentFolderIcon(of: url)
+                guard icon != nil || before != nil else { return nil }
+                try writeFolderIcon(icon, to: url)
+                return MetadataChange(url: url, before: .folderIcon(before))
             }
         }
     }
@@ -140,6 +149,10 @@ public struct FileMetadata: Sendable {
             let current = try readColor(of: url)
             try writeColor(color, to: url)
             return MetadataChange(url: url, before: .color(current))
+        case .folderIcon(let icon):
+            let current = try currentFolderIcon(of: url)
+            try writeFolderIcon(icon, to: url)
+            return MetadataChange(url: url, before: .folderIcon(current))
         }
     }
 

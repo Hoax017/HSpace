@@ -42,9 +42,18 @@ extension Notification.Name {
 struct FileDecoration {
     let tags: [FinderTag]
     let tint: NSColor?
+    /// A folder's icon, custom or not, so a removed custom icon gives way. nil for anything else, which keeps its own icon path.
+    let icon: NSImage?
 
-    init(_ item: FileItem, _ metadata: ItemMetadata?) {
+    init(_ item: FileItem, _ metadata: ItemMetadata?, largeIcon: Bool = false) {
         tags = metadata?.tags ?? []
+        if !item.isDirectory || item.isPackage {
+            icon = nil
+        } else if metadata?.hasCustomIcon == true {
+            icon = Formatters.customIcon(for: item)
+        } else {
+            icon = largeIcon ? Formatters.fullIcon(for: item) : Formatters.icon(for: item)
+        }
         tint = ColorRules.color(for: item, metadata: metadata, rules: MetadataSettings.colorRules, now: Date())
             .map(FileColorPalette.color)
     }
@@ -53,19 +62,7 @@ struct FileDecoration {
 /// File colours as system colours (the Zero-Hex rule: light and dark resolve by themselves)
 @MainActor
 enum FileColorPalette {
-    static func color(_ file: FileColor) -> NSColor {
-        switch file {
-        case .red: return .systemRed
-        case .orange: return .systemOrange
-        case .yellow: return .systemYellow
-        case .green: return .systemGreen
-        case .teal: return .systemTeal
-        case .blue: return .systemBlue
-        case .purple: return .systemPurple
-        case .pink: return .systemPink
-        case .gray: return .systemGray
-        }
-    }
+    static func color(_ file: FileColor) -> NSColor { file.systemColor }
 
     static func name(_ file: FileColor) -> String {
         L10n.t("fileColor.\(file.rawValue)")
