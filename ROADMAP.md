@@ -169,6 +169,7 @@ Found while closing tracks A to F. H1 to H3 touch shared files, so they run one 
 - [x] **H7** (M) Keep folder dates, tags and modes on cross-volume moves, and clean leftover `.hspace-transfer-*` items after a crash
 - [ ] **H8** (S) Check a drop with the "move" preference and Option held. AppKit may refuse it
 - [ ] **H9** (M) Run `ui-smoke.sh` on the merged code, then check by hand: Return in the conflict panel, drops, terminal, Put Back, `hspace://`
+  - 2026-11-05 run on main: 237 passed, 5 failed. All 5 read `~/.Trash` (I-62, I-63, I-64) and report it unreadable. Likely cause: the test build has no Full Disk Access. Rerun after granting it to the debug build
 
 **Gate 0:** tracks A to F and H closed, and G1 in place. No Phase 1 work merges before this.
 
@@ -351,6 +352,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Enable Reveal takeover, then restore Finder in Settings
 - [ ] Corrupt `trash-ledger.json` or `stash.json` in a copy of the app data: a warning names the kept-aside file, and the Full Disk Access prompt does not overlap it
 - [ ] Make a restore of default bookmarks fail (read-only app data): the error shows, not "0 restored"
+
+### Needs a decision
+
+- [ ] "Always Move" with Option held (H8): macOS may refuse this drop. Decide what the preference should do. It also copies across volumes, despite its name
+- [ ] Grant Full Disk Access to the debug build, rerun `scripts/ui-smoke.sh`, and confirm the five Trash checks pass (H9)
 
 ### Overall feel
 
