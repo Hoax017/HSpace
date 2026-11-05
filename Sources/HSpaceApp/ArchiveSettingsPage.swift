@@ -1,4 +1,5 @@
 import AppKit
+import ArchivePasswords
 
 /// Archive settings page (SettingsPage plugin): compression format / keep originals after compressing / extraction wrapper folder / keep archive after extracting.
 /// Everything is stored in Preferences' externalized keys; controls apply immediately. Rendered as one tab of the settings window through SettingsPages.extraPages.
@@ -30,6 +31,25 @@ final class ArchiveSettingsPage: NSObject, SettingsPage {
         formatRow.spacing = 8
         formatLabel.widthAnchor.constraint(equalToConstant: 152).isActive = true
 
+        // Compression level
+        let levelLabel = NSTextField(labelWithString: L10n.t("settings.archiveLevel"))
+        levelLabel.font = .systemFont(ofSize: 12)
+        let levelPopup = NSPopUpButton()
+        levelPopup.setAccessibilityLabel(L10n.t("settings.archiveLevel"))
+        for o in Preferences.archiveCompressionOptions {
+            levelPopup.addItem(withTitle: L10n.t(o.nameKey))
+            levelPopup.lastItem?.representedObject = o.id
+        }
+        if let idx = Preferences.archiveCompressionOptions.firstIndex(where: { $0.id == Preferences.archiveCompressionID }) {
+            levelPopup.selectItem(at: idx)
+        }
+        levelPopup.target = self
+        levelPopup.action = #selector(levelChanged(_:))
+        let levelRow = NSStackView(views: [levelLabel, levelPopup])
+        levelRow.orientation = .horizontal
+        levelRow.spacing = 8
+        levelLabel.widthAnchor.constraint(equalToConstant: 152).isActive = true
+
         // Keep originals after compressing
         let keepOriginal = checkbox("settings.archiveKeepOriginal",
                                     checked: Preferences.archiveKeepOriginal,
@@ -48,14 +68,18 @@ final class ArchiveSettingsPage: NSObject, SettingsPage {
                                    checked: Preferences.extractKeepArchive,
                                    action: #selector(keepArchiveChanged(_:)))
 
-        // Says why archives have no password option
+        // Saved passwords: the Keychain is read only when the sheet opens
+        let passwords = NSButton(title: L10n.t("settings.archivePasswords"), target: self, action: #selector(managePasswords(_:)))
+        passwords.bezelStyle = .rounded
+
+        // Says what passwords cover
         let cryptoNote = NSTextField(wrappingLabelWithString: L10n.t("settings.archiveCryptoNote"))
         cryptoNote.font = .systemFont(ofSize: 11)
         cryptoNote.textColor = .tertiaryLabelColor
 
-        let stack = NSStackView(views: [scopeNote, NSBox.separatorLine(), formatRow, keepOriginal,
+        let stack = NSStackView(views: [scopeNote, NSBox.separatorLine(), formatRow, levelRow, keepOriginal,
                                         NSBox.separatorLine(), wrapper, wrapperNote, keepArchive,
-                                        NSBox.separatorLine(), cryptoNote])
+                                        NSBox.separatorLine(), passwords, cryptoNote])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -81,6 +105,15 @@ final class ArchiveSettingsPage: NSObject, SettingsPage {
 
     @objc private func formatChanged(_ sender: NSPopUpButton) {
         if let id = sender.selectedItem?.representedObject as? String { Preferences.archiveFormat = id }
+    }
+
+    @objc private func levelChanged(_ sender: NSPopUpButton) {
+        if let id = sender.selectedItem?.representedObject as? String { Preferences.setArchiveCompression(id) }
+    }
+
+    @objc private func managePasswords(_ sender: NSButton) {
+        guard let window = sender.window else { return }
+        ArchivePasswordsSheetController.present(list: PasswordList(store: KeychainSecretStore()), in: window)
     }
 
     @objc private func keepOriginalChanged(_ sender: NSButton) {

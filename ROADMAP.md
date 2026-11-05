@@ -242,7 +242,7 @@ Owns `Sources/Pods/ArchiveEngine`. Depends on track B.
 - [x] **L50** (L) Browse inside archives without extracting
 - [x] **L51** (M) Quick Look inside archives
 - [ ] **L52** (L) 7z and RAR extraction, after a license and dependency review. Plain 7z and RAR work through the system `tar`; left open for the owner's choice in the review below.
-- [ ] **L53** (M) Compression settings and password list stored in Keychain
+- [x] **L53** (M) Compression settings and password list stored in Keychain
 
 #### Review for L52: 7z and RAR
 
@@ -366,7 +366,13 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 
 - [ ] Extract over an existing folder: it asks first, and nothing is overwritten silently
 - [ ] Compress files from one folder, then from search results across folders
-- [ ] Confirm no password field offers zip encryption for now
+- [ ] Compress with Password: the zip opens here with that password, and a wrong password asks again
+- [ ] Extract a password zip with its password saved in Settings > Archive: no question is asked
+- [ ] Tick Save in Keychain, then find the item "HSpace archive passwords" in Keychain Access, and no password anywhere in `~/Library/Preferences`
+- [ ] After a rebuild, macOS asks once to let the new build read the Keychain item (ad-hoc signature); Always Allow works
+- [ ] Remove a saved password: it asks first, and the item goes from Keychain Access with the last one
+- [ ] Compression level: None gives a larger archive than Best, for zip and tar.gz
+- [ ] Browse a password zip: Quick Look and Extract To ask for the password once per window
 - [ ] Right-click a zip and a tar.gz, Browse Archive: the tree, sizes and dates match the content, and the file on disk does not change
 - [ ] In the browser, select a file and a folder, Extract To: only those land, and a name already taken asks first
 - [ ] Extract To with nothing selected extracts the whole archive

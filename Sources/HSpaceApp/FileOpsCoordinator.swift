@@ -2,6 +2,7 @@ import AppKit
 import HSpaceKernel
 import HSpaceContracts
 import ArchiveEngine
+import ArchivePasswords
 import Frecency
 import TrashLedger
 import FileMetadata
@@ -52,6 +53,12 @@ final class FileOpsCoordinator {
     var finderComments: any FinderCommentPushing = OsascriptFinderComments()
     /// Where "always open with" lands
     var defaultAppRegistry: any DefaultAppRegistry = SystemDefaultApps()
+    /// Saved archive passwords, in the Keychain
+    var archivePasswordList = PasswordList(store: KeychainSecretStore())
+    /// Finds the password of an encrypted archive
+    lazy var archivePasswords = ArchivePasswordResolver(list: archivePasswordList) { archive, retry in
+        await ArchivePasswordUI.ask(archive: archive, retry: retry)
+    }
 
     /// Records one access (file opened/folder entered) so Spotlight-style search can rank by usage. Fire-and-forget async commit to the actor.
     func recordAccess(_ url: URL) {
@@ -284,10 +291,11 @@ final class FileOpsCoordinator {
     // MARK: Archives (compress / extract; ArchiveEngine pod, builds ArchiveOptions from Preferences archive defaults)
 
     /// Compresses the selection into one archive (format from settings; multi-source uses the localized default base name, single-source lets the node derive it from the name)
-    func compress(_ urls: [URL]) {
+    /// A password makes it a zip whatever the setting says: tar.gz has no encryption.
+    func compress(_ urls: [URL], password: String? = nil) {
         guard !urls.isEmpty else { return }
         let keepOriginal = Preferences.archiveKeepOriginal
-        let options = ArchiveOptions(format: Preferences.archiveFormat, password: nil,
+        let options = ArchiveOptions(format: password == nil ? Preferences.archiveFormat : "zip", password: password,
                                      keepOriginal: keepOriginal)
         // Multi-source archive base name uses the localized "Archive" (the node packs under the common parent); single-source naming is left to the node, minus the extension
         let baseName = urls.count > 1 ? L10n.t("archive.defaultName") : nil
@@ -304,8 +312,26 @@ final class FileOpsCoordinator {
     func extract(_ urls: [URL], into directory: URL?) {
         let archives = urls.filter { ArchiveEngineNode.isSupportedArchive($0) }
         guard !archives.isEmpty else { NSSound.beep(); return }
+        Task { @MainActor in
+            var plain: [URL] = []
+            for archive in archives {
+                do {
+                    switch try await archivePasswords.resolve(archive) {
+                    case .notNeeded: plain.append(archive)
+                    case .password(let password): runExtract([archive], into: directory, password: password)
+                    case .cancelled: break
+                    }
+                } catch {
+                    plain.append(archive)   // Unreadable: the extraction itself reports why
+                }
+            }
+            if !plain.isEmpty { runExtract(plain, into: directory, password: nil) }
+        }
+    }
+
+    private func runExtract(_ archives: [URL], into directory: URL?, password: String?) {
         let keepArchive = Preferences.extractKeepArchive
-        let options = ArchiveOptions(password: nil, keepOriginal: true, extractInto: directory,
+        let options = ArchiveOptions(password: password, keepOriginal: true, extractInto: directory,
                                      createWrapper: Preferences.extractCreateWrapper)
         run(OperationSpec(kind: .extract, sources: archives, archiveOptions: options)) { [weak self] receipt in
             guard let self, let receipt else { return }

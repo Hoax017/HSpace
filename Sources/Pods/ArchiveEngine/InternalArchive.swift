@@ -58,17 +58,23 @@ extension ArchiveEngineNode {
         let stagedArchive = staging.appendingPathComponent(finalName)
 
         let folders = Self.groupedByFolder(spec.sources)
+        let level = compression().level
+        // Each -C applies to the names after it, and names stay relative to their own folder
+        let tarSources = folders.flatMap { ["-C", $0.url.path] + $0.names }
         do {
-            if isTarGz {
-                // Each -C applies to the names after it, and names stay relative to their own folder
-                var args = ["-czf", stagedArchive.path]
-                for folder in folders { args += ["-C", folder.url.path] + folder.names }
-                try await runArchiveTool(Tools.tar, args)
+            if let password = options.password, !password.isEmpty {
+                // tar, not zip: zip offers only the old ZipCrypto, which is easy to break. Resource forks would add ._ entries.
+                let settings = "zip:encryption=aes256,zip:compression-level=\(level)"
+                let args = ["--format=zip", "--no-mac-metadata", "--options", settings, "-cf", stagedArchive.path]
+                try await runWithPassword(Tools.tar, args + tarSources, password: password, archive: stagedArchive)
+            } else if isTarGz {
+                let args = ["--options", "gzip:compression-level=\(level)", "-czf", stagedArchive.path]
+                try await runArchiveTool(Tools.tar, args + tarSources)
             } else {
                 // zip has no -C: one run per folder, each adding to the same archive.
                 // cwd = the folder → relative paths inside the archive (no absolute prefix)
                 for folder in folders {
-                    try await runArchiveTool(Tools.zip, ["-r", "-q", stagedArchive.path] + folder.names, cwd: folder.url)
+                    try await runArchiveTool(Tools.zip, ["-r", "-q", "-\(level)", stagedArchive.path] + folder.names, cwd: folder.url)
                 }
             }
         } catch is CancellationError {
@@ -144,7 +150,12 @@ extension ArchiveEngineNode {
         do {
             switch format {
             case .zip:
-                try await runArchiveTool(Tools.unzip, ["-o", "-q", archive.path, "-d", staging.path])
+                if let password = options.password, !password.isEmpty {
+                    try await runWithPassword(Tools.tar, ["-xf", archive.path, "-C", staging.path],
+                                              password: password, archive: archive)
+                } else {
+                    try await runArchiveTool(Tools.unzip, ["-o", "-q", archive.path, "-d", staging.path])
+                }
             case .tarGz:
                 try await runArchiveTool(Tools.tar, ["-xzf", archive.path, "-C", staging.path])
             case .tarBz2:

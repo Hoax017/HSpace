@@ -27,7 +27,7 @@ final class ArchiveBrowserWindowController: NSWindowController, NSWindowDelegate
     private let outline = ArchiveOutlineView()
     private let status = ToolUI.label()
     private let spinner = NSProgressIndicator()
-    private let cancelButton = ToolUI.button(L10n.t("archive.cancel"), target: nil, action: nil)
+    private let cancelButton = ToolUI.button(L10n.t("common.cancel"), target: nil, action: nil)
     private let extractButton = ToolUI.button(L10n.t("menu.extractTo"), target: nil, action: nil)
     private let previewButton = ToolUI.button(L10n.t("menu.quickLook"), target: nil, action: nil)
     private var work: Task<Void, Never>?
@@ -45,6 +45,9 @@ final class ArchiveBrowserWindowController: NSWindowController, NSWindowDelegate
     init(archive: URL, coordinator: FileOpsCoordinator?) {
         self.model = ArchiveBrowserModel(archive: archive)
         self.coordinator = coordinator
+        model.unlock = { [weak coordinator] archive in
+            try await coordinator?.archivePasswords.resolve(archive) ?? .notNeeded
+        }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)

@@ -160,6 +160,10 @@ enum FileContextMenuBuilder {
         compress.target = target
         compress.image = NSImage(systemSymbolName: "doc.zipper", accessibilityDescription: nil)
         menu.addItem(compress)
+        // No target: the responder chain reaches MainWindowController in any view mode
+        let encrypted = menu.addItem(withTitle: L10n.t("menu.compressWithPassword"),
+                                     action: #selector(MainWindowController.showCompressWithPassword(_:)), keyEquivalent: "")
+        encrypted.image = NSImage(systemSymbolName: "lock.doc", accessibilityDescription: nil)
 
         guard selection.contains(where: { ArchiveEngineNode.isSupportedArchive($0.url) }) else { return }
         add(menu, "menu.extract", #selector(FileListViewController.extractItems(_:)), target,
@@ -167,7 +171,6 @@ enum FileContextMenuBuilder {
         add(menu, "menu.extractTo", #selector(FileListViewController.extractItemsTo(_:)), target,
             symbol: "arrow.up.bin.fill")
         if let single, ArchiveEngineNode.isBrowsable(single.url) {
-            // No target: the responder chain reaches MainWindowController in any view mode
             let browse = menu.addItem(withTitle: L10n.t("menu.browseArchive"),
                                       action: #selector(MainWindowController.showArchiveBrowser(_:)), keyEquivalent: "")
             browse.image = NSImage(systemSymbolName: "archivebox", accessibilityDescription: nil)

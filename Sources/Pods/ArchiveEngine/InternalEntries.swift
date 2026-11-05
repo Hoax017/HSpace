@@ -7,7 +7,8 @@ import HSpaceContracts
 // tar runs without -P: it refuses paths with ".." and writes nothing through a symlink, and `landed` checks that afterwards.
 
 extension ArchiveEngineNode {
-    func extractEntries(_ entries: [ArchiveEntry], from archive: URL, into directory: URL) async throws -> [URL] {
+    func extractEntries(_ entries: [ArchiveEntry], from archive: URL, into directory: URL,
+                        password: String? = nil) async throws -> [URL] {
         guard let format = ArchiveFormat.detect(archive) else {
             throw ArchiveError(.logic, "Unrecognized archive format:\(archive.lastPathComponent)", path: archive.path)
         }
@@ -19,19 +20,19 @@ extension ArchiveEngineNode {
         case .gzip, .bzip2, .xz:
             try await extractSingleStream(archive, format: format, into: directory)
         default:
-            try await extractWithTar(entries, from: archive, into: directory)
+            try await extractWithTar(entries, from: archive, into: directory, password: password)
         }
         return try entries.map { try Self.landed($0, in: directory) }
     }
 
-    func extractPreview(_ entries: [ArchiveEntry], from archive: URL, into directory: URL,
+    func extractPreview(_ entries: [ArchiveEntry], from archive: URL, into directory: URL, password: String?,
                         byteLimit: Int64) async throws -> [(entry: ArchiveEntry, url: URL)] {
         let files = entries.filter { $0.kind == .file && $0.isSafe }
         let total = files.reduce(Int64(0)) { $0.addingReportingOverflow($1.size ?? 0).partialValue }
         guard total >= 0, total <= byteLimit else {
             throw ArchiveError(.logic, "Too large to preview. Extract it instead.", path: archive.path)
         }
-        let landed = try await extractEntries(files, from: archive, into: directory)
+        let landed = try await extractEntries(files, from: archive, into: directory, password: password)
         return zip(files, landed).filter { Self.isRegularFile($0.1) }.map { (entry: $0.0, url: $0.1) }
     }
 
@@ -41,7 +42,8 @@ extension ArchiveEngineNode {
         return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
     }
 
-    private func extractWithTar(_ entries: [ArchiveEntry], from archive: URL, into directory: URL) async throws {
+    private func extractWithTar(_ entries: [ArchiveEntry], from archive: URL, into directory: URL,
+                                password: String?) async throws {
         let list = FileManager.default.temporaryDirectory.appendingPathComponent("hspace-entries-\(UUID().uuidString)")
         do {
             try Data(entries.flatMap { Self.pattern(for: $0.rawPath) + [0] }).write(to: list)
@@ -49,8 +51,12 @@ extension ArchiveEngineNode {
             throw ArchiveError(.external, "Could not prepare extraction: \(error.localizedDescription)", path: list.path)
         }
         defer { try? FileManager.default.removeItem(at: list) }     // Names only, in the temporary directory
-        try await runArchiveTool(Tools.tar, ["-xf", archive.path, "-C", directory.path, "--null", "-T", list.path],
-                                 utf8Locale: true)
+        let arguments = ["-xf", archive.path, "-C", directory.path, "--null", "-T", list.path]
+        if let password, !password.isEmpty {
+            try await runWithPassword(Tools.tar, arguments, password: password, archive: archive)
+        } else {
+            try await runArchiveTool(Tools.tar, arguments, utf8Locale: true)
+        }
     }
 
     /// An anchored tar pattern that matches this path and, for a folder, what is under it

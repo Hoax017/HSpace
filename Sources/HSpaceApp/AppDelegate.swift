@@ -69,7 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             await kernel.register(TransferNode(), for: [.copy, .move, .duplicate])
             await kernel.register(LocalOpsNode(), for: [.rename, .newFolder, .newFile, .trash])
-            await kernel.register(ArchiveEngineNode(), for: [.compress, .extract])
+            let archiveNode = ArchiveEngineNode(compression: {
+                ArchiveCompression(rawValue: Preferences.archiveCompressionID) ?? .normal
+            })
+            await kernel.register(archiveNode, for: [.compress, .extract])
             // Permanent delete gets its own node: an irreversible operation does not share a mature node with the other local operations
             await kernel.register(EraserNode(), for: [.delete])
             await kernel.setArbiter(conflictSheet)

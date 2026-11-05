@@ -6,19 +6,43 @@ import HSpaceContracts
 // with no third-party dependencies (the honest approach). Node boundaries follow irreversible side effects: one compress = one archive produced;
 // one extract = one content tree landed from an archive; each is one atomic commit unit.
 //
-// Passwords are refused with a logic error, for every format. zip and unzip take a password only on the command line,
-// where other processes can read it, or from a terminal, which this node does not have. tar has no encryption at all.
-// An empty password means no password. Password support returns with a way to pass it safely (L53).
+// Passwords work for zip only, in both directions. New archives use AES-256. A password never reaches an argument list:
+// tar gets it on a pipe, see InternalPassword.swift. Other formats refuse a password with a logic error:
+// tar.gz has no encryption, and the system tar cannot decrypt 7z or RAR. An empty password means no password.
 
 public struct ArchiveError: ClassifiedError {
     public let errorClass: ErrorClass
     public let localizedDescription: String
     public let path: String?
+    /// The archive refused the password, so asking again makes sense
+    public let isWrongPassword: Bool
 
     init(_ cls: ErrorClass, _ message: String, path: String? = nil) {
         self.errorClass = cls
         self.localizedDescription = message
         self.path = path
+        self.isWrongPassword = false
+    }
+
+    init(wrongPasswordFor archive: URL) {
+        self.errorClass = .external
+        self.localizedDescription = "Wrong password for \(archive.lastPathComponent)"
+        self.path = archive.path
+        self.isWrongPassword = true
+    }
+}
+
+/// How hard compression works, for zip and tar.gz alike
+public enum ArchiveCompression: String, Sendable, CaseIterable {
+    case store, fast, normal, best
+
+    var level: Int {
+        switch self {
+        case .store: return 0
+        case .fast: return 1
+        case .normal: return 6
+        case .best: return 9
+        }
     }
 }
 
@@ -178,8 +202,21 @@ public extension ArchiveEngineNode {
 
     /// Extracts `entries` into `directory`, keeping their paths below it, and returns where each one landed.
     /// A folder comes with everything under it. An unsafe entry is refused before anything runs.
-    func extract(_ entries: [ArchiveEntry], from archive: URL, into directory: URL) async throws -> [URL] {
-        try await extractEntries(entries, from: archive, into: directory)
+    func extract(_ entries: [ArchiveEntry], from archive: URL, into directory: URL,
+                 password: String? = nil) async throws -> [URL] {
+        try await extractEntries(entries, from: archive, into: directory, password: password)
+    }
+
+    /// Whether extracting this archive needs a password. Answers for zip, the only format that can take one.
+    static func isEncrypted(_ archive: URL) async throws -> Bool {
+        guard ArchiveFormat.detect(archive) == .zip else { return false }
+        return try await Task.detached { try ZipProbe.hasEncryptedEntries(archive) }.value
+    }
+
+    /// Tries the password on the smallest file of the archive. A password that does not fit one line of input is refused with an error.
+    func password(_ password: String, unlocks archive: URL) async throws -> Bool {
+        try Self.checkPassword(password)
+        return try await passwordUnlocks(password, archive)
     }
 
     /// What Quick Look will take out at once, by the sizes the listing declares. Past this, extracting is the honest answer.
@@ -187,9 +224,9 @@ public extension ArchiveEngineNode {
 
     /// Extracts files for Quick Look. Only regular files come back, so a preview never follows a link planted in the archive.
     /// Entries that are not files are skipped; more than `byteLimit` in total is refused before anything runs.
-    func extractForPreview(_ entries: [ArchiveEntry], from archive: URL, into directory: URL,
+    func extractForPreview(_ entries: [ArchiveEntry], from archive: URL, into directory: URL, password: String? = nil,
                            byteLimit: Int64 = previewByteLimit) async throws -> [(entry: ArchiveEntry, url: URL)] {
-        try await extractPreview(entries, from: archive, into: directory, byteLimit: byteLimit)
+        try await extractPreview(entries, from: archive, into: directory, password: password, byteLimit: byteLimit)
     }
 
     /// A new private folder (0700) in the temporary directory, for what is taken out of an archive

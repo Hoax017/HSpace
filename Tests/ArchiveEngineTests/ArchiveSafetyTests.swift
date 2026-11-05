@@ -364,8 +364,8 @@ import HSpaceTestSupport
 
     // MARK: B4 a password never reaches a process argument list
 
-    @Test(arguments: ["zip", "tar.gz"])
-    func compressRefusesAPassword(format: String) async throws {
+    @Test func tarGzRefusesAPassword() async throws {
+        let format = "tar.gz"
         let work = try FaultFixture.tempDir()
         defer { FaultFixture.remove(work) }
         let file = work.appendingPathComponent("a.txt")
@@ -382,10 +382,13 @@ import HSpaceTestSupport
         #expect(try Self.entries(work) == ["a.txt"])
     }
 
-    @Test func extractRefusesAPassword() async throws {
+    @Test func extractingATarRefusesAPassword() async throws {
         let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
         defer { FaultFixture.remove(work); FaultFixture.remove(out) }
-        let archive = try Self.zipFixture(["a.txt": "new"], in: work)
+        let file = work.appendingPathComponent("a.txt")
+        try FaultFixture.write(to: file)
+        let archive = work.appendingPathComponent("a.tar")
+        try Self.tool("/usr/bin/tar", ["-cf", archive.path, "a.txt"], cwd: work)
 
         do {
             _ = try await ArchiveEngineNode().execute(

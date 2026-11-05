@@ -15,6 +15,11 @@ final class ArchiveBrowserModel {
     /// One folder for all previews, so that going back to a file does not extract it again
     private var previewFolder: URL?
     private var previewed: [ArchiveEntry: URL] = [:]
+    /// Finds the password, the first time something comes out of the archive
+    var unlock: (@MainActor (URL) async throws -> ArchivePasswordDecision)?
+    private var isUnlocked = false
+    /// Lives as long as the window
+    private var password: String?
 
     init(archive: URL) {
         self.archive = archive
@@ -28,10 +33,12 @@ final class ArchiveBrowserModel {
 
     /// Takes `nodes` out of the archive. The caller owns the folder and hands it to `discard` when done.
     func stage(_ nodes: [ArchiveTreeNode]) async throws -> (scratch: URL, items: [URL]) {
+        try await unlockIfNeeded()
         let scratch = try ArchiveEngineNode.makeScratchDirectory()
         scratchFolders.insert(scratch)
         do {
-            let items = try await engine.extract(Self.topmost(nodes).map(\.entry), from: archive, into: scratch)
+            let items = try await engine.extract(Self.topmost(nodes).map(\.entry), from: archive, into: scratch,
+                                                 password: password)
             return (scratch, items)
         } catch {
             discard(scratch)
@@ -44,12 +51,24 @@ final class ArchiveBrowserModel {
         let entries = nodes.map(\.entry).filter { $0.kind == .file && $0.isSafe }
         let missing = entries.filter { previewed[$0] == nil }
         if !missing.isEmpty {
+            try await unlockIfNeeded()
             let folder = try previewFolder ?? makePreviewFolder()
-            for result in try await engine.extractForPreview(missing, from: archive, into: folder) {
+            for result in try await engine.extractForPreview(missing, from: archive, into: folder, password: password) {
                 previewed[result.entry] = result.url
             }
         }
         return entries.compactMap { previewed[$0] }
+    }
+
+    /// Cancelling the password dialog cancels the work that needed it
+    private func unlockIfNeeded() async throws {
+        guard !isUnlocked, let unlock else { return }
+        switch try await unlock(archive) {
+        case .notNeeded: break
+        case .password(let password): self.password = password
+        case .cancelled: throw CancellationError()
+        }
+        isUnlocked = true
     }
 
     private func makePreviewFolder() throws -> URL {
@@ -75,6 +94,8 @@ final class ArchiveBrowserModel {
 
     func discardAll() {
         scratchFolders.forEach(discard)
+        password = nil
+        isUnlocked = false
     }
 
     /// A folder comes with what it holds, so selected items inside a selected folder are dropped.
