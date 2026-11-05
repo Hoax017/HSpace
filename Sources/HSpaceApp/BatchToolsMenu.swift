@@ -1,4 +1,5 @@
 import AppKit
+import BatchRename
 import HSpaceContracts
 
 /// The "Batch Tools" submenu, shared by the File menu and the item context menu.
@@ -12,6 +13,8 @@ enum BatchToolsMenu {
         let rename = menu.addItem(withTitle: L10n.t("menu.batchRename"),
                                   action: #selector(MainWindowController.showBatchRename(_:)), keyEquivalent: "")
         KeyBindings.apply("batchRename", to: rename)
+        menu.addItem(withTitle: L10n.t("menu.renameLog"),
+                     action: #selector(MainWindowController.showRenameLog(_:)), keyEquivalent: "")
         item.submenu = menu
         return item
     }
@@ -44,6 +47,14 @@ extension MainWindowController {
 
     @objc func showBatchRename(_ sender: Any?) {
         guard let items = renamableSelection, let window else { NSSound.beep(); return }
-        BatchRenameSheetController.present(items: items, coordinator: coordinator, in: window)
+        BatchRenameSheetController.present(items: items, ops: renameOps, store: renameStore, in: window)
     }
+
+    @objc func showRenameLog(_ sender: Any?) {
+        guard let window, let store = renameStore else { NSSound.beep(); return }
+        RenameLogSheetController.present(ops: renameOps, store: store, in: window)
+    }
+
+    var renameStore: RenameStore? { (NSApp.delegate as? AppDelegate)?.renameStore }
+    var renameOps: BatchRenameOps { BatchRenameOps(coordinator: coordinator, store: renameStore) }
 }

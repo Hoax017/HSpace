@@ -193,7 +193,7 @@ New pod `FileMetadata`.
 New pods `BatchRename`, `FileHash`, `ImageConvert`.
 
 - [x] **L10** (L) Batch rename: processors, sequence, date, case, replace, preview and collision check
-- [ ] **L11** (M) Batch rename presets and logs, with undo
+- [x] **L11** (M) Batch rename presets and logs, with undo
 - [ ] **L12** (S) Quick rename variant for a few files
 - [ ] **L13** (M) File hash: MD5, SHA-1, SHA-256, compare, cancel
 - [ ] **L14** (M) Image conversion and resize, with Vision-based actions as a later option
@@ -365,6 +365,8 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Swap two names with Replace, then press ⌘Z once: both come back; ⇧⌘Z repeats it
 - [ ] Batch rename in list, icon and column views, with the keyboard only and with VoiceOver: the sheet reads as a form
 - [ ] The sheet in light and dark mode: blocked rows stay readable
+- [ ] Save a preset, quit, reopen, and load it: the steps come back; delete it from the same menu
+- [ ] Rename Log after a restart: Undo reverses an old batch; move a file away first and it refuses with a clear message
 
 ### Overall feel
 

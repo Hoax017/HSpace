@@ -1,4 +1,5 @@
 import AppKit
+import BatchRename
 import HSpaceKernel
 import HSpaceContracts
 import Transfer
@@ -24,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// com.apple.provenance, mdls shows no origin, Finder's own AppleScript `original item` returns -1728),
     /// so supporting put-back means keeping our own records.
     let trashLedger = TrashLedger(directory: AppDelegate.supportDirectory)
+    /// Rename presets and log (L11), shared app-wide
+    let renameStore = RenameStore(directory: AppDelegate.supportDirectory)
 
     /// Application support directory: UITEST uses an isolated temp directory so test fixture paths and records never pollute the user's real session or search ranking
     /// (test sandbox hard rule, same as the I-46 windowFrame isolation; since I-47 sessionStore goes through this too, because navigation persists the session immediately).

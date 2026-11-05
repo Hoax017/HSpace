@@ -6,17 +6,23 @@ import BatchRename
 @MainActor
 final class BatchRenameOps {
     private let coordinator: FileOpsCoordinator
+    private let store: RenameStore?
     /// The latest undo or redo: UndoManager cannot wait for async work, tests can
     private(set) var lastReversal: Task<Void, Never>?
+    /// How a refused undo reaches the user. Replaced in tests, which have no window for an alert.
+    var report: (String) -> Void
 
-    init(coordinator: FileOpsCoordinator) {
+    init(coordinator: FileOpsCoordinator, store: RenameStore?) {
         self.coordinator = coordinator
+        self.store = store
+        report = { [weak coordinator] in ToolUI.showError($0, in: coordinator?.grid?.view.window) }
     }
 
     /// Applies a plan. Throws what the pod throws; nothing is registered unless the batch landed.
     func apply(_ plan: RenamePlan, progress: @escaping @Sendable (Int, Int) -> Void) async throws -> RenameJournal {
         let journal = try await BatchRenamer.apply(plan, progress: progress)
         registerUndo(of: journal)
+        await log(journal, reverses: nil)
         reloadLists()
         return journal
     }
@@ -40,12 +46,26 @@ final class BatchRenameOps {
         coordinator.undoManager.setActionName(L10n.t("undo.batchRename"))
         lastReversal = Task {
             do {
-                outcome.journal = try await BatchRenamer.undo(journal)
+                let inverse = try await BatchRenamer.undo(journal)
+                outcome.journal = inverse
+                await log(inverse, reverses: journal.id)
             } catch {
-                ToolUI.showError(error.localizedDescription, in: coordinator.grid?.view.window)
+                report(error.localizedDescription)
             }
             reloadLists()
         }
+    }
+
+    /// Undo from the log. It lands on the undo stack like any other batch, so ⌘Z takes it back.
+    func undo(_ entry: RenameLogEntry) async {
+        reverse(entry.journal)
+        await lastReversal?.value
+    }
+
+    private func log(_ journal: RenameJournal, reverses: UUID?) async {
+        guard let store else { return }
+        await store.record(journal, reverses: reverses)
+        ProblemAlert.show(await store.takeProblem())
     }
 
     private func reloadLists() {

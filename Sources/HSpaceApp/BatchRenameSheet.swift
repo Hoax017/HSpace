@@ -21,20 +21,26 @@ final class BatchRenameSheetController: NSObject, NSTableViewDataSource, NSTable
     private lazy var cancelButton = ToolUI.button(L10n.t("common.cancel"), target: self, action: #selector(cancelTapped))
     private lazy var renameButton = ToolUI.button(L10n.t("rename.apply"), target: self, action: #selector(renameTapped))
     private lazy var addButton = ToolUI.button(L10n.t("rename.addStep"), target: self, action: #selector(addTapped))
+    private let presetMenu = NSPopUpButton(frame: .zero, pullsDown: true)
+    private let store: RenameStore?
     private var work: Task<Void, Never>?
 
-    static func present(items: [FileItem], coordinator: FileOpsCoordinator, in host: NSWindow) {
+    static func present(items: [FileItem], ops: BatchRenameOps, store: RenameStore?, in host: NSWindow) {
         guard live == nil, host.attachedSheet == nil else { return }
         let sheet = BatchRenameSheetController(items: items.map(RenameItem.init), steps: [.replace(ReplaceStep(find: "", replacement: ""))],
-                                               ops: BatchRenameOps(coordinator: coordinator), host: host)
+                                               ops: ops, store: store, host: host)
         live = sheet
         host.beginSheet(sheet.panel) { _ in }
-        Task { await sheet.model.refresh() }
+        Task {
+            await sheet.reloadPresets()
+            await sheet.model.refresh()
+        }
     }
 
-    init(items: [RenameItem], steps: [RenameStep], ops: BatchRenameOps, host: NSWindow) {
+    init(items: [RenameItem], steps: [RenameStep], ops: BatchRenameOps, store: RenameStore?, host: NSWindow) {
         model = BatchRenameModel(items: items, steps: steps)
         self.ops = ops
+        self.store = store
         self.host = host
         super.init()
         build()
@@ -60,8 +66,12 @@ final class BatchRenameSheetController: NSObject, NSTableViewDataSource, NSTable
         renameButton.toolTip = L10n.t("rename.apply.tip")
         renameButton.isEnabled = false
 
+        presetMenu.controlSize = .small
+        presetMenu.font = .systemFont(ofSize: 11)
+        presetMenu.setAccessibilityLabel(L10n.t("rename.presets"))
+        presetMenu.addItem(withTitle: L10n.t("rename.presets"))
         ToolUI.fill(panel, with: [
-            ToolUI.title(L10n.f("rename.title", model.items.count)),
+            ToolUI.buttonRow(leading: ToolUI.title(L10n.f("rename.title", model.items.count)), [presetMenu]),
             stepStack,
             addButton,
             scroll,
@@ -89,6 +99,82 @@ final class BatchRenameSheetController: NSObject, NSTableViewDataSource, NSTable
     }
 
     private func stepsChanged() { model.setSteps(rows.map(\.step)) }
+
+    // MARK: Presets
+
+    /// The pull-down keeps its title in item 0
+    private func reloadPresets() async {
+        let presets = await store?.presets() ?? []
+        ProblemAlert.show(await store?.takeProblem())
+        while presetMenu.numberOfItems > 1 { presetMenu.removeItem(at: 1) }
+        guard let menu = presetMenu.menu else { return }
+        for preset in presets {
+            let item = menu.addItem(withTitle: preset.name, action: #selector(presetChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = preset
+        }
+        if !presets.isEmpty { menu.addItem(.separator()) }
+        let save = menu.addItem(withTitle: L10n.t("rename.savePreset"), action: #selector(savePresetTapped), keyEquivalent: "")
+        save.target = self
+        guard !presets.isEmpty else { return }
+        let delete = menu.addItem(withTitle: L10n.t("rename.deletePreset"), action: nil, keyEquivalent: "")
+        let deletions = NSMenu()
+        for preset in presets {
+            let item = deletions.addItem(withTitle: preset.name, action: #selector(deleteChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = preset
+        }
+        delete.submenu = deletions
+    }
+
+    func load(_ preset: RenamePreset) {
+        rows.forEach { $0.removeFromSuperview() }
+        rows = []
+        preset.steps.forEach { append(RenameStepRow(step: $0)) }
+        addButton.isEnabled = rows.count < Self.maxSteps
+        stepsChanged()
+    }
+
+    var currentSteps: [RenameStep] { rows.map(\.step) }
+
+    @objc private func presetChosen(_ sender: NSMenuItem) {
+        guard let preset = sender.representedObject as? RenamePreset else { return }
+        load(preset)
+    }
+
+    @objc private func deleteChosen(_ sender: NSMenuItem) {
+        guard let preset = sender.representedObject as? RenamePreset, let store else { return }
+        Task {
+            do { try await store.deletePreset(id: preset.id) } catch { ToolUI.showError(error.localizedDescription, in: panel) }
+            await reloadPresets()
+        }
+    }
+
+    @objc private func savePresetTapped() {
+        guard let store else { return }
+        let alert = NSAlert()
+        alert.messageText = L10n.t("rename.savePreset")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.placeholderString = L10n.t("rename.presetName")
+        field.setAccessibilityLabel(L10n.t("rename.presetName"))
+        alert.accessoryView = field
+        alert.addButton(withTitle: L10n.t("rename.savePreset.confirm"))
+        alert.addButton(withTitle: L10n.t("common.cancel"))
+        alert.window.initialFirstResponder = field
+        let steps = currentSteps
+        alert.beginSheetModal(for: panel) { [weak self] response in
+            MainActor.assumeIsolated {
+                let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard response == .alertFirstButtonReturn, !name.isEmpty else { return }
+                Task {
+                    do { try await store.savePreset(named: name, steps: steps) } catch {
+                        ToolUI.showError(error.localizedDescription, in: self?.panel)
+                    }
+                    await self?.reloadPresets()
+                }
+            }
+        }
+    }
 
     private func modelChanged() {
         table.reloadData()
