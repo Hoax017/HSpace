@@ -138,13 +138,13 @@ extension TransferNode {
                                manifest: CopyManifest?) async throws {
         if flag.isSet { throw CancellationError() }
         let fm = FileManager.default
-        var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: src.path, isDirectory: &isDir) else {
+        // lstat view: a symlink is copied as a link and never followed, so link cycles and dangling links need no special case
+        guard itemExists(src) else {
             throw TransferError(.external, "Source not found:\(src.lastPathComponent)", path: src.path)
         }
 
-        if isDir.boolValue, !isPackageTreatedAsFile(src) {
-            if !fm.fileExists(atPath: dst.path) {
+        if isRealDirectory(src), !isPackageTreatedAsFile(src) {
+            if !itemExists(dst) {
                 do { try fm.createDirectory(at: dst, withIntermediateDirectories: true) } catch {
                     throw TransferError(.external, "Could not create folder:\(error.localizedDescription)", path: dst.path)
                 }
@@ -159,12 +159,8 @@ extension TransferNode {
             manifest?.record(src, dst)
             for child in children {
                 let childDst = dst.appendingPathComponent(child.lastPathComponent)
-                if merge, fm.fileExists(atPath: childDst.path) {
-                    var childDstDir: ObjCBool = false
-                    var childSrcDir: ObjCBool = false
-                    _ = fm.fileExists(atPath: childDst.path, isDirectory: &childDstDir)
-                    _ = fm.fileExists(atPath: child.path, isDirectory: &childSrcDir)
-                    if !(childDstDir.boolValue && childSrcDir.boolValue) {
+                if merge, itemExists(childDst) {
+                    if !(isRealDirectory(childDst) && isRealDirectory(child)) {
                         // Merge semantics: a same-named source file overwrites the target (documented contract promise)
                         try? fm.removeItem(at: childDst)
                     }
@@ -293,6 +289,12 @@ func itemExists(_ url: URL) -> Bool {
     return lstat(url.path, &info) == 0
 }
 
+/// Unlike `FileManager.fileExists(isDirectory:)`, false for a symlink to a folder.
+func isRealDirectory(_ url: URL) -> Bool {
+    var info = stat()
+    return lstat(url.path, &info) == 0 && info.st_mode & S_IFMT == S_IFDIR
+}
+
 /// Hidden sibling of the destination, so the final rename stays on one volume and is atomic.
 private func stagingURL(for destination: URL) -> URL {
     destination.deletingLastPathComponent()
@@ -356,7 +358,7 @@ private func copyOneFileSync(from src: URL, to dst: URL,
                              flag: CancelFlag, progress: ProgressAggregator) throws {
     if flag.isSet { throw CancellationError() }
     // Failure cleanup removes only the partial file created by this run: if the target existed before the copy (external race / clone EEXIST), never delete someone else's file
-    let dstPreexisted = FileManager.default.fileExists(atPath: dst.path)
+    let dstPreexisted = itemExists(dst)
     let state = copyfile_state_alloc()
     defer { copyfile_state_free(state) }
 

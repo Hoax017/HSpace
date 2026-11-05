@@ -319,4 +319,114 @@ import HSpaceTestSupport
         try await Self.run(.move, [link], to: folder)
         #expect(try Self.names(in: folder) == ["f.txt", "link"])
     }
+
+    // MARK: A5 symlinks
+
+    static func linkTarget(_ url: URL) throws -> String {
+        try FileManager.default.destinationOfSymbolicLink(atPath: url.path)
+    }
+
+    @Test func linksInsideAFolderStayLinks() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let outside = base.appendingPathComponent("outside")
+        try FaultFixture.write(Data("x".utf8), to: outside.appendingPathComponent("big.txt"))
+        let source = base.appendingPathComponent("src/d")
+        try FaultFixture.write(Data("f".utf8), to: source.appendingPathComponent("f.txt"))
+        let fm = FileManager.default
+        try fm.createSymbolicLink(atPath: source.appendingPathComponent("relative").path, withDestinationPath: "f.txt")
+        try fm.createSymbolicLink(at: source.appendingPathComponent("folder"), withDestinationURL: outside)
+        try FaultFixture.danglingLink(at: source.appendingPathComponent("dangling"))
+        try FaultFixture.cyclicLink(in: source)
+        let destination = base.appendingPathComponent("dst")
+        try fm.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        try await Self.run(.copy, [source], to: destination)
+
+        let copy = destination.appendingPathComponent("d")
+        #expect(try Self.names(in: copy) == ["dangling", "f.txt", "folder", "loop", "relative"])
+        for name in ["relative", "folder", "dangling", "loop"] {
+            #expect(try Self.linkTarget(copy.appendingPathComponent(name))
+                    == Self.linkTarget(source.appendingPathComponent(name)))
+        }
+    }
+
+    @Test(arguments: [OperationSpec.Kind.copy, .move])
+    func topLevelLinksStayLinks(kind: OperationSpec.Kind) async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let folder = base.appendingPathComponent("folder")
+        try FaultFixture.write(Data("x".utf8), to: folder.appendingPathComponent("f.txt"))
+        let toFolder = base.appendingPathComponent("toFolder")
+        try FileManager.default.createSymbolicLink(at: toFolder, withDestinationURL: folder)
+        let dangling = try FaultFixture.danglingLink(at: base.appendingPathComponent("dangling"))
+        let target = try Self.linkTarget(dangling)
+        let destination = base.appendingPathComponent("dst")
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        try await Self.run(kind, [toFolder, dangling], to: destination)
+
+        #expect(try Self.linkTarget(destination.appendingPathComponent("toFolder")) == folder.path)
+        #expect(try Self.linkTarget(destination.appendingPathComponent("dangling")) == target)
+    }
+
+    @Test func crossVolumeMoveCarriesLinks() async throws {
+        let volume = try ScratchVolume()
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("d")
+        try FaultFixture.write(Data("f".utf8), to: source.appendingPathComponent("f.txt"))
+        let target = try Self.linkTarget(try FaultFixture.danglingLink(at: source.appendingPathComponent("dangling")))
+        try FaultFixture.cyclicLink(in: source)
+
+        try await Self.run(.move, [source], to: volume.url)
+
+        #expect(!FileManager.default.fileExists(atPath: source.path))
+        let moved = volume.url.appendingPathComponent("d")
+        #expect(try Self.linkTarget(moved.appendingPathComponent("dangling")) == target)
+        #expect(try Self.linkTarget(moved.appendingPathComponent("loop")) == source.path)
+    }
+
+    @Test func danglingLinkAtTheDestinationIsAConflict() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let source = base.appendingPathComponent("f.txt")
+        try FaultFixture.write(Data("new".utf8), to: source)
+        let destination = base.appendingPathComponent("dst")
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let link = try FaultFixture.danglingLink(at: destination.appendingPathComponent("f.txt"))
+        let target = try Self.linkTarget(link)
+
+        try await Self.run(.copy, [source], to: destination, Self.context(.keepBoth))
+
+        #expect(try Self.linkTarget(link) == target)
+        #expect(try Self.text(destination.appendingPathComponent("f 2.txt")) == "new")
+    }
+
+    @Test func linkToFolderIsNotOfferedAsAMerge() async throws {
+        let base = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(base) }
+        let folder = base.appendingPathComponent("folder")
+        try FaultFixture.write(Data("x".utf8), to: folder.appendingPathComponent("f.txt"))
+        let link = base.appendingPathComponent("name")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: folder)
+        let destination = base.appendingPathComponent("dst")
+        try FileManager.default.createDirectory(at: destination.appendingPathComponent("name"),
+                                                withIntermediateDirectories: true)
+        let seen = Seen()
+        let context = NodeContext(operationID: UUID(), report: { _ in }, resolveConflicts: { conflicts in
+            seen.set(conflicts.map(\.bothDirectories))
+            return [:]
+        })
+
+        try await Self.run(.copy, [link], to: destination, context)
+        #expect(seen.value == [false])
+    }
+
+    final class Seen: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [Bool] = []
+        func set(_ value: [Bool]) { lock.lock(); stored = value; lock.unlock() }
+        var value: [Bool] { lock.lock(); defer { lock.unlock() }; return stored }
+    }
 }

@@ -33,7 +33,7 @@ func makePlan(_ spec: OperationSpec) throws -> TransferPlan {
         // Duplicate = copy within the same directory, always keepBoth-named, never conflicts
         return TransferPlan(mode: .copy, entries: spec.sources.map { src in
             let dir = src.deletingLastPathComponent()
-            return .init(source: src, destination: dir.appendingPathComponent(keepBothName(for: src, in: dir)))
+            return .init(source: src, destination: dir.appendingPathComponent(keepBothName(for: src, in: dir, existsCheck: itemExists)))
         })
     default:
         throw TransferError(.logic, "TransferNode does not handle\(spec.kind.rawValue)")
@@ -100,14 +100,10 @@ func preScan(sources: [URL]) throws -> (total: ScanTotals, perSource: [URL: Scan
 
 /// Conflict detection → request decisions → apply them; returns the final entries to execute
 func resolveConflicts(plan: TransferPlan, context: NodeContext) async throws -> [TransferPlan.Entry] {
-    let fm = FileManager.default
     var conflicts: [FileConflict] = []
-    for entry in plan.entries where fm.fileExists(atPath: entry.destination.path) {
-        var srcDir: ObjCBool = false, dstDir: ObjCBool = false
-        _ = fm.fileExists(atPath: entry.source.path, isDirectory: &srcDir)
-        _ = fm.fileExists(atPath: entry.destination.path, isDirectory: &dstDir)
+    for entry in plan.entries where itemExists(entry.destination) {
         conflicts.append(FileConflict(source: entry.source, existing: entry.destination,
-                                      bothDirectories: srcDir.boolValue && dstDir.boolValue))
+                                      bothDirectories: isRealDirectory(entry.source) && isRealDirectory(entry.destination)))
     }
     // Ask the user only when on-disk conflicts exist; the in-batch name-claim pass below still runs without them (prevents same-named items colliding within a batch)
     var decisions: [URL: ConflictDecision] = [:]
@@ -123,10 +119,10 @@ func resolveConflicts(plan: TransferPlan, context: NodeContext) async throws -> 
     // pass-through entries with no disk conflict must also claim their name and auto-rename on a clash (two same-named sources from different directories copied into one empty directory collide the same way).
     var claimed = Set<String>()
     let existsOrClaimed: (URL) -> Bool = { u in
-        fm.fileExists(atPath: u.path) || claimed.contains(u.standardizedFileURL.path)
+        itemExists(u) || claimed.contains(u.standardizedFileURL.path)
     }
     for entry in plan.entries {
-        if fm.fileExists(atPath: entry.destination.path) {
+        if itemExists(entry.destination) {
             // Disk conflict: apply the decision (applyDecision dedups via existsOrClaimed)
             if let resolved = try applyDecision(decisions[entry.source] ?? .skip, to: entry,
                                                 allSources: plan.entries.map(\.source), claimed: &claimed) {
@@ -194,7 +190,7 @@ private func applyDecision(_ decision: ConflictDecision,
     }
     // keepBoth/rename dedup also treats names claimed in this batch as existing
     let exists: (URL) -> Bool = { u in
-        FileManager.default.fileExists(atPath: u.path) || claimed.contains(u.standardizedFileURL.path)
+        itemExists(u) || claimed.contains(u.standardizedFileURL.path)
     }
 
     switch decision {
