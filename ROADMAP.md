@@ -124,7 +124,7 @@ Owns `Sources/Pods/BookmarkStore`, `StashStore`, `SessionStore`.
 
 - [x] **D1** (M) A corrupt JSON file must be kept aside and reported, never overwritten. `TrashLedger/Node.swift:73`, `StashStore/Node.swift:74`, `BookmarkStore/Node.swift:128`
 - [x] **D2** (S) Report failed bookmark writes instead of showing success. `MainWindowController.swift:316`
-- [ ] **D3** (S) Add a way to clear the local history of opened paths. `Sources/Pods/Frecency`
+- [x] **D3** (S) Add a way to clear the local history of opened paths. `Sources/Pods/Frecency`
 
 ### Track E: App entry points
 
@@ -133,7 +133,7 @@ Owns `AppDelegate.swift`, `FinderIntegration.swift`, `UISelfTest.swift`.
 - [x] **E1** (M) Harden `hspace://`: separate open from reveal, reject network and automount paths, do no blocking work on the main thread. `AppDelegate.swift:183`
 - [x] **E2** (M) Compile `UISelfTest` and all environment test hooks out of release builds. `AppDelegate.swift:34`, `UISelfTest.swift:11` Open: `MainWindowController.swift:227,231` still read `HSPACE_UITEST` in release, and `ui-smoke.sh:6` must build with `build-app.sh debug`.
 - [x] **E3** (M) Isolate test runs from real preferences, bookmarks, stash and clipboard. `MainWindowController.swift:46`, `AppDelegate.swift:140`
-- [ ] **E4** (S) Provide a way to restore the system Reveal setting. `FinderIntegration.swift:69` Open: `FinderIntegration.restoreSystemReveal()` exists; the Settings button still has to be added.
+- [x] **E4** (S) Provide a way to restore the system Reveal setting. `FinderIntegration.swift:69` Open: `FinderIntegration.restoreSystemReveal()` exists; the Settings button still has to be added.
 - [x] **E5** (S) Stop storing the last opened path in defaults. `AppDelegate.swift:206`
 
 ### Track F: Interaction safety
@@ -161,7 +161,7 @@ Owns `.github`, `scripts`, docs.
 Found while closing tracks A to F. H1 to H3 touch shared files, so they run one at a time.
 
 - [x] **H1** (M) Show `takeProblem()` from the stores in the UI, and give TrashLedger the D1 treatment. Closes D1
-- [ ] **H2** (S) Settings: clear history (D3), restore Finder for Reveal (E4), and no "0 restored" toast after a failed seed restore. Closes D3 and E4
+- [x] **H2** (S) Settings: clear history (D3), restore Finder for Reveal (E4), and no "0 restored" toast after a failed seed restore. Closes D3 and E4
 - [ ] **H3** (S) Refuse Trash drops in `validateDrop` through `FileOpsCoordinator.isTrashDestination`, with a message instead of a beep
 - [ ] **H4** (S) Update text after password removal (B4): `Contracts.swift:109`, `settings.archiveCryptoNote`, `README.md`
 - [ ] **H5** (M) Add an `HSpaceAppTests` target and drop the symlinks in `Tests/HSpaceKernelTests/AppEntryPoints`
@@ -348,6 +348,7 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Clear history in Settings
 - [ ] Enable Reveal takeover, then restore Finder in Settings
 - [ ] Corrupt `trash-ledger.json` or `stash.json` in a copy of the app data: a warning names the kept-aside file, and the Full Disk Access prompt does not overlap it
+- [ ] Make a restore of default bookmarks fail (read-only app data): the error shows, not "0 restored"
 
 ### Overall feel
 

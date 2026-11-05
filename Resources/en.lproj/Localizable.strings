@@ -338,6 +338,12 @@
 "menu.gotoWorkspace7" = "Go to Workspace 7";
 "menu.gotoWorkspace8" = "Go to Workspace 8";
 "menu.gotoWorkspace9" = "Go to Workspace 9";
+"settings.clearHistory" = "Clear Opened Paths History…";
+"settings.clearHistory.note" = "Search ranks results by the paths you opened. Clearing forgets them, including any damaged history file that was kept aside.";
+"alert.clearHistory.title" = "Clear the history of opened paths?";
+"alert.clearHistory.body" = "Search ranking starts over. This cannot be undone.";
+"alert.clearHistory.confirm" = "Clear History";
+"toast.historyCleared" = "History cleared";
 "settings.restoreSeeds" = "Restore Default Bookmarks";
 "toast.seedsRestored" = "%d default bookmarks restored";
 "settings.behavior.wsTabLimit" = "Workspace tab limit";
@@ -349,8 +355,9 @@
 "settings.reveal.on" = "Active: reveal requests open in HSpace with the item selected ✓";
 "settings.reveal.off" = "Inactive: reveal requests are handled by Finder";
 "settings.reveal.other" = "Currently taken over by another app: %@ (check to switch to HSpace)";
-"settings.reveal.stale" = "⚠ Stale leftover: points to missing %@ — reveal requests silently do nothing. Check to repair with HSpace, or uncheck to restore Finder.";
+"settings.reveal.stale" = "⚠ Stale leftover: points to missing %@ — reveal requests silently do nothing. Check to repair with HSpace, or use Restore Finder below.";
 "settings.reveal.note" = "Mechanism: global NSFileViewer key (same as QSpace; proven 2026-08-26). Affects reveal/locate requests only; the folder default handler remains OS-locked to Finder. Reversible anytime, effective immediately.";
+"settings.reveal.restore" = "Restore Finder";
 "toast.revealOn" = "Reveal takeover enabled";
 "toast.revealOff" = "Restored to Finder";
 "settings.folderDefault.title" = "Default Folder Handler";

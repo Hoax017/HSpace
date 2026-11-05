@@ -215,6 +215,12 @@ final class SettingsWindowController: NSWindowController {
         let restoreSeeds = NSButton(title: L10n.t("settings.restoreSeeds"), target: self,
                                     action: #selector(restoreDefaultSeeds))
         restoreSeeds.bezelStyle = .push
+        let clearHistory = NSButton(title: L10n.t("settings.clearHistory"), target: self,
+                                    action: #selector(clearHistoryClicked))
+        clearHistory.bezelStyle = .push
+        let clearHistoryNote = NSTextField(wrappingLabelWithString: L10n.t("settings.clearHistory.note"))
+        clearHistoryNote.font = .systemFont(ofSize: 11)
+        clearHistoryNote.textColor = .tertiaryLabelColor
 
         // M24: global show/hide hotkey (Carbon, no Accessibility permission needed; replaces the Raycast bridge)
         let hotkeyLabel = NSTextField(labelWithString: L10n.t("settings.globalHotkey"))
@@ -232,7 +238,7 @@ final class SettingsWindowController: NSWindowController {
                                         NSBox.separatorLine(), hidden, folders,
                                         NSBox.separatorLine(), hotkeyRow, hotkeyNote,
                                         NSBox.separatorLine(), restoreSeeds,
-                                        NSBox.separatorLine(),
+                                        NSBox.separatorLine(), clearHistory, clearHistoryNote,
                                         NSBox.separatorLine(), note])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -267,9 +273,37 @@ final class SettingsWindowController: NSWindowController {
         let wcs = NSApp.windows.compactMap { $0.windowController as? MainWindowController }
         guard let first = wcs.first else { return }
         Task { @MainActor in
-            let added = await first.sidebar.model.restoreDefaultSeeds()
+            let result = await first.sidebar.model.restoreDefaultSeeds()
             for wc in wcs.dropFirst() { wc.sidebar.model.rebuild() }
-            Toast.show(String(format: L10n.t("toast.seedsRestored"), added), in: first.window)
+            switch result {
+            case .success(let added):
+                Toast.show(String(format: L10n.t("toast.seedsRestored"), added), in: first.window)
+            case .failure(let problem):
+                Toast.show(problem.localizedDescription, in: first.window)
+            }
+        }
+    }
+
+    /// Irreversible, so it asks first. Same button order as Empty Trash: Return must not confirm.
+    @objc private func clearHistoryClicked() {
+        guard let window, let store = (NSApp.delegate as? AppDelegate)?.frecencyStore else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = L10n.t("alert.clearHistory.title")
+        alert.informativeText = L10n.t("alert.clearHistory.body")
+        alert.addButton(withTitle: L10n.t("common.cancel"))
+        alert.addButton(withTitle: L10n.t("alert.clearHistory.confirm"))
+        alert.buttons[1].hasDestructiveAction = true
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertSecondButtonReturn else { return }
+            Task { @MainActor in
+                do {
+                    try await store.clear()
+                    Toast.show(L10n.t("toast.historyCleared"), in: self?.window)
+                } catch {
+                    Toast.show(error.localizedDescription, in: self?.window)
+                }
+            }
         }
     }
 
@@ -334,6 +368,7 @@ final class SettingsWindowController: NSWindowController {
 
     private let revealCheck = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let revealStatus = NSTextField(wrappingLabelWithString: "")
+    private let revealRestore = NSButton(title: "", target: nil, action: nil)
 
     private func buildFinderTab() -> NSView {
         // I-28: Reveal takeover (the NSFileViewer global key, same mechanism as QSpace): the "open file location / Show in Finder"
@@ -345,6 +380,10 @@ final class SettingsWindowController: NSWindowController {
         revealCheck.target = self
         revealCheck.action = #selector(revealToggled(_:))
         revealStatus.font = .systemFont(ofSize: 11)
+        revealRestore.title = L10n.t("settings.reveal.restore")
+        revealRestore.bezelStyle = .push
+        revealRestore.target = self
+        revealRestore.action = #selector(restoreFinderReveal)
         refreshRevealState()
         let revealNote = NSTextField(wrappingLabelWithString: L10n.t("settings.reveal.note"))
         revealNote.font = .systemFont(ofSize: 11)
@@ -361,7 +400,7 @@ final class SettingsWindowController: NSWindowController {
         limitation.textColor = .tertiaryLabelColor
 
         // Full Disk Access buttons and notes all live on the Permissions page (I-09 dedupe); this page keeps only Finder replacement content
-        let stack = NSStackView(views: [revealHeader, revealCheck, revealStatus, revealNote,
+        let stack = NSStackView(views: [revealHeader, revealCheck, revealStatus, revealRestore, revealNote,
                                         NSBox.separatorLine(),
                                         folderHeader, statusLabel, limitation])
         stack.orientation = .vertical
@@ -396,6 +435,7 @@ final class SettingsWindowController: NSWindowController {
 
     /// Refresh Reveal takeover status (three states: HSpace/Finder/other; a stale leftover gets a red warning, and ticking the box repairs it)
     private func refreshRevealState() {
+        revealRestore.isEnabled = FinderIntegration.revealHandler != .finder
         switch FinderIntegration.revealHandler {
         case .hspace:
             revealCheck.state = .on
@@ -417,6 +457,19 @@ final class SettingsWindowController: NSWindowController {
         FinderIntegration.setRevealTakeover(sender.state == .on)
         refreshRevealState()
         Toast.show(L10n.t(sender.state == .on ? "toast.revealOn" : "toast.revealOff"), in: window)
+    }
+
+    /// Works from any state, including another app holding the setting, where the checkbox above cannot help
+    @objc private func restoreFinderReveal() {
+        do {
+            try FinderIntegration.restoreSystemReveal()
+            Toast.show(L10n.t("toast.revealOff"), in: window)
+        } catch let error as RevealSettingError {
+            Toast.show(error.message, in: window)
+        } catch {
+            Toast.show(error.localizedDescription, in: window)
+        }
+        refreshRevealState()
     }
 
 }

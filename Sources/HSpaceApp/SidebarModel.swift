@@ -92,11 +92,17 @@ final class SidebarModel {
     // The model shares the window's lifetime; call stop() to stop the watcher early
     func stop() { volumeWatchTask?.cancel() }
 
-    /// Entry for "Restore Default Bookmarks" in settings (I-14): refills missing seeds and refreshes; returns the count added for toast feedback
-    func restoreDefaultSeeds() async -> Int {
-        let added = await bookmarkStore.restoreMissingSeeds(Self.seedPlaces())
+    /// Entry for "Restore Default Bookmarks" in settings (I-14): refills missing seeds and refreshes.
+    /// A failed write also returns 0 from the store, so the count alone cannot be shown as a result.
+    func restoreDefaultSeeds() async -> Result<Int, BookmarkError> {
+        await restoreSeeds(Self.seedPlaces())
+    }
+
+    func restoreSeeds(_ seeds: [(URL, String)]) async -> Result<Int, BookmarkError> {
+        let added = await bookmarkStore.restoreMissingSeeds(seeds)
         rebuild()
-        return added
+        if let problem = await bookmarkStore.takeProblem() { return .failure(problem) }
+        return .success(added)
     }
 
     func eject(_ item: VolumeItem) throws {
