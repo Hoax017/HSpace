@@ -13,12 +13,14 @@ private let work = FinderTag(name: "Work")
 /// Waits for something the app does asynchronously, failing the test instead of hanging.
 @MainActor
 func eventually(_ what: Comment, _ condition: () throws -> Bool) async rethrows {
-    // Generous, because a busy CI runner can stall the whole test process for seconds
-    let deadline = ContinuousClock.now + .seconds(30)
+    // Generous: a cold CI runner has stalled the whole test process for over a minute.
+    // Checked once more after the deadline, because the stall can end right there.
+    let deadline = ContinuousClock.now + .seconds(120)
     while ContinuousClock.now < deadline {
         if try condition() { return }
         try? await Task.sleep(for: .milliseconds(10))
     }
+    if try condition() { return }
     Issue.record(what)
 }
 
