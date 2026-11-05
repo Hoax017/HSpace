@@ -199,7 +199,7 @@ New pods `BatchRename`, `FileHash`, `ImageConvert`.
 - [x] **L14** (M) Image conversion and resize. Vision-based actions stay a later option
 - [x] **L15** (M) Match and select by pattern
 - [x] **L16** (S) Text processing of selected names
-- [ ] **L17** (S) Merge and flatten folders, depends on A8
+- [x] **L17** (S) Merge and flatten folders, depends on A8
 
 ### Lane 3: Viewing
 
@@ -382,6 +382,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 
 - [ ] Batch Tools > Text Processing > Remove accents: the rename sheet opens with the preview ready; Rename, then ⌘Z restores
 - [ ] Copy Names on several items, paste into a text editor: one name per line
+
+- [ ] Merge two folders holding a same-named subfolder and a same-named file: the panel asks for each, and Merge combines the subfolders
+- [ ] Skip a clash during a merge: that folder stays, with the skipped file in it
+- [ ] Flatten a nested folder: same-named files become "name 2", and the empty subfolders are in the Trash, restorable with ⌘Z
+- [ ] Flatten across an unreadable subfolder: a clear error before anything moves
 
 ### Overall feel
 

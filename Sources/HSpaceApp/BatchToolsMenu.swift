@@ -24,6 +24,11 @@ enum BatchToolsMenu {
                                    action: #selector(MainWindowController.showSelectByPattern(_:)), keyEquivalent: "")
         KeyBindings.apply("selectByPattern", to: pattern)
         menu.addItem(.separator())
+        menu.addItem(withTitle: L10n.t("menu.mergeFolders"),
+                     action: #selector(MainWindowController.showMergeFolders(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.t("menu.flattenFolder"),
+                     action: #selector(MainWindowController.showFlattenFolder(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
         menu.addItem(withTitle: L10n.t("menu.fileHash"),
                      action: #selector(MainWindowController.showFileHash(_:)), keyEquivalent: "")
         menu.addItem(withTitle: L10n.t("menu.imageConvert"),
@@ -63,6 +68,10 @@ enum BatchToolsMenu {
             return !window.grid.activePane.toolSelection.isEmpty
         case #selector(MainWindowController.showQuickRename(_:)):
             return (window.renamableSelection?.count ?? .max) <= QuickRenameSheetController.itemLimit
+        case #selector(MainWindowController.showMergeFolders(_:)):
+            return (window.selectedFolders?.count ?? 0) > 1
+        case #selector(MainWindowController.showFlattenFolder(_:)):
+            return window.selectedFolders?.count == 1
         case #selector(MainWindowController.showFileHash(_:)):
             return !window.grid.activePane.toolSelection.isEmpty
         case #selector(MainWindowController.showImageConvert(_:)):

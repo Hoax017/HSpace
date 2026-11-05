@@ -509,3 +509,12 @@
 "rename.process.spacesToUnderscores" = "Spaces to underscores";
 "rename.process.separatorsToSpaces" = "Dashes and underscores to spaces";
 "rename.process.fullWidthToHalfWidth" = "Full-width to half-width";
+"menu.mergeFolders" = "Merge Folders…";
+"menu.flattenFolder" = "Flatten Folder…";
+"merge.title" = "Merge %d folders?";
+"merge.body" = "Everything moves into the folder chosen below. The conflict panel asks about each name clash; choose Merge there to combine subfolders. Folders left empty go to the Trash.";
+"merge.target" = "Merge into";
+"merge.confirm" = "Merge";
+"flatten.title" = "Flatten “%@”?";
+"flatten.body" = "%d items move up into this folder, and %d subfolders go to the Trash once empty. Clashes with items already here open the conflict panel. Packages and hidden folders stay whole.";
+"flatten.confirm" = "Flatten";
