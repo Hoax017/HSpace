@@ -89,6 +89,10 @@ import HSpaceTestSupport
         return found
     }
 
+    static func assertNoStaging(in dir: URL) throws {
+        #expect(!(try entries(dir)).contains { $0.hasPrefix(".hspace-") })
+    }
+
     static func expectClassified(_ body: () async throws -> Void) async {
         do {
             try await body()
@@ -320,6 +324,42 @@ import HSpaceTestSupport
         let archive = try #require(receipt.createdURLs.first)
         _ = try await Self.extract(archive, into: out, context: Arbiter(answer: nil).context)
         #expect(try Self.entries(out) == names.sorted())
+    }
+
+    // MARK: B3 a tool that writes a lot does not block on a full pipe
+
+    @Test func toolWritingMoreThanAPipeHoldsDoesNotHang() async throws {
+        let work = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work) }
+        // zip writes a 31-byte warning per unreadable file and carries on, well past the 64 KB a pipe holds
+        let tree = work.appendingPathComponent("tree")
+        for index in 0..<3000 {
+            let file = tree.appendingPathComponent("\(index)")
+            try FaultFixture.write(to: file)
+            #expect(chmod(file.path, 0) == 0)
+        }
+
+        let task = Task {
+            try await ArchiveEngineNode().execute(
+                OperationSpec(kind: .compress, sources: [tree], archiveOptions: ArchiveOptions(format: "zip")),
+                context: Arbiter(answer: nil).context)
+        }
+        // Stops the blocked tool if the test is about to fail, so a hang cannot hold up the run.
+        let watchdog = Task {
+            try await Task.sleep(for: .seconds(20))
+            task.cancel()
+        }
+        defer { watchdog.cancel() }
+
+        do {
+            _ = try await task.value
+            Issue.record("Expected zip to report the unreadable files")
+        } catch is CancellationError {
+            Issue.record("The tool hung until the watchdog stopped it")
+        } catch let error as any ClassifiedError {
+            #expect(error.errorClass == .external)
+        }
+        try Self.assertNoStaging(in: work)
     }
 
     @Test func archiveNameStartingWithADashExtracts() async throws {
