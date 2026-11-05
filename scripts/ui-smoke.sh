@@ -3,7 +3,7 @@
 # + empty task window + adding to stash + search panel). Output: /tmp/hspace-ui/{report.txt,*.png}
 set -uo pipefail
 cd "$(dirname "$0")/.."
-./scripts/build-app.sh >/dev/null 2>&1 || { echo "Build failed"; exit 1; }
+./scripts/build-app.sh debug >/dev/null 2>&1 || { echo "Build failed"; exit 1; }
 pkill -x HSpace 2>/dev/null; sleep 0.5
 rm -rf /tmp/hspace-ui
 

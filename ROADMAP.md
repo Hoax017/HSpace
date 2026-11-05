@@ -131,7 +131,7 @@ Owns `Sources/Pods/BookmarkStore`, `StashStore`, `SessionStore`.
 Owns `AppDelegate.swift`, `FinderIntegration.swift`, `UISelfTest.swift`.
 
 - [x] **E1** (M) Harden `hspace://`: separate open from reveal, reject network and automount paths, do no blocking work on the main thread. `AppDelegate.swift:183`
-- [ ] **E2** (M) Compile `UISelfTest` and all environment test hooks out of release builds. `AppDelegate.swift:34`, `UISelfTest.swift:11` Open: `MainWindowController.swift:227,231` still read `HSPACE_UITEST` in release, and `ui-smoke.sh:6` must build with `build-app.sh debug`.
+- [x] **E2** (M) Compile `UISelfTest` and all environment test hooks out of release builds. `AppDelegate.swift:34`, `UISelfTest.swift:11` Open: `MainWindowController.swift:227,231` still read `HSPACE_UITEST` in release, and `ui-smoke.sh:6` must build with `build-app.sh debug`.
 - [x] **E3** (M) Isolate test runs from real preferences, bookmarks, stash and clipboard. `MainWindowController.swift:46`, `AppDelegate.swift:140`
 - [ ] **E4** (S) Provide a way to restore the system Reveal setting. `FinderIntegration.swift:69` Open: `FinderIntegration.restoreSystemReveal()` exists; the Settings button still has to be added.
 - [x] **E5** (S) Stop storing the last opened path in defaults. `AppDelegate.swift:206`
@@ -156,7 +156,21 @@ Owns `.github`, `scripts`, docs.
 - [ ] **G6** (S) Correct the docs where they disagree with the code: `spec.md`, `PRODUCT.md`, `DESIGN.md`, `README.md`.
 - [x] **G7** (S) Add a failure-injection test helper shared by tracks A to D. Do this first.
 
-**Gate 0:** tracks A to F closed and G1 in place. No Phase 1 work merges before this.
+### Track H: Phase 0 follow-ups
+
+Found while closing tracks A to F. H1 to H3 touch shared files, so they run one at a time.
+
+- [ ] **H1** (M) Show `takeProblem()` from the stores in the UI, and give TrashLedger the D1 treatment. Closes D1
+- [ ] **H2** (S) Settings: clear history (D3), restore Finder for Reveal (E4), and no "0 restored" toast after a failed seed restore. Closes D3 and E4
+- [ ] **H3** (S) Refuse Trash drops in `validateDrop` through `FileOpsCoordinator.isTrashDestination`, with a message instead of a beep
+- [ ] **H4** (S) Update text after password removal (B4): `Contracts.swift:109`, `settings.archiveCryptoNote`, `README.md`
+- [ ] **H5** (M) Add an `HSpaceAppTests` target and drop the symlinks in `Tests/HSpaceKernelTests/AppEntryPoints`
+- [ ] **H6** (S) Restore: use landed URLs from receipts, skip redo after a failed restore, keep records for trashed dangling links
+- [ ] **H7** (M) Keep folder dates, tags and modes on cross-volume moves, and clean leftover `.hspace-transfer-*` items after a crash
+- [ ] **H8** (S) Check a drop with the "move" preference and Option held. AppKit may refuse it
+- [ ] **H9** (M) Run `ui-smoke.sh` on the merged code, then check by hand: Return in the conflict panel, drops, terminal, Put Back, `hspace://`
+
+**Gate 0:** tracks A to F and H closed, and G1 in place. No Phase 1 work merges before this.
 
 ## Phase 1: Local parity
 

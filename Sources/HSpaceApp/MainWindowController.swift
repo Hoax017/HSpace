@@ -223,11 +223,11 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
     /// in smoke, the I-37 narrow window assertion width = 511 - sidebarWidth, which drifted with the developer's real sidebar width,
     /// and with the sidebar dragged to the 320 limit the margin was used up and the assertion went red because of the environment.
     static var sidebarWidthKey: String {
-        ProcessInfo.processInfo.environment["HSPACE_UITEST"] != nil ? "sidebarWidth.uitest" : "sidebarWidth"
+        TestIsolation.defaultsKey("sidebarWidth")
     }
 
     static var frameDefaultsKey: String {
-        ProcessInfo.processInfo.environment["HSPACE_UITEST"] != nil ? "windowFrame.uitest" : "windowFrame"
+        TestIsolation.defaultsKey("windowFrame")
     }
 
     @objc private func splitDidResize(_ note: Notification) {
