@@ -47,10 +47,13 @@ public struct MetadataError: ClassifiedError, LocalizedError {
 public struct ItemMetadata: Sendable, Hashable {
     public var tags: [FinderTag]
     public var comment: String?
+    /// The colour set on this item itself, which beats colour rules
+    public var color: FileColor?
 
-    public init(tags: [FinderTag] = [], comment: String? = nil) {
+    public init(tags: [FinderTag] = [], comment: String? = nil, color: FileColor? = nil) {
         self.tags = tags
         self.comment = comment
+        self.color = color
     }
 }
 
@@ -60,12 +63,15 @@ public enum MetadataEdit: Sendable {
     case tags(add: [FinderTag], remove: Set<String>)
     /// Replaces the comment. nil or empty removes it.
     case comment(String?)
+    /// Sets or, with nil, clears the item's own colour
+    case color(FileColor?)
 }
 
 /// One stored value, as it was before a change. Giving it back to `restore` undoes the change.
 public enum MetadataValue: Sendable, Hashable {
     case tags([FinderTag])
     case comment(String?)
+    case color(FileColor?)
 }
 
 public struct MetadataChange: Sendable, Hashable {

@@ -137,6 +137,8 @@ The palette is **system semantic colors + a single dynamic accent**: there is no
 
 **The Three-Ink Rule.** Text color is chosen only among three inks: `labelColor` (present/active) → `secondaryLabelColor` (secondary/quiet) → `tertiaryLabelColor` (placeholder/missing/units). Hierarchy comes from ink and font size, not colored text. The size column is one application of this rule: value in `labelColor` + unit in `secondaryLabelColor` (`TextCellView.configureSize`), with the unit receding in gray.
 
+**The File-Colour Exception.** File colours are the user's own marks, so a coloured name is the one exception to the Three-Ink Rule. They use system colours only and show nothing unless the user sets them. A selected row keeps the system's ink.
+
 **The Tabular-Where-It-Counts Rule.** Tabular digits are used for digits that change with refresh or selection: stash count pill, status bar (count / "N selected · size" pill / available capacity), and the list's size/modified/created/added date columns. All go through `.monospacedDigitSystemFont` (converged in M21; the status bar and size/date columns previously used plain `systemFont` by mistake, which has been fixed to match the mockup's `font-variant-numeric: tabular-nums`). Non-numeric text (name/kind/path) still uses regular `systemFont`.
 
 ## Layout

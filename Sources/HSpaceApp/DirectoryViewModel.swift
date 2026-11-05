@@ -44,6 +44,8 @@ final class DirectoryViewModel {
     private(set) var tagSortAscending: Bool?
     private var metadataTask: Task<Void, Never>?
     private var metadataHandlers: [() -> Void] = []
+    /// Set once in init; only deinit reads it again
+    private nonisolated(unsafe) var colorObserver: (any NSObjectProtocol)?
 
     /// Subscribe to tag changes that leave the rows as they are, so a rename in progress is not interrupted
     func addOnMetadataChange(_ handler: @escaping () -> Void) { metadataHandlers.append(handler) }
@@ -93,6 +95,10 @@ final class DirectoryViewModel {
 
     init(directory: URL) {
         self.directory = directory
+        colorObserver = NotificationCenter.default.addObserver(
+            forName: .hspaceFileColorsChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.metadataHandlers.forEach { $0() } }
+        }
     }
 
     func navigate(to url: URL) {
@@ -207,6 +213,7 @@ final class DirectoryViewModel {
         watchTask?.cancel()
         watcher?.stop()
         metadataTask?.cancel()
+        if let colorObserver { NotificationCenter.default.removeObserver(colorObserver) }
     }
 }
 

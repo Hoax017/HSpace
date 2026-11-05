@@ -1,5 +1,4 @@
 import AppKit
-import FileMetadata
 
 /// Table view that reports user interaction (pane focus coordination: a click requests activation of the owning pane).
 /// Also hosts the context menu hook and the Return key (triggers inline rename).
@@ -246,6 +245,8 @@ final class NameCellView: NSTableCellView {
     private let label = NSTextField(labelWithString: "")
     private let tagDots = TagDotsView()
     private var editor: InlineRenameField?
+    private var baseInk = NSColor.labelColor
+    private var tint: NSColor?
 
     /// Commit/cancel callbacks (injected by FileListViewController, wired to the .rename submission and FG-6 rollback)
     var onRenameCommit: ((String) -> Void)?
@@ -284,12 +285,25 @@ final class NameCellView: NSTableCellView {
         iconView.image = icon
         label.stringValue = name
         label.font = .systemFont(ofSize: Formatters.listFontSize)  // Re-read the font size on each configure (takes effect at once on column rebuild)
-        label.textColor = dimmed ? .secondaryLabelColor : .labelColor
+        baseInk = dimmed ? .secondaryLabelColor : .labelColor
+        tint = nil
+        applyInk()
     }
 
-    /// Call after `configure`, and on its own when only the tags changed (keeps a rename in progress)
-    func decorate(tags: [FinderTag]) {
-        tagDots.show(tags)
+    /// Call after `configure`, and on its own when only the decoration changed (keeps a rename in progress)
+    func decorate(_ decoration: FileDecoration) {
+        tagDots.show(decoration.tags)
+        tint = decoration.tint
+        applyInk()
+    }
+
+    /// A selected row keeps the system's ink: a coloured name on the selection highlight would be hard to read
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet { applyInk() }
+    }
+
+    private func applyInk() {
+        label.textColor = backgroundStyle == .emphasized ? baseInk : (tint ?? baseInk)
     }
 
     var isEditing: Bool { editor != nil }

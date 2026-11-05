@@ -74,6 +74,8 @@ final class FileIconItem: NSCollectionViewItem {
     private let icon = NSImageView()
     private let label = NSTextField(wrappingLabelWithString: "")
     private let tagDots = TagDotsView()
+    private var baseInk = NSColor.labelColor
+    private var tint: NSColor?
 
     override func loadView() {
         backdrop.wantsLayer = true
@@ -123,6 +125,7 @@ final class FileIconItem: NSCollectionViewItem {
     override var highlightState: NSCollectionViewItem.HighlightState { didSet { updateSelection() } }
 
     private func updateSelection() {
+        applyInk()
         let active = isSelected || highlightState == .forSelection
         backdrop.layer?.backgroundColor = active
             ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.30).cgColor
@@ -133,11 +136,19 @@ final class FileIconItem: NSCollectionViewItem {
         icon.image = image
         icon.alphaValue = dimmed ? 0.5 : 1.0
         label.stringValue = name
-        label.textColor = dimmed ? .secondaryLabelColor : .labelColor
+        baseInk = dimmed ? .secondaryLabelColor : .labelColor
+        tint = nil
+        applyInk()
     }
 
-    func decorate(tags: [FinderTag]) {
-        tagDots.show(tags)
+    func decorate(_ decoration: FileDecoration) {
+        tagDots.show(decoration.tags)
+        tint = decoration.tint
+        applyInk()
+    }
+
+    private func applyInk() {
+        label.textColor = isSelected ? baseInk : (tint ?? baseInk)
     }
 
     /// Thumbnail arrived: swap the image without rebuilding (keeps selection state)
@@ -151,6 +162,7 @@ final class FileIconItem: NSCollectionViewItem {
         icon.alphaValue = 1.0
         label.stringValue = ""
         tagDots.show([])
+        tint = nil
     }
 }
 
@@ -380,7 +392,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         for ip in collectionView.indexPathsForVisibleItems() {
             guard let cell = collectionView.item(at: ip) as? FileIconItem,
                   let file = fileItem(at: ip) else { continue }
-            cell.decorate(tags: model.metadata[file.url]?.tags ?? [])
+            cell.decorate(FileDecoration(file, model.metadata[file.url]))
         }
     }
 
@@ -392,7 +404,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
             let cut = coordinator?.isCut(file.url) ?? false
             cell.configure(icon: thumbOverlay[file.url] ?? Formatters.fullIcon(for: file),
                            name: file.name, dimmed: file.isHidden || cut)
-            cell.decorate(tags: model.metadata[file.url]?.tags ?? [])
+            cell.decorate(FileDecoration(file, model.metadata[file.url]))
         }
     }
 
@@ -777,7 +789,7 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
         // Fast path shows the type icon first; a delivered content thumbnail is used directly (upgrade path in requestThumbnail)
         cell.configure(icon: thumbOverlay[file.url] ?? Formatters.fullIcon(for: file),
                        name: file.name, dimmed: file.isHidden || cut)
-        cell.decorate(tags: model.metadata[file.url]?.tags ?? [])
+        cell.decorate(FileDecoration(file, model.metadata[file.url]))
         return item
     }
 

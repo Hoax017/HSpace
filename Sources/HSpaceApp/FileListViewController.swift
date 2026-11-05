@@ -285,7 +285,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
             guard let item = item(atRow: row) else { continue }
             rows.insert(row)
             let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? NameCellView
-            cell?.decorate(tags: model.metadata[item.url]?.tags ?? [])
+            cell?.decorate(FileDecoration(item, model.metadata[item.url]))
         }
         var columns = IndexSet()
         for (index, column) in tableView.tableColumns.enumerated()
@@ -945,7 +945,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
             // Fast path shows the type icon first; a delivered content thumbnail is used directly (upgrade path in requestThumbnail)
             cell.configure(icon: thumbOverlay[item.url] ?? Formatters.icon(for: item),
                            name: item.name, dimmed: item.isHidden || cut)
-            cell.decorate(tags: model.metadata[item.url]?.tags ?? [])
+            cell.decorate(FileDecoration(item, model.metadata[item.url]))
             return cell
         }
 

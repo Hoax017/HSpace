@@ -15,5 +15,6 @@ enum SettingsPages {
         BehaviorSettingsPage(),      // Behavior + Open Mode
         PermissionsSettingsPage(),   // Permissions (Full Disk Access)
         AppearanceSettingsPage(),
+        FileColorsSettingsPage(),
     ]
 }

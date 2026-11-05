@@ -26,8 +26,9 @@ public struct FileMetadata: Sendable {
                 try Task.checkCancellation()
                 await Task.yield()
             }
-            let found = ItemMetadata(tags: (try? readTags(of: url)) ?? [], comment: try? readComment(of: url))
-            if !found.tags.isEmpty || found.comment != nil { result[url] = found }
+            let found = ItemMetadata(tags: (try? readTags(of: url)) ?? [], comment: try? readComment(of: url),
+                                     color: try? readColor(of: url))
+            if found != ItemMetadata() { result[url] = found }
         }
         try Task.checkCancellation()
         return result
@@ -47,7 +48,7 @@ public struct FileMetadata: Sendable {
                       progress: MetadataProgress = { _, _ in }) async throws -> MetadataBatchResult {
         switch edit {
         case .tags(let add, _): try validate(add)
-        case .comment: break
+        case .comment, .color: break
         }
         return try await run(urls, progress: progress) { url in
             switch edit {
@@ -63,6 +64,11 @@ public struct FileMetadata: Sendable {
                 guard after != before else { return nil }
                 try writeComment(after, to: url)
                 return MetadataChange(url: url, before: .comment(before))
+            case .color(let color):
+                let before = try readColor(of: url)
+                guard color != before else { return nil }
+                try writeColor(color, to: url)
+                return MetadataChange(url: url, before: .color(before))
             }
         }
     }
@@ -130,6 +136,10 @@ public struct FileMetadata: Sendable {
             let current = try readComment(of: url)
             try writeComment(comment, to: url)
             return MetadataChange(url: url, before: .comment(current))
+        case .color(let color):
+            let current = try readColor(of: url)
+            try writeColor(color, to: url)
+            return MetadataChange(url: url, before: .color(current))
         }
     }
 

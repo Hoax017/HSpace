@@ -184,6 +184,24 @@ func writeComment(_ comment: String?, to url: URL) throws {
     try writeAttribute(commentAttribute, data, of: url)
 }
 
+// MARK: File colour (HSpace's own attribute: it travels with the file, and Finder ignores it)
+
+private let colorAttribute = "com.hoax017.hspace.fileColor"
+
+/// A value from a newer version reads as no colour
+func readColor(of url: URL) throws -> FileColor? {
+    guard let data = try readAttribute(colorAttribute, of: url) else { return nil }
+    return FileColor(rawValue: String(decoding: data, as: UTF8.self))
+}
+
+func writeColor(_ color: FileColor?, to url: URL) throws {
+    guard let color else {
+        try removeAttribute(colorAttribute, of: url)
+        return
+    }
+    try writeAttribute(colorAttribute, Data(color.rawValue.utf8), of: url)
+}
+
 func validate(_ tags: [FinderTag]) throws {
     for tag in tags where tag.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || tag.name.contains("\n") {
         throw MetadataError(.logic, "A tag name cannot be empty or hold a line break")

@@ -84,6 +84,9 @@ final class FileColumnViewController: NSViewController {
                 col.reload()
             }
         }
+        model.addOnMetadataChange { [weak self] in
+            self?.columns.forEach { $0.redecorate() }
+        }
     }
 
     @available(*, unavailable)
@@ -697,11 +700,16 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
             guard let fresh = try? await Engines.metadata.read(urls), let self, !Task.isCancelled,
                   fresh != self.metadata else { return }
             self.metadata = fresh
-            let range = self.tableView.rows(in: self.tableView.visibleRect)
-            for row in range.location..<(range.location + range.length) where self.items.indices.contains(row) {
-                let cell = self.tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? NameCellView
-                cell?.decorate(tags: fresh[self.items[row].url]?.tags ?? [])
-            }
+            self.redecorate()
+        }
+    }
+
+    /// Updates the visible rows in place
+    func redecorate() {
+        let range = tableView.rows(in: tableView.visibleRect)
+        for row in range.location..<(range.location + range.length) where items.indices.contains(row) {
+            let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? NameCellView
+            cell?.decorate(FileDecoration(items[row], metadata[items[row].url]))
         }
     }
 
@@ -767,7 +775,7 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
         let cut = owner?.isCut(item.url) ?? false
         cell.configure(icon: Formatters.icon(for: item), name: item.name,
                        dimmed: item.isHidden || cut)
-        cell.decorate(tags: metadata[item.url]?.tags ?? [])
+        cell.decorate(FileDecoration(item, metadata[item.url]))
         return cell
     }
 

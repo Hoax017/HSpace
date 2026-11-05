@@ -47,6 +47,26 @@ enum MetadataMenu {
         comment.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: nil)
         comment.representedObject = MetadataActions.EditTarget(items: selection, host: host)
         menu.addItem(comment)
+
+        menu.addItem(colorMenu(urls: urls, loaded: loaded, actions: actions))
+    }
+
+    private static func colorMenu(urls: [URL], loaded: [URL: ItemMetadata], actions: MetadataActions) -> NSMenuItem {
+        let parent = NSMenuItem(title: L10n.t("menu.fileColor"), action: nil, keyEquivalent: "")
+        parent.image = NSImage(systemSymbolName: "paintpalette", accessibilityDescription: nil)
+        let submenu = NSMenu()
+        let colors = Set(urls.map { loaded[$0]?.color })
+        for color in [nil] + FileColor.allCases.map(Optional.some) {
+            let title = color.map(FileColorPalette.name) ?? L10n.t("fileColor.none")
+            let item = NSMenuItem(title: title, action: #selector(MetadataActions.setFileColor(_:)), keyEquivalent: "")
+            item.target = actions
+            item.image = color.flatMap(FileColorPalette.menuImage)
+            item.state = colors.contains(color) ? (colors.count == 1 ? .on : .mixed) : .off
+            item.representedObject = MetadataActions.ColorChoice(urls: urls, color: color)
+            submenu.addItem(item)
+        }
+        parent.submenu = submenu
+        return parent
     }
 
     static func addDirectoryEntries(to menu: NSMenu, target: AnyObject) {
@@ -101,6 +121,11 @@ final class MetadataActions: NSObject {
     struct EditTarget {
         let items: [FileItem]
         let host: MetadataMenuHost
+    }
+
+    struct ColorChoice {
+        let urls: [URL]
+        let color: FileColor?
     }
 
     struct FilterChoice {
@@ -179,6 +204,11 @@ final class MetadataActions: NSObject {
         CommentSheet.present(start: start, title: title, in: window) { [weak self] text in
             self?.coordinator?.applyMetadata(.comment(text), to: urls, actionName: L10n.t("undo.comment"))
         }
+    }
+
+    @objc func setFileColor(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? ColorChoice else { return }
+        coordinator?.applyMetadata(.color(choice.color), to: choice.urls, actionName: L10n.t("undo.fileColor"))
     }
 
     @objc func toggleFilter(_ sender: NSMenuItem) {
