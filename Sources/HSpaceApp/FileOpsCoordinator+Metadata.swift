@@ -71,6 +71,7 @@ extension FileOpsCoordinator {
             }
         }
         sheet.onCancel = { task.cancel() }
+        metadataBatchesRunning += 1
         let reveal = Task { @MainActor in
             try await Task.sleep(for: .milliseconds(400))
             sheet.show(in: window)
@@ -93,6 +94,7 @@ extension FileOpsCoordinator {
                 Toast.show(error.localizedDescription, in: window)
             }
             reloadLists()
+            metadataBatchesRunning -= 1
         }
     }
 }

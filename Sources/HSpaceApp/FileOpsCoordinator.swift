@@ -37,6 +37,8 @@ final class FileOpsCoordinator {
     private(set) weak var grid: PaneGridController?
     /// This window's undo stack (wired to ⌘Z through MainWindowController.windowWillReturnUndoManager)
     let undoManager = UndoManager()
+    /// Metadata batches not yet reported. Their undo steps are complete only once this is back at zero.
+    var metadataBatchesRunning = 0
 
     /// URLs in the cut state: cut rows are dimmed; cleared after paste or copy
     private var cutURLs: Set<URL> = []

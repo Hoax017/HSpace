@@ -211,7 +211,7 @@ func eventually(_ what: Comment, _ condition: () throws -> Bool) async rethrows 
         try await eventually("undone") { try Engines.metadata.tags(of: file) == [blue] }
         #expect(undo.canRedo)
         // The redo reads what the restore replaced, which arrives a moment after the tags do
-        try? await Task.sleep(for: .milliseconds(50))
+        await eventually("restore reported") { coordinator.metadataBatchesRunning == 0 }
         undo.redo()
         try await eventually("redone") { try Engines.metadata.tags(of: file) == [blue, red] }
     }

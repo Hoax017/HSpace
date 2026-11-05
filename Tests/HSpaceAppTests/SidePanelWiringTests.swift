@@ -30,7 +30,7 @@ import Testing
         defer { FaultFixture.remove(dir) }
         try FaultFixture.write(to: dir.appendingPathComponent("a.txt"))
         let section = PreviewSectionView(frame: NSRect(x: 0, y: 0, width: 240, height: 400))
-        defer { section.close() }
+        section.drawsPreview = false
 
         section.show(PreviewSubject(selection: [item("a.txt", in: dir)]))
         #expect(section.testName == "a.txt")

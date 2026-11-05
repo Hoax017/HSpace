@@ -55,6 +55,8 @@ final class PreviewSectionView: NSView {
     private let name = NSTextField(labelWithString: "")
     private let actions = ActionFlowView()
     private var subject: PreviewSubject?
+    /// Off in tests: the first QLPreviewView blocks the main thread for seconds while Quick Look starts
+    var drawsPreview = true
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -122,7 +124,7 @@ final class PreviewSectionView: NSView {
     }
 
     private func setPreviewItem(_ url: URL?) {
-        if url != nil, preview == nil { buildPreview() }
+        if url != nil, preview == nil, drawsPreview { buildPreview() }
         preview?.previewItem = url as NSURL?
     }
 
