@@ -416,7 +416,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     /// Rebuilds the section sequence from the current model.items (already sorted by the reader) + refreshes the filter pill.
     private func rebuildSections() {
         if groupingActive {
-            var gs = FileGrouping.buckets(model.items, key: model.sort.key, ascending: model.sort.ascending)
+            var gs = FileGrouping.groups(for: model)
             if let only = groupFilterKey, !gs.contains(where: { $0.key == only }) { groupFilterKey = nil }
             if let only = groupFilterKey { gs = gs.filter { $0.key == only } }
             sections = gs

@@ -5,6 +5,8 @@ import HSpaceContracts
 public actor MetadataStore {
     private struct Contents: Codable {
         var colorRules: [ColorRule] = []
+        /// nil until the user changes them, so the starting list can improve with new versions
+        var kindGroups: [KindGroup]?
     }
 
     private let fileURL: URL
@@ -29,6 +31,21 @@ public actor MetadataStore {
         ensureLoaded()
         var updated = contents
         updated.colorRules = rules
+        try persist(updated)
+        contents = updated
+    }
+
+    /// nil means the user has not changed the starting list
+    public func kindGroups() -> [KindGroup]? {
+        ensureLoaded()
+        return contents.kindGroups
+    }
+
+    /// Nothing changes unless the new groups reach the disk.
+    public func setKindGroups(_ groups: [KindGroup]) throws {
+        ensureLoaded()
+        var updated = contents
+        updated.kindGroups = groups
         try persist(updated)
         contents = updated
     }

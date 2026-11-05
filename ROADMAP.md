@@ -185,7 +185,7 @@ New pod `FileMetadata`.
 - [x] **L02** (S) Finder comments
 - [x] **L03** (M) File colours and rules
 - [x] **L04** (M) Custom folder icons and emoji, folder styles
-- [ ] **L05** (M) Kind groups with a manager
+- [x] **L05** (M) Kind groups with a manager
 - [ ] **L06** (S) Set default app per file kind
 
 ### Lane 2: Batch tools
@@ -374,6 +374,9 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Emoji Picker button opens the system picker and the chosen emoji lands in the field
 - [ ] Remove Custom Icon, and Undo and Redo of an icon change
 - [ ] Set an icon on a folder in a read-only location: a toast explains the failure
+- [ ] Sort by Kind with Use Groups on, in list and icon views: headers show the kind groups in the manager's order, with Other last
+- [ ] Right-click a kind header, Show Only This Group, then Show All Groups
+- [ ] Settings, Kind Groups: rename, edit matches, reorder, add and remove. Open panes regroup at once. Reset to Defaults asks first
 
 ### Needs a decision
 

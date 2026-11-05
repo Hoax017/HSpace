@@ -1,5 +1,6 @@
 import Foundation
 import HSpaceContracts
+import FileMetadata
 
 /// Pure logic for time-based grouping (M26): the single source of truth shared by the list and icon views.
 /// Group key format, date selection and bucketing live here, so index arithmetic and key formats don't spread across views (BG).
@@ -85,9 +86,33 @@ enum FileGrouping {
         }
     }
 
-    /// Grouping for a model: a tag sort has its own order, which date groups would break up
+    /// Grouping for a model: by date or by kind group. A tag sort has its own order, which groups would break up
     static func active(_ model: DirectoryViewModel) -> Bool {
-        active(model.sort) && model.tagSortAscending == nil
+        guard model.tagSortAscending == nil else { return false }
+        return active(model.sort) || (Preferences.listGrouping && model.sort.key == .kind)
+    }
+
+    /// The groups for what the model is sorted by
+    static func groups(for model: DirectoryViewModel) -> [Group] {
+        model.sort.key == .kind
+            ? kindBuckets(model.items, groups: MetadataSettings.kindGroups, ascending: model.sort.ascending)
+            : buckets(model.items, key: model.sort.key, ascending: model.sort.ascending)
+    }
+
+    /// Groups in the manager's order, reversed when descending. Items no group claims stay together at the end in both
+    /// directions, and empty groups are left out. Pure, like `buckets`.
+    static func kindBuckets(_ items: [FileItem], groups: [KindGroup], ascending: Bool) -> [Group] {
+        var members = [[Int]](repeating: [], count: groups.count)
+        var others: [Int] = []
+        for (index, owner) in KindGroups.assign(items, to: groups).enumerated() {
+            if let owner { members[owner].append(index) } else { others.append(index) }
+        }
+        var result = groups.indices.filter { !members[$0].isEmpty }.map {
+            Group(key: "kind-\(groups[$0].id.uuidString)", title: groups[$0].name, indices: members[$0])
+        }
+        if !ascending { result.reverse() }
+        if !others.isEmpty { result.append(Group(key: "kind-other", title: L10n.t("group.otherKinds"), indices: others)) }
+        return result
     }
 
     /// Items already sorted by `sort` → ordered groups: **group order follows relative recency** (direction-aware, unaffected by foldersFirst);

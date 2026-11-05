@@ -6,12 +6,15 @@ import FileMetadata
 @MainActor
 enum MetadataSettings {
     private(set) static var colorRules: [ColorRule] = []
+    private(set) static var kindGroups = KindGroups.defaults(localized: { L10n.t($0) })
     private static var store: MetadataStore?
 
     static func load(from store: MetadataStore) async {
         self.store = store
         colorRules = await store.colorRules()
+        if let saved = await store.kindGroups() { kindGroups = saved }
         announce()
+        NotificationCenter.default.post(name: .hspaceGroupingChanged, object: nil)
     }
 
     /// Returns what went wrong. The rules in use change only when the store took them.
@@ -24,6 +27,19 @@ enum MetadataSettings {
         }
         colorRules = rules
         announce()
+        return nil
+    }
+
+    /// Returns what went wrong. The groups in use change only when the store took them.
+    static func setKindGroups(_ groups: [KindGroup]) async -> String? {
+        guard let store else { return nil }
+        do {
+            try await store.setKindGroups(groups)
+        } catch {
+            return error.localizedDescription
+        }
+        kindGroups = groups
+        NotificationCenter.default.post(name: .hspaceGroupingChanged, object: nil)
         return nil
     }
 

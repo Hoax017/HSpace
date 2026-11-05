@@ -325,7 +325,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
             filterPill.isHidden = true
             return
         }
-        let groups = FileGrouping.buckets(model.items, key: model.sort.key, ascending: model.sort.ascending)
+        let groups = FileGrouping.groups(for: model)
         var titles: [String: String] = [:]
         for g in groups { titles[g.key] = g.title }
         // Filter self-heal: the filtered group no longer exists (directory/sort key changed) → clear the filter

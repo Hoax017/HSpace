@@ -16,5 +16,6 @@ enum SettingsPages {
         PermissionsSettingsPage(),   // Permissions (Full Disk Access)
         AppearanceSettingsPage(),
         FileColorsSettingsPage(),
+        KindGroupsSettingsPage(),
     ]
 }
