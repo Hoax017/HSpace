@@ -1,9 +1,10 @@
+#if DEBUG
 import AppKit
 import HSpaceContracts
 import SearchEngine
 import Frecency
 
-/// UI self-test channel (runs automatically after launch when HSPACE_UITEST=1; not a product path, gated by an environment variable).
+/// UI self-test channel (runs automatically after launch when HSPACE_UITEST=1; not a product path, compiled into debug builds only).
 /// Needs no Accessibility or Screen Recording permission: scenarios are driven programmatically, screenshots are self-rendered (cacheDisplay),
 /// assertions are written to /tmp/hspace-ui/report.txt, and the process exits with 0/1 based on the result when done.
 @MainActor
@@ -3561,3 +3562,12 @@ enum UISelfTest {
         exit(failed ? 1 : 0)
     }
 }
+
+#else
+
+/// Release builds carry no self-test, only the one flag product code asks about.
+enum UISelfTest {
+    static var isEnabled: Bool { false }
+}
+
+#endif

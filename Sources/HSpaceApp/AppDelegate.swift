@@ -31,9 +31,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static var supportDirectory: URL {
         let real = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("HSpace")
-        return ProcessInfo.processInfo.environment["HSPACE_UITEST"] != nil
-            ? FileManager.default.temporaryDirectory.appendingPathComponent("hspace-uitest-support")
-            : real
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["HSPACE_UITEST"] != nil {
+            return FileManager.default.temporaryDirectory.appendingPathComponent("hspace-uitest-support")
+        }
+        #endif
+        return real
     }
     /// State changes are not persisted until restore finishes (stops startup from overwriting the last session with a half-built one)
     private var sessionReady = false
@@ -64,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await kernel.register(EraserNode(), for: [.delete])
             await kernel.setArbiter(conflictSheet)
             ProgressWindowController.shared.start(kernel: kernel)
+            #if DEBUG
             // Performance self-check entry (for north star acceptance, not a product path): HSPACE_PERF_DIRS=a:b:c:d navigates each quad pane to one directory
             if let spec = ProcessInfo.processInfo.environment["HSPACE_PERF_DIRS"], !spec.isEmpty {
                 let dirs = spec.split(separator: ":").map { URL(fileURLWithPath: String($0)) }
@@ -75,9 +79,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 await restoreSessionOrDefault()
             }
+            #else
+            await restoreSessionOrDefault()
+            #endif
             sessionReady = true
             flushPendingExternalOpens()   // I-60: deliver the external opens queued during restore (windows exist now)
             NSApp.activate()
+            #if DEBUG
             if UISelfTest.isEnabled {
                 UISelfTest.run(delegate: self)
             } else if ProcessInfo.processInfo.environment["HSPACE_CONFLICT_PREVIEW"] != nil {
@@ -90,9 +98,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Permissions prompt: not granted and "Don't ask again" unticked -> show one sheet once the main window is ready (self-test/perf runs are left alone)
                 promptFullDiskAccessIfNeeded()
             }
+            #else
+            promptFullDiskAccessIfNeeded()
+            #endif
         }
     }
 
+    #if DEBUG
     /// Live conflict sheet preview (HSPACE_CONFLICT_PREVIEW): builds 3 conflicts in private fixtures and shows the real sheet for screenshots.
     /// Sandbox hard rule: only touch our own fixtures under temporaryDirectory, never the user's real files.
     private func presentConflictPreview() {
@@ -149,6 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             wc.window?.makeKeyAndOrderFront(nil)
         }
     }
+    #endif
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
@@ -317,10 +330,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func restoreSessionOrDefault() async {
         // UITEST isolation: self-test assertions rely on a deterministic initial state (single workspace, default layout), not the real user session;
         // frame persistence scenarios (SETFRAME/EXPECTFRAME) use the separate windowFrame key and are unaffected
+        #if DEBUG
         if ProcessInfo.processInfo.environment["HSPACE_UITEST"] != nil {
             openWindow(at: FileManager.default.homeDirectoryForCurrentUser)
             return
         }
+        #endif
         guard let snapshot = await sessionStore.load(), !snapshot.windows.isEmpty else {
             openWindow(at: FileManager.default.homeDirectoryForCurrentUser)
             return
@@ -337,6 +352,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         first?.window?.makeKeyAndOrderFront(nil)
     }
 
+    #if DEBUG
     /// UISelfTest (I-60): number of queued external opens / whether the session is ready
     var uiTestPendingExternalOpenCount: Int { pendingExternalOpens.count }
     var uiTestSessionReady: Bool { sessionReady }
@@ -351,6 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// UISelfTest (I-60): flush the queue by hand (simulates session restore finishing)
     func uiTestFlushPendingExternalOpens() { flushPendingExternalOpens() }
+    #endif
 
     /// I-60: deliver external opens queued during session restore (windows exist now, so the normal "new workspace tab in existing window" branch applies)
     private func flushPendingExternalOpens() {

@@ -131,7 +131,7 @@ Owns `Sources/Pods/BookmarkStore`, `StashStore`, `SessionStore`.
 Owns `AppDelegate.swift`, `FinderIntegration.swift`, `UISelfTest.swift`.
 
 - [x] **E1** (M) Harden `hspace://`: separate open from reveal, reject network and automount paths, do no blocking work on the main thread. `AppDelegate.swift:183`
-- [ ] **E2** (M) Compile `UISelfTest` and all environment test hooks out of release builds. `AppDelegate.swift:34`, `UISelfTest.swift:11`
+- [ ] **E2** (M) Compile `UISelfTest` and all environment test hooks out of release builds. `AppDelegate.swift:34`, `UISelfTest.swift:11` Open: `MainWindowController.swift:227,231` still read `HSPACE_UITEST` in release, and `ui-smoke.sh:6` must build with `build-app.sh debug`.
 - [ ] **E3** (M) Isolate test runs from real preferences, bookmarks, stash and clipboard. `MainWindowController.swift:46`, `AppDelegate.swift:140`
 - [ ] **E4** (S) Provide a way to restore the system Reveal setting. `FinderIntegration.swift:69`
 - [ ] **E5** (S) Stop storing the last opened path in defaults. `AppDelegate.swift:206`
