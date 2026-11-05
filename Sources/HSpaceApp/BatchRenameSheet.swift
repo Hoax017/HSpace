@@ -25,9 +25,10 @@ final class BatchRenameSheetController: NSObject, NSTableViewDataSource, NSTable
     private let store: RenameStore?
     private var work: Task<Void, Never>?
 
-    static func present(items: [FileItem], ops: BatchRenameOps, store: RenameStore?, in host: NSWindow) {
+    static func present(items: [FileItem], steps: [RenameStep] = [.replace(ReplaceStep(find: "", replacement: ""))],
+                        ops: BatchRenameOps, store: RenameStore?, in host: NSWindow) {
         guard live == nil, host.attachedSheet == nil else { return }
-        let sheet = BatchRenameSheetController(items: items.map(RenameItem.init), steps: [.replace(ReplaceStep(find: "", replacement: ""))],
+        let sheet = BatchRenameSheetController(items: items.map(RenameItem.init), steps: steps,
                                                ops: ops, store: store, host: host)
         live = sheet
         host.beginSheet(sheet.panel) { _ in }

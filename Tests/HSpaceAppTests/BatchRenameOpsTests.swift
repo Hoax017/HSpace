@@ -1,5 +1,6 @@
 import AppKit
 import BatchRename
+import HSpaceContracts
 import HSpaceKernel
 import HSpaceTestSupport
 import Testing
@@ -147,11 +148,27 @@ import Testing
         let steps: [RenameStep] = [
             .replace(ReplaceStep(find: "a", replacement: "b", isRegex: true, caseSensitive: true, firstMatchOnly: true, scope: .wholeName)),
             .changeCase(.sentence, scope: .fileExtension),
+            .text(.fullWidthToHalfWidth, scope: .wholeName),
             .insert(text: "x", position: .replaceName),
             .sequence(SequenceStep(start: 5, increment: 2, width: 3, position: .prefix, separator: "_", restartPerFolder: true)),
             .date(DateStep(source: .created, format: "yy", position: .suffix, separator: "-")),
         ]
         for step in steps { #expect(RenameStepRow(step: step).step == step) }
+    }
+
+    @Test func everyTextMenuEntryHasAStepAndATitle() {
+        #expect(BatchToolsMenu.textSteps.count == NameCase.allCases.count + TextProcess.allCases.count)
+        for entry in BatchToolsMenu.textSteps {
+            #expect(RenameStepRow(step: entry.step).step == entry.step)
+        }
+    }
+
+    @Test func namesAreCopiedOnePerLine() {
+        let items = ["a.txt", "b c"].map {
+            FileItem(url: URL(fileURLWithPath: "/x/" + $0), name: $0, isDirectory: false, isPackage: false, isSymlink: false,
+                     isHidden: false, size: nil, modified: nil, created: nil, contentTypeID: nil)
+        }
+        #expect(BatchToolsMenu.nameList(items) == "a.txt\nb c")
     }
 
     @Test func aPresetReplacesTheSteps() {

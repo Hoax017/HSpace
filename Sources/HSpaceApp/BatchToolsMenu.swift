@@ -16,6 +16,7 @@ enum BatchToolsMenu {
         let quick = menu.addItem(withTitle: L10n.t("menu.quickRename"),
                                  action: #selector(MainWindowController.showQuickRename(_:)), keyEquivalent: "")
         KeyBindings.apply("quickRename", to: quick)
+        menu.addItem(textMenuItem())
         menu.addItem(withTitle: L10n.t("menu.renameLog"),
                      action: #selector(MainWindowController.showRenameLog(_:)), keyEquivalent: "")
         menu.addItem(.separator())
@@ -31,11 +32,35 @@ enum BatchToolsMenu {
         return item
     }
 
+    /// What each entry of the text submenu does to the name, before the extension
+    static let textSteps: [(titleKey: String, step: RenameStep)] =
+        NameCase.allCases.map { ("rename.case.\($0.rawValue)", .changeCase($0, scope: .stem)) }
+        + TextProcess.allCases.map { ("rename.process.\($0.rawValue)", .text($0, scope: .stem)) }
+
+    private static func textMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: L10n.t("menu.textProcessing"), action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: L10n.t("menu.textProcessing"))
+        for (index, entry) in textSteps.enumerated() {
+            let textItem = menu.addItem(withTitle: L10n.t(entry.titleKey),
+                                        action: #selector(MainWindowController.processSelectedNames(_:)), keyEquivalent: "")
+            textItem.tag = index
+        }
+        menu.addItem(.separator())
+        menu.addItem(withTitle: L10n.t("menu.copyNames"), action: #selector(MainWindowController.copySelectedNames(_:)), keyEquivalent: "")
+        item.submenu = menu
+        return item
+    }
+
+    /// The text copied by Copy Names, one per line
+    static func nameList(_ items: [FileItem]) -> String { items.map(\.name).joined(separator: "\n") }
+
     /// nil = not a batch tool, the caller decides
     static func validate(_ item: NSMenuItem, in window: MainWindowController) -> Bool? {
         switch item.action {
-        case #selector(MainWindowController.showBatchRename(_:)):
+        case #selector(MainWindowController.showBatchRename(_:)), #selector(MainWindowController.processSelectedNames(_:)):
             return window.renamableSelection != nil
+        case #selector(MainWindowController.copySelectedNames(_:)):
+            return !window.grid.activePane.toolSelection.isEmpty
         case #selector(MainWindowController.showQuickRename(_:)):
             return (window.renamableSelection?.count ?? .max) <= QuickRenameSheetController.itemLimit
         case #selector(MainWindowController.showFileHash(_:)):
@@ -96,6 +121,24 @@ extension MainWindowController {
     @objc func showBatchRename(_ sender: Any?) {
         guard let items = renamableSelection, let window else { NSSound.beep(); return }
         BatchRenameSheetController.present(items: items, ops: renameOps, store: renameStore, in: window)
+    }
+
+    /// Opens the rename sheet with this one step: the same preview and the same check, one click away
+    @objc func processSelectedNames(_ sender: Any?) {
+        guard let items = renamableSelection, let window, let tag = (sender as? NSMenuItem)?.tag,
+              let entry = BatchToolsMenu.textSteps[safe: tag] else {
+            NSSound.beep()
+            return
+        }
+        BatchRenameSheetController.present(items: items, steps: [entry.step], ops: renameOps, store: renameStore, in: window)
+    }
+
+    @objc func copySelectedNames(_ sender: Any?) {
+        let items = grid.activePane.toolSelection
+        guard !items.isEmpty else { NSSound.beep(); return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(BatchToolsMenu.nameList(items), forType: .string)
+        Toast.show(L10n.f("toast.namesCopied", items.count), in: window)
     }
 
     @objc func showQuickRename(_ sender: Any?) {

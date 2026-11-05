@@ -393,3 +393,38 @@ private final class Seen: @unchecked Sendable {
         #expect(plan.rows[0].status == .blocked(.emptyName))
     }
 }
+
+@Suite struct TextProcessTests {
+    private func process(_ process: TextProcess, _ name: String, scope: RenameScope = .stem) throws -> String {
+        try newNames([name], [.text(process, scope: scope)])[0]
+    }
+
+    @Test func spaces() throws {
+        #expect(try process(.trimSpaces, "  a b  .txt") == "a b.txt")
+        #expect(try process(.collapseSpaces, "a   b  c.txt") == "a b c.txt")
+        #expect(try process(.spacesToDashes, "a b c.txt") == "a-b-c.txt")
+        #expect(try process(.spacesToUnderscores, "a b.txt") == "a_b.txt")
+        #expect(try process(.separatorsToSpaces, "a_b-c.txt") == "a b c.txt")
+    }
+
+    @Test func characters() throws {
+        #expect(try process(.removeAccents, "Crème brûlée.txt") == "Creme brulee.txt")
+        #expect(try process(.fullWidthToHalfWidth, "ＡＢＣ１２３.txt") == "ABC123.txt")
+    }
+
+    @Test func scopeIsHonoured() throws {
+        #expect(try process(.removeAccents, "é.é", scope: .fileExtension) == "é.e")
+    }
+
+    @Test func aProcessCanCreateACollision() throws {
+        let (dir, urls) = try fixture(["a b.txt", "a  b.txt"])
+        defer { FaultFixture.remove(dir) }
+        let plan = try BatchRenamePlanner.plan(items: urls.map { RenameItem(url: $0) }, steps: [.text(.collapseSpaces, scope: .stem)])
+        #expect(!plan.canApply)
+    }
+
+    @Test func survivesCoding() throws {
+        let step = RenameStep.text(.removeAccents, scope: .wholeName)
+        #expect(try JSONDecoder().decode(RenameStep.self, from: JSONEncoder().encode(step)) == step)
+    }
+}

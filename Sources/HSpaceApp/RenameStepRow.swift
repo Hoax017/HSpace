@@ -6,12 +6,13 @@ import BatchRename
 @MainActor
 final class RenameStepRow: NSView, NSTextFieldDelegate {
     private enum Kind: Int, CaseIterable {
-        case replace, changeCase, insert, sequence, date
+        case replace, changeCase, text, insert, sequence, date
 
         var titleKey: String {
             switch self {
             case .replace: "rename.step.replace"
             case .changeCase: "rename.step.case"
+            case .text: "rename.step.text"
             case .insert: "rename.step.insert"
             case .sequence: "rename.step.sequence"
             case .date: "rename.step.date"
@@ -23,6 +24,7 @@ final class RenameStepRow: NSView, NSTextFieldDelegate {
     private static let positions = RenamePosition.allCases
     private static let cases = NameCase.allCases
     private static let dateSources = DateSource.allCases
+    private static let processes = TextProcess.allCases
 
     var onChange: (() -> Void)?
     var onRemove: ((RenameStepRow) -> Void)?
@@ -41,6 +43,9 @@ final class RenameStepRow: NSView, NSTextFieldDelegate {
     private lazy var casePopup = ToolUI.popup(Self.cases.map { L10n.t("rename.case.\($0.rawValue)") }, label: L10n.t("rename.step.case"),
                                               target: self, action: #selector(changed))
     private lazy var caseScope = scopePopup()
+    private lazy var processPopup = ToolUI.popup(Self.processes.map { L10n.t("rename.process.\($0.rawValue)") }, label: L10n.t("rename.step.text"),
+                                                 target: self, action: #selector(changed))
+    private lazy var processScope = scopePopup()
     private lazy var insertText = ToolUI.field(placeholder: L10n.t("rename.text"), delegate: self)
     private lazy var insertPosition = positionPopup()
     private lazy var start = ToolUI.field("1", placeholder: L10n.t("rename.start"), delegate: self)
@@ -102,6 +107,7 @@ final class RenameStepRow: NSView, NSTextFieldDelegate {
         switch kind {
         case .replace: fields = [find, replacement, scope, regex, matchCase, firstOnly]
         case .changeCase: fields = [casePopup, caseScope]
+        case .text: fields = [processPopup, processScope]
         case .insert: fields = [insertText, insertPosition]
         case .sequence: fields = [start, increment, width, sequenceSeparator, sequencePosition, perFolder]
         case .date: fields = [dateSource, dateFormat, dateSeparator, datePosition]
@@ -122,6 +128,8 @@ final class RenameStepRow: NSView, NSTextFieldDelegate {
                                         scope: Self.scopes[scope.indexOfSelectedItem]))
         case .changeCase:
             return .changeCase(Self.cases[casePopup.indexOfSelectedItem], scope: Self.scopes[caseScope.indexOfSelectedItem])
+        case .text:
+            return .text(Self.processes[processPopup.indexOfSelectedItem], scope: Self.scopes[processScope.indexOfSelectedItem])
         case .insert:
             return .insert(text: insertText.stringValue, position: Self.positions[insertPosition.indexOfSelectedItem])
         case .sequence:
@@ -150,6 +158,10 @@ final class RenameStepRow: NSView, NSTextFieldDelegate {
             kindPopup.selectItem(at: Kind.changeCase.rawValue)
             casePopup.selectItem(at: Self.cases.firstIndex(of: nameCase) ?? 0)
             caseScope.selectItem(at: Self.scopes.firstIndex(of: nameScope) ?? 0)
+        case .text(let process, let nameScope):
+            kindPopup.selectItem(at: Kind.text.rawValue)
+            processPopup.selectItem(at: Self.processes.firstIndex(of: process) ?? 0)
+            processScope.selectItem(at: Self.scopes.firstIndex(of: nameScope) ?? 0)
         case .insert(let text, let position):
             kindPopup.selectItem(at: Kind.insert.rawValue)
             insertText.stringValue = text

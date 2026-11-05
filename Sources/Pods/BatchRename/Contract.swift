@@ -37,6 +37,11 @@ public enum DateSource: String, Sendable, Hashable, Codable, CaseIterable {
     case modified, created, now
 }
 
+/// One-click clean-ups of name text
+public enum TextProcess: String, Sendable, Hashable, Codable, CaseIterable {
+    case trimSpaces, collapseSpaces, removeAccents, spacesToDashes, spacesToUnderscores, separatorsToSpaces, fullWidthToHalfWidth
+}
+
 public struct ReplaceStep: Sendable, Hashable, Codable {
     public var find: String
     public var replacement: String
@@ -87,6 +92,7 @@ public struct DateStep: Sendable, Hashable, Codable {
 public enum RenameStep: Sendable, Hashable, Codable {
     case replace(ReplaceStep)
     case changeCase(NameCase, scope: RenameScope)
+    case text(TextProcess, scope: RenameScope)
     case insert(text: String, position: RenamePosition)
     case sequence(SequenceStep)
     case date(DateStep)

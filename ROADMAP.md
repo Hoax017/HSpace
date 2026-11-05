@@ -198,7 +198,7 @@ New pods `BatchRename`, `FileHash`, `ImageConvert`.
 - [x] **L13** (M) File hash: MD5, SHA-1, SHA-256, compare, cancel
 - [x] **L14** (M) Image conversion and resize. Vision-based actions stay a later option
 - [x] **L15** (M) Match and select by pattern
-- [ ] **L16** (S) Text processing of selected names
+- [x] **L16** (S) Text processing of selected names
 - [ ] **L17** (S) Merge and flatten folders, depends on A8
 
 ### Lane 3: Viewing
@@ -379,6 +379,9 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 
 - [ ] Select by Pattern with `*.jpg; *.png` in list, icon and column views: the count is live, and the status bar shows the new selection
 - [ ] Add to and remove from a selection with the same sheet; a bad regular expression is explained in place
+
+- [ ] Batch Tools > Text Processing > Remove accents: the rename sheet opens with the preview ready; Rename, then ⌘Z restores
+- [ ] Copy Names on several items, paste into a text editor: one name per line
 
 ### Overall feel
 

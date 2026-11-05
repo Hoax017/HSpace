@@ -498,3 +498,14 @@
 "pattern.mode.add" = "Add to selection";
 "pattern.mode.remove" = "Remove from selection";
 "pattern.invert" = "Pick what does not match";
+"menu.textProcessing" = "Text Processing";
+"menu.copyNames" = "Copy Names";
+"toast.namesCopied" = "Copied %d names";
+"rename.step.text" = "Clean Up Text";
+"rename.process.trimSpaces" = "Trim spaces";
+"rename.process.collapseSpaces" = "Collapse repeated spaces";
+"rename.process.removeAccents" = "Remove accents";
+"rename.process.spacesToDashes" = "Spaces to dashes";
+"rename.process.spacesToUnderscores" = "Spaces to underscores";
+"rename.process.separatorsToSpaces" = "Dashes and underscores to spaces";
+"rename.process.fullWidthToHalfWidth" = "Full-width to half-width";

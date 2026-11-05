@@ -38,6 +38,7 @@ struct NamePipeline {
         case replace(ReplaceRule)
         case passThrough
         case changeCase(NameCase, RenameScope)
+        case text(TextProcess, RenameScope)
         case insert(String, RenamePosition)
         case sequence(SequenceStep)
         case date(DateStep, DateFormatter)
@@ -55,6 +56,8 @@ struct NamePipeline {
                 return .replace(try Self.rule(for: replace))
             case .changeCase(let nameCase, let scope):
                 return .changeCase(nameCase, scope)
+            case .text(let process, let scope):
+                return .text(process, scope)
             case .insert(let text, let position):
                 return .insert(text, position)
             case .sequence(let sequence):
@@ -100,6 +103,8 @@ struct NamePipeline {
                 Self.edit(&parts, scope: rule.step.scope, splits: splits) { rule($0) }
             case .changeCase(let nameCase, let scope):
                 Self.edit(&parts, scope: scope, splits: splits) { Self.convert($0, to: nameCase) }
+            case .text(let process, let scope):
+                Self.edit(&parts, scope: scope, splits: splits) { Self.apply(process, to: $0) }
             case .insert(let text, let position):
                 Self.place(text, separator: "", position, in: &parts)
             case .sequence(let step):
@@ -147,6 +152,26 @@ struct NamePipeline {
         case .sentence:
             guard let first = text.first else { return text }
             return first.uppercased() + text.dropFirst().lowercased()
+        }
+    }
+
+    private static func apply(_ process: TextProcess, to text: String) -> String {
+        switch process {
+        case .trimSpaces:
+            return text.trimmingCharacters(in: .whitespaces)
+        case .collapseSpaces:
+            return text.split(separator: " ", omittingEmptySubsequences: false)
+                .filter { !$0.isEmpty }.joined(separator: " ")
+        case .removeAccents:
+            return text.folding(options: .diacriticInsensitive, locale: Locale(identifier: "en_US_POSIX"))
+        case .spacesToDashes:
+            return text.replacingOccurrences(of: " ", with: "-")
+        case .spacesToUnderscores:
+            return text.replacingOccurrences(of: " ", with: "_")
+        case .separatorsToSpaces:
+            return text.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ")
+        case .fullWidthToHalfWidth:
+            return text.applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? text
         }
     }
 
