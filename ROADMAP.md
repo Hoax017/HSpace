@@ -105,7 +105,7 @@ Owns `Sources/Pods/ArchiveEngine`.
 - [x] **B2** (S) Pass `--` before file names so a name starting with `-` is not read as an option; check zip `-TT` exposure. `InternalArchive.swift:59,63`
 - [x] **B3** (S) Read process pipes while running to avoid a hang on large output. `InternalProcess.swift:35,71`
 - [x] **B4** (M) Stop putting passwords on the command line, and stop accepting a password for tar.gz. `InternalArchive.swift:58,62,141`
-- [ ] **B5** (S) Handle selections from several folders. `InternalArchive.swift:24`
+- [x] **B5** (S) Handle selections from several folders. `InternalArchive.swift:24`
 
 ### Track C: Trash and recovery
 

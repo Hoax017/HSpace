@@ -412,6 +412,50 @@ import HSpaceTestSupport
         #expect(receipt.createdURLs.map(\.lastPathComponent) == ["a.zip"])
     }
 
+    // MARK: B5 a selection can span several folders
+
+    static func compress(_ sources: [URL], format: String, into dir: URL) async throws -> URL {
+        let receipt = try await ArchiveEngineNode().execute(
+            OperationSpec(kind: .compress, sources: sources, destination: dir, newName: "bundle",
+                          archiveOptions: ArchiveOptions(format: format)),
+            context: Arbiter(answer: nil).context)
+        return try #require(receipt.createdURLs.first)
+    }
+
+    @Test(arguments: ["zip", "tar.gz"])
+    func selectionFromTwoFoldersKeepsEachItem(format: String) async throws {
+        let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work); FaultFixture.remove(out) }
+        let first = work.appendingPathComponent("one/a.txt")
+        let second = work.appendingPathComponent("two/b.txt")
+        try FaultFixture.write(Data("a".utf8), to: first)
+        try FaultFixture.write(Data("b".utf8), to: second)
+        // Not selected, but has the name of a selected item in the folder of the first one.
+        try FaultFixture.write(Data("decoy".utf8), to: work.appendingPathComponent("one/b.txt"))
+
+        let archive = try await Self.compress([first, second], format: format, into: work)
+        _ = try await Self.extract(archive, into: out, context: Arbiter(answer: nil).context)
+
+        #expect(try Self.entries(out) == ["a.txt", "b.txt"])
+        #expect(try Self.read(out.appendingPathComponent("b.txt")) == "b")
+    }
+
+    @Test(arguments: ["zip", "tar.gz"])
+    func sameNameFromTwoFoldersIsRefused(format: String) async throws {
+        let work = try FaultFixture.tempDir()
+        defer { FaultFixture.remove(work) }
+        let first = work.appendingPathComponent("one/a.txt")
+        let second = work.appendingPathComponent("two/A.TXT")
+        try FaultFixture.write(Data("1".utf8), to: first)
+        try FaultFixture.write(Data("2".utf8), to: second)
+
+        await Self.expectClassified {
+            _ = try await Self.compress([first, second], format: format, into: work)
+        }
+
+        #expect(try Self.entries(work) == ["one", "two"])
+    }
+
     @Test func archiveNameStartingWithADashExtracts() async throws {
         let work = try FaultFixture.tempDir(); let out = try FaultFixture.tempDir()
         defer { FaultFixture.remove(work); FaultFixture.remove(out) }
