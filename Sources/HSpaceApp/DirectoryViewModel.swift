@@ -4,12 +4,14 @@ import DirectoryReader
 import DirectoryWatch
 import FolderSize
 import IconThumb
+import FileMetadata
 
 /// App-wide shared engine instances (constructed once, injected globally): FolderSize's concurrency limit (=2) and cache apply globally,
 /// and IconThumb's LRU thumbnail cache is reused across panes and tabs. Both are Sendable, so static storage is safe.
 enum Engines {
     static let folderSize = FolderSize()
     static let iconThumb = IconThumb()
+    static let metadata = FileMetadata()
 }
 
 /// Glue for one pane's content: subscribes to the DirectoryReader projection, holds the snapshot, and uses generations to block stale overwrites (spec 3.2).
@@ -34,6 +36,46 @@ final class DirectoryViewModel {
     var includeHidden = false { didSet { reload() } }
     var sort = SortSpec() { didSet { reload() } }
 
+    /// Tags of this directory's items. Decoration: read after each snapshot, and a failed read only means no dots.
+    private(set) var metadata: [URL: ItemMetadata] = [:]
+    /// Show only items with one of these tags. Applies to this directory and ends on navigation.
+    private(set) var tagFilter: Set<String> = []
+    /// Sort by tags instead of `sort`. nil = off. `SortSpec` stays as it is, so turning this off gives the old order back.
+    private(set) var tagSortAscending: Bool?
+    private var metadataTask: Task<Void, Never>?
+    private var metadataHandlers: [() -> Void] = []
+
+    /// Subscribe to tag changes that leave the rows as they are, so a rename in progress is not interrupted
+    func addOnMetadataChange(_ handler: @escaping () -> Void) { metadataHandlers.append(handler) }
+
+    /// True when the visible rows depend on the tags, so they must be known before the list shows
+    var tagsShapeList: Bool { !tagFilter.isEmpty || tagSortAscending != nil }
+
+    func setTagFilter(_ names: Set<String>) {
+        guard names != tagFilter else { return }
+        tagFilter = names
+        reload()
+    }
+
+    func setTagSort(ascending: Bool?) {
+        guard ascending != tagSortAscending else { return }
+        tagSortAscending = ascending
+        reload()
+    }
+
+    /// Applies the tag filter and tag sort to a snapshot. Column view passes `applyFilter: false` for parent columns,
+    /// where filtering would hide the folders the user drilled through.
+    func arranged(_ items: [FileItem], metadata: [URL: ItemMetadata], applyFilter: Bool = true) -> [FileItem] {
+        var result = items
+        if applyFilter, !tagFilter.isEmpty {
+            result = result.filter { TagQuery.matches(metadata[$0.url]?.tags ?? [], anyOf: tagFilter) }
+        }
+        if let ascending = tagSortAscending {
+            result = TagQuery.sorted(result, ascending: ascending) { metadata[$0.url]?.tags ?? [] }
+        }
+        return result
+    }
+
     // M9 multicast: one model is consumed by the list and icon grid views (observers live as long as the tab, so no removal is needed)
     private var updateHandlers: [() -> Void] = []
     private var errorHandlers: [(String) -> Void] = []
@@ -55,6 +97,8 @@ final class DirectoryViewModel {
 
     func navigate(to url: URL) {
         directory = url
+        tagFilter = []
+        metadata = [:]
         lastAppliedGeneration = 0  // Reset the generation baseline for the new directory
         startWatching()            // Stop the old stream and open a new one
         reload()
@@ -65,16 +109,20 @@ final class DirectoryViewModel {
         loadTask?.cancel()
         isLoading = true
         let request = ReadRequest(directory: directory, includeHidden: includeHidden, sort: sort)
+        let needsTagsFirst = tagsShapeList
         loadTask = Task { [weak self, reader] in
             do {
                 let snap = try await reader.load(request)
+                let tags = needsTagsFirst ? try await Engines.metadata.read(snap.items.map(\.url)) : nil
                 guard let self, !Task.isCancelled else { return }
                 guard snap.generation > self.lastAppliedGeneration,
                       snap.directory == self.directory else { return }
                 self.lastAppliedGeneration = snap.generation
-                self.items = snap.items
+                if let tags { self.metadata = tags }
+                self.items = self.arranged(snap.items, metadata: self.metadata)
                 self.isLoading = false
                 self.notifyUpdate()
+                if tags == nil { self.refreshMetadata(for: snap.items) }
             } catch is CancellationError {
             } catch {
                 guard let self, !Task.isCancelled else { return }
@@ -83,6 +131,18 @@ final class DirectoryViewModel {
                 self.notifyUpdate()
                 self.notifyError(error.localizedDescription)
             }
+        }
+    }
+
+    /// Reads tags without holding the listing back: the first paint must not wait for one attribute per file on a slow volume.
+    private func refreshMetadata(for items: [FileItem]) {
+        metadataTask?.cancel()
+        let urls = items.map(\.url)
+        metadataTask = Task { [weak self] in
+            guard let fresh = try? await Engines.metadata.read(urls), let self, !Task.isCancelled,
+                  fresh != self.metadata else { return }
+            self.metadata = fresh
+            self.metadataHandlers.forEach { $0() }
         }
     }
 
@@ -146,6 +206,7 @@ final class DirectoryViewModel {
         // Safety-net stream teardown (the normal path, closeTab, calls stopWatching explicitly); both are Sendable, so deinit may touch them
         watchTask?.cancel()
         watcher?.stop()
+        metadataTask?.cancel()
     }
 }
 

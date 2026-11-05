@@ -26,6 +26,8 @@ enum FileContextMenuBuilder {
         add(menu, "menu.paste", #selector(FileListViewController.pasteItems(_:)), target,
             key: "v", mods: .command, symbol: "doc.on.clipboard")
         menu.addItem(.separator())
+        MetadataMenu.addDirectoryEntries(to: menu, target: target)
+        menu.addItem(.separator())
         add(menu, "menu.getInfo", #selector(FileListViewController.getInfo(_:)), target,
             key: "i", mods: .command, symbol: "info.circle")
         add(menu, "menu.openInTerminal", #selector(FileListViewController.openInTerminal(_:)), target,
@@ -65,6 +67,9 @@ enum FileContextMenuBuilder {
             bm.image = NSImage(systemSymbolName: "bookmark", accessibilityDescription: nil)
             menu.addItem(.separator())
         }
+
+        MetadataMenu.addItemEntries(to: menu, selection: selection, target: target)
+        menu.addItem(.separator())
 
         if single != nil {
             add(menu, "menu.rename", #selector(FileListViewController.renameSelected(_:)), target,

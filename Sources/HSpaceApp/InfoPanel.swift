@@ -1,5 +1,6 @@
 import AppKit
 import UniformTypeIdentifiers
+import FileMetadata
 
 /// Get Info panel: icon / name / kind / size / path (selectable) / created and modified dates.
 /// In-place, non-modal info panel; each call opens a separate NSPanel.
@@ -49,13 +50,19 @@ enum InfoPanel {
         name.alignment = .center
         name.lineBreakMode = .byTruncatingMiddle
 
-        let fields = NSStackView(views: [
+        // Display only, so an unreadable item shows no tags and Get Info still opens
+        let tags = (try? Engines.metadata.tags(of: url)) ?? []
+        var rows = [
             row(L10n.t("info.kind"), kindStr),
             row(L10n.t("info.size"), sizeStr),
             row(L10n.t("info.created"), created),
             row(L10n.t("info.modified"), modified),
             row(L10n.t("info.path"), url.path, selectable: true),
-        ])
+        ]
+        if !tags.isEmpty {
+            rows.append(row(L10n.t("info.tags"), tags.map(\.name).joined(separator: ", ")))
+        }
+        let fields = NSStackView(views: rows)
         fields.orientation = .vertical
         fields.alignment = .leading
         fields.spacing = 8

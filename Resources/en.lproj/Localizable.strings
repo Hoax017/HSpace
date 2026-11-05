@@ -367,3 +367,32 @@
 "settings.globalHotkey.unset" = "Not set — click to record";
 "settings.globalHotkey.note" = "Press it in any app: hides HSpace when frontmost, summons it otherwise (no Accessibility permission needed). Remove any old Raycast binding to avoid conflicts.";
 "toast.globalHotkeySet" = "Global hotkey active";
+
+/* File metadata (Lane 1) */
+"column.tags" = "Tags";
+"menu.tags" = "Tags";
+"menu.editTags" = "Edit Tags...";
+"menu.filterByTag" = "Filter by Tag";
+"menu.filterByTag.none" = "No Tags in This Folder";
+"menu.sortByTags" = "Sort by Tags";
+"undo.tags" = "Change Tags";
+"info.tags" = "Tags:";
+"tags.a11y" = "Tags: %@";
+"tags.filter.pill" = "Tagged: %@";
+"tags.picker.titleOne" = "Tags of %@";
+"tags.picker.titleN" = "Tags of %d items";
+"tags.picker.newPlaceholder" = "New tag";
+"tags.picker.color" = "Tag color";
+"tags.picker.add" = "Add";
+"tags.picker.apply" = "Apply";
+"tags.color.0" = "No Color";
+"tags.color.1" = "Gray";
+"tags.color.2" = "Green";
+"tags.color.3" = "Purple";
+"tags.color.4" = "Blue";
+"tags.color.5" = "Yellow";
+"tags.color.6" = "Red";
+"tags.color.7" = "Orange";
+"batch.progress" = "%1$d of %2$d";
+"toast.metadataPartial" = "Changed %1$d, %2$d failed: %3$@";
+"toast.metadataCancelled" = "Cancelled. Nothing was changed";

@@ -1,4 +1,5 @@
 import AppKit
+import FileMetadata
 
 /// Table view that reports user interaction (pane focus coordination: a click requests activation of the owning pane).
 /// Also hosts the context menu hook and the Return key (triggers inline rename).
@@ -243,6 +244,7 @@ final class InlineRenameField: NSTextField, NSTextFieldDelegate {
 final class NameCellView: NSTableCellView {
     private let iconView = NSImageView()
     private let label = NSTextField(labelWithString: "")
+    private let tagDots = TagDotsView()
     private var editor: InlineRenameField?
 
     /// Commit/cancel callbacks (injected by FileListViewController, wired to the .rename submission and FG-6 rollback)
@@ -256,16 +258,20 @@ final class NameCellView: NSTableCellView {
         label.font = .systemFont(ofSize: 12)
         iconView.translatesAutoresizingMaskIntoConstraints = false
         label.translatesAutoresizingMaskIntoConstraints = false
+        tagDots.translatesAutoresizingMaskIntoConstraints = false
         addSubview(iconView)
         addSubview(label)
+        addSubview(tagDots)
         NSLayoutConstraint.activate([
             iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
             iconView.widthAnchor.constraint(equalToConstant: 16),
             iconView.heightAnchor.constraint(equalToConstant: 16),
             label.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            label.trailingAnchor.constraint(equalTo: tagDots.leadingAnchor, constant: -4),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            tagDots.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            tagDots.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         textField = label
         imageView = iconView
@@ -279,6 +285,11 @@ final class NameCellView: NSTableCellView {
         label.stringValue = name
         label.font = .systemFont(ofSize: Formatters.listFontSize)  // Re-read the font size on each configure (takes effect at once on column rebuild)
         label.textColor = dimmed ? .secondaryLabelColor : .labelColor
+    }
+
+    /// Call after `configure`, and on its own when only the tags changed (keeps a rename in progress)
+    func decorate(tags: [FinderTag]) {
+        tagDots.show(tags)
     }
 
     var isEditing: Bool { editor != nil }

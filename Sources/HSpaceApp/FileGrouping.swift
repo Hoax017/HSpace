@@ -85,6 +85,11 @@ enum FileGrouping {
         }
     }
 
+    /// Grouping for a model: a tag sort has its own order, which date groups would break up
+    static func active(_ model: DirectoryViewModel) -> Bool {
+        active(model.sort) && model.tagSortAscending == nil
+    }
+
     /// Items already sorted by `sort` → ordered groups: **group order follows relative recency** (direction-aware, unaffected by foldersFirst);
     /// items keep their relative order inside a group (including folders first). Pure function, black-box testable.
     /// Date descending (newest first) → groups by ascending rank (today first); date ascending → descending rank (today last).

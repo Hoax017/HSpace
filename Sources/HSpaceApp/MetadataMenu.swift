@@ -1,0 +1,164 @@
+import AppKit
+import HSpaceContracts
+import FileMetadata
+
+/// What the metadata menus need from a content view (list, icon or column). Lets the three views share one implementation.
+@MainActor
+protocol MetadataMenuHost: AnyObject {
+    var coordinator: FileOpsCoordinator? { get }
+    var metadataModel: DirectoryViewModel { get }
+    /// Metadata already loaded for these items. Menus must not touch the disk: a slow volume would freeze the click.
+    func metadata(for urls: [URL]) -> [URL: ItemMetadata]
+}
+
+/// Builds the metadata entries of the context menus (the builder itself stays one line per entry).
+@MainActor
+enum MetadataMenu {
+    static func addItemEntries(to menu: NSMenu, selection: [FileItem], target: AnyObject) {
+        guard let host = target as? MetadataMenuHost, let actions = host.coordinator?.metadataActions else { return }
+        let urls = selection.map(\.url)
+        let loaded = host.metadata(for: urls)
+        let lists = urls.map { loaded[$0]?.tags ?? [] }
+
+        let parent = NSMenuItem(title: L10n.t("menu.tags"), action: nil, keyEquivalent: "")
+        parent.image = NSImage(systemSymbolName: "tag", accessibilityDescription: nil)
+        let submenu = NSMenu()
+        for tag in offeredTags(host: host, extra: lists) {
+            let holders = lists.filter { TagQuery.matches($0, anyOf: [tag.name]) }.count
+            let item = NSMenuItem(title: tag.name, action: #selector(MetadataActions.toggleTag(_:)), keyEquivalent: "")
+            item.target = actions
+            item.image = TagPalette.menuImage(tag.color)
+            item.state = holders == 0 ? .off : (holders == lists.count ? .on : .mixed)
+            item.representedObject = MetadataActions.TagToggle(urls: urls, tag: tag, remove: holders == lists.count)
+            submenu.addItem(item)
+        }
+        submenu.addItem(.separator())
+        let edit = NSMenuItem(title: L10n.t("menu.editTags"), action: #selector(MetadataActions.editTagsFromMenu(_:)),
+                              keyEquivalent: "")
+        edit.target = actions
+        edit.representedObject = MetadataActions.EditTarget(items: selection, host: host)
+        submenu.addItem(edit)
+        parent.submenu = submenu
+        menu.addItem(parent)
+    }
+
+    static func addDirectoryEntries(to menu: NSMenu, target: AnyObject) {
+        guard let host = target as? MetadataMenuHost, let actions = host.coordinator?.metadataActions else { return }
+        let model = host.metadataModel
+
+        let parent = NSMenuItem(title: L10n.t("menu.filterByTag"), action: nil, keyEquivalent: "")
+        parent.image = NSImage(systemSymbolName: "line.3.horizontal.decrease.circle", accessibilityDescription: nil)
+        let submenu = NSMenu()
+        for tag in TagQuery.known(in: model.metadata.values.map(\.tags)) {
+            let item = NSMenuItem(title: tag.name, action: #selector(MetadataActions.toggleFilter(_:)), keyEquivalent: "")
+            item.target = actions
+            item.image = TagPalette.menuImage(tag.color)
+            item.state = TagQuery.matches([tag], anyOf: model.tagFilter) ? .on : .off
+            item.representedObject = MetadataActions.FilterChoice(model: model, name: tag.name)
+            submenu.addItem(item)
+        }
+        if submenu.items.isEmpty {
+            let none = NSMenuItem(title: L10n.t("menu.filterByTag.none"), action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            submenu.addItem(none)
+        }
+        parent.submenu = submenu
+        menu.addItem(parent)
+
+        let sort = NSMenuItem(title: L10n.t("menu.sortByTags"), action: #selector(MetadataActions.toggleTagSort(_:)),
+                              keyEquivalent: "")
+        sort.target = actions
+        sort.state = model.tagSortAscending == nil ? .off : .on
+        sort.representedObject = model
+        menu.addItem(sort)
+    }
+
+    /// Finder's seven, then recent tags and those in view
+    static func offeredTags(host: MetadataMenuHost, extra: [[FinderTag]]) -> [FinderTag] {
+        let inView = host.metadataModel.metadata.values.map(\.tags)
+        let others = TagQuery.known(in: inView + extra + [Preferences.recentTags])
+            .filter { tag in !FinderTag.standard.contains { TagQuery.sameName($0.name, tag.name) } }
+        return FinderTag.standard + others
+    }
+}
+
+/// Menu item target. A plain object, because menu items keep their target weakly and need something with @objc methods.
+@MainActor
+final class MetadataActions: NSObject {
+    struct TagToggle {
+        let urls: [URL]
+        let tag: FinderTag
+        let remove: Bool
+    }
+
+    struct EditTarget {
+        let items: [FileItem]
+        let host: MetadataMenuHost
+    }
+
+    struct FilterChoice {
+        let model: DirectoryViewModel
+        let name: String
+    }
+
+    private weak var coordinator: FileOpsCoordinator?
+
+    init(coordinator: FileOpsCoordinator) {
+        self.coordinator = coordinator
+    }
+
+    @objc func toggleTag(_ sender: NSMenuItem) {
+        guard let toggle = sender.representedObject as? TagToggle else { return }
+        let edit: MetadataEdit = toggle.remove
+            ? .tags(add: [], remove: [toggle.tag.name])
+            : .tags(add: [toggle.tag], remove: [])
+        coordinator?.applyMetadata(edit, to: toggle.urls, actionName: L10n.t("undo.tags"))
+    }
+
+    @objc func editTagsFromMenu(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? EditTarget else { return }
+        editTags(of: target.items, host: target.host)
+    }
+
+    /// Opens the picker on the selection. Reads current tags from disk first: the picker edits them, so they must be exact,
+    /// and a selection that cannot be read is reported rather than shown as untagged.
+    func editTags(of items: [FileItem], host: MetadataMenuHost) {
+        guard let coordinator, !items.isEmpty else { NSSound.beep(); return }
+        let window = coordinator.grid?.view.window
+        var lists: [[FinderTag]] = []
+        for item in items {
+            do {
+                lists.append(try Engines.metadata.tags(of: item.url))
+            } catch {
+                Toast.show(error.localizedDescription, in: window)
+                return
+            }
+        }
+        guard let window else { return }
+        let state = TagPickerState(selection: lists, known: MetadataMenu.offeredTags(host: host, extra: []))
+        let title = items.count == 1 ? L10n.f("tags.picker.titleOne", items[0].name)
+                                     : L10n.f("tags.picker.titleN", items.count)
+        let urls = items.map(\.url)
+        TagPickerSheet.present(state: state, title: title, in: window) { [weak self] final in
+            guard let edit = final.edit else { return }
+            Preferences.rememberTags(final.newTags)
+            self?.coordinator?.applyMetadata(edit, to: urls, actionName: L10n.t("undo.tags"))
+        }
+    }
+
+    @objc func toggleFilter(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? FilterChoice else { return }
+        var names = choice.model.tagFilter
+        if let existing = names.first(where: { TagQuery.sameName($0, choice.name) }) {
+            names.remove(existing)
+        } else {
+            names.insert(choice.name)
+        }
+        choice.model.setTagFilter(names)
+    }
+
+    @objc func toggleTagSort(_ sender: NSMenuItem) {
+        guard let model = sender.representedObject as? DirectoryViewModel else { return }
+        model.setTagSort(ascending: model.tagSortAscending == nil ? true : nil)
+    }
+}

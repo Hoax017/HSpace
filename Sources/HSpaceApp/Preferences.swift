@@ -1,4 +1,5 @@
 import Foundation
+import FileMetadata
 
 /// Centralized app-layer preferences (single entry for externalized config, no hard-coding scattered around; the pod layer must not use this type and gets values by constructor injection).
 /// All keys are registered here and the settings window renders from this; a new configurable item = one more static property.
@@ -54,6 +55,24 @@ enum Preferences {
     static var searchSmartSort: Bool {
         get { d.object(forKey: "searchSmartSort") as? Bool ?? true }
         set { d.set(newValue, forKey: "searchSmartSort") }
+    }
+
+    /// Tags the user created here, newest first. macOS offers no way to read Finder's tag list,
+    /// so without this a custom tag would only be on offer in folders that already use it.
+    static var recentTags: [FinderTag] {
+        get {
+            guard let data = d.data(forKey: "recentTags"),
+                  let tags = try? JSONDecoder().decode([FinderTag].self, from: data) else { return [] }
+            return tags
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) { d.set(data, forKey: "recentTags") }
+        }
+    }
+
+    static func rememberTags(_ tags: [FinderTag]) {
+        let kept = recentTags.filter { old in !tags.contains { TagQuery.sameName($0.name, old.name) } }
+        recentTags = Array((tags + kept).prefix(32))
     }
 
     /// Sidebar group order (QSpace semantics, user request: bookmarks can be dragged to the top).

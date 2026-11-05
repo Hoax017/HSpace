@@ -3,6 +3,7 @@ import QuickLookUI
 import UniformTypeIdentifiers
 import HSpaceContracts
 import IconThumb
+import FileMetadata
 
 /// Icon grid collection view that reports interaction: a click requests activation of the owning pane; context menu hook;
 /// space for Quick Look, double click to open; Return doesn't support rename (an honest beep, no pretending)
@@ -72,6 +73,7 @@ final class FileIconItem: NSCollectionViewItem {
     private let backdrop = NSView()
     private let icon = NSImageView()
     private let label = NSTextField(wrappingLabelWithString: "")
+    private let tagDots = TagDotsView()
 
     override func loadView() {
         backdrop.wantsLayer = true
@@ -93,7 +95,11 @@ final class FileIconItem: NSCollectionViewItem {
         root.addSubview(backdrop)
         root.addSubview(icon)
         root.addSubview(label)
+        tagDots.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(tagDots)
         NSLayoutConstraint.activate([
+            tagDots.topAnchor.constraint(equalTo: root.topAnchor, constant: 4),
+            tagDots.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -4),
             backdrop.topAnchor.constraint(equalTo: root.topAnchor, constant: 2),
             backdrop.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -2),
             backdrop.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 2),
@@ -130,6 +136,10 @@ final class FileIconItem: NSCollectionViewItem {
         label.textColor = dimmed ? .secondaryLabelColor : .labelColor
     }
 
+    func decorate(tags: [FinderTag]) {
+        tagDots.show(tags)
+    }
+
     /// Thumbnail arrived: swap the image without rebuilding (keeps selection state)
     func setIcon(_ image: NSImage) {
         icon.image = image
@@ -140,6 +150,7 @@ final class FileIconItem: NSCollectionViewItem {
         icon.image = nil
         icon.alphaValue = 1.0
         label.stringValue = ""
+        tagDots.show([])
     }
 }
 
@@ -203,6 +214,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         self.model = model
         super.init(nibName: nil, bundle: nil)
         model.addOnUpdate { [weak self] in self?.applySnapshot() }
+        model.addOnMetadataChange { [weak self] in self?.showMetadataChange() }
         model.addOnError { [weak self] message in self?.showEmptyState(message) }
     }
 
@@ -363,6 +375,15 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
         emptyLabel.isHidden = false
     }
 
+    /// Tags arrived or changed: visible items update in place, and items scrolled in later read them when built
+    private func showMetadataChange() {
+        for ip in collectionView.indexPathsForVisibleItems() {
+            guard let cell = collectionView.item(at: ip) as? FileIconItem,
+                  let file = fileItem(at: ip) else { continue }
+            cell.decorate(tags: model.metadata[file.url]?.tags ?? [])
+        }
+    }
+
     /// Redraws visible items only (cut dimming changed; no rebuild or disk re-read needed)
     func redraw() {
         for ip in collectionView.indexPathsForVisibleItems() {
@@ -371,12 +392,13 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
             let cut = coordinator?.isCut(file.url) ?? false
             cell.configure(icon: thumbOverlay[file.url] ?? Formatters.fullIcon(for: file),
                            name: file.name, dimmed: file.isHidden || cut)
+            cell.decorate(tags: model.metadata[file.url]?.tags ?? [])
         }
     }
 
     // MARK: Grouping conversions (M26 v2): the single source of truth for section ↔ model index mapping
 
-    private var groupingActive: Bool { FileGrouping.active(model.sort) }
+    private var groupingActive: Bool { FileGrouping.active(model) }
 
     /// Rebuilds the section sequence from the current model.items (already sorted by the reader) + refreshes the filter pill.
     private func rebuildSections() {
@@ -629,6 +651,7 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     @objc func duplicateItems(_ sender: Any?) { coordinator?.duplicate(selectedURLs) }
     @objc func moveToTrash(_ sender: Any?) { coordinator?.moveToTrash(selectedURLs) }
     @objc func newFolderHere(_ sender: Any?) { coordinator?.newFolder(in: model.directory, revealIn: self) }
+    @objc func editTags(_ sender: Any?) { coordinator?.metadataActions.editTags(of: selectedItems, host: self) }
     @objc func newFileHere(_ sender: Any?) { coordinator?.newFile(in: model.directory, revealIn: self) }
     @objc func copyToOtherPane(_ sender: Any?) { coordinator?.copyToOtherPane(selectedURLs) }
     @objc func moveToOtherPane(_ sender: Any?) { coordinator?.moveToOtherPane(selectedURLs) }
@@ -696,6 +719,11 @@ final class FileIconGridViewController: NSViewController, FileRevealTarget {
     }
 }
 
+extension FileIconGridViewController: MetadataMenuHost {
+    var metadataModel: DirectoryViewModel { model }
+    func metadata(for urls: [URL]) -> [URL: ItemMetadata] { model.metadata }
+}
+
 // MARK: - Menu validation (enable/disable by selection state; rename unimplemented → not responding grays it out automatically)
 
 extension FileIconGridViewController: @preconcurrency NSMenuItemValidation {
@@ -748,6 +776,7 @@ extension FileIconGridViewController: NSCollectionViewDataSource, NSCollectionVi
         // Fast path shows the type icon first; a delivered content thumbnail is used directly (upgrade path in requestThumbnail)
         cell.configure(icon: thumbOverlay[file.url] ?? Formatters.fullIcon(for: file),
                        name: file.name, dimmed: file.isHidden || cut)
+        cell.decorate(tags: model.metadata[file.url]?.tags ?? [])
         return item
     }
 

@@ -181,7 +181,7 @@ Lanes run in parallel. Depends on Gate 0.
 
 New pod `FileMetadata`.
 
-- [ ] **L01** (M) Finder tags: read, set, filter, sort and a tag picker
+- [x] **L01** (M) Finder tags: read, set, filter, sort and a tag picker
 - [ ] **L02** (S) Finder comments
 - [ ] **L03** (M) File colours and rules
 - [ ] **L04** (M) Custom folder icons and emoji, folder styles
@@ -352,6 +352,17 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Enable Reveal takeover, then restore Finder in Settings
 - [ ] Corrupt `trash-ledger.json` or `stash.json` in a copy of the app data: a warning names the kept-aside file, and the Full Disk Access prompt does not overlap it
 - [ ] Make a restore of default bookmarks fail (read-only app data): the error shows, not "0 restored"
+
+### File metadata
+
+- [ ] Tag a file here, then open Get Info in Finder: same tags and colours. Tag one in Finder: HSpace shows it after a moment
+- [ ] Remove the last tag here: Finder shows none, not a leftover colour
+- [ ] Tag dots look right in list, icon and column views, in light and dark mode, and on a selected row
+- [ ] Edit Tags sheet with several items selected: a tag on some items shows a dash, and leaving it alone changes nothing. Tab and Return work, and VoiceOver reads each tag
+- [ ] Filter by Tag and Sort by Tags from the empty-space menu in all three views. The "Tagged" pill clears the filter in one click
+- [ ] Tags column in the list: shows in the header menu and sorts on click
+- [ ] Undo and Redo a tag change with ⌘Z and ⇧⌘Z
+- [ ] Tag a few thousand items: the progress sheet appears, and Cancel leaves them all unchanged
 
 ### Needs a decision
 

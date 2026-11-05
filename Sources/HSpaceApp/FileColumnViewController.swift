@@ -3,6 +3,7 @@ import QuickLookUI
 import HSpaceContracts
 import DirectoryReader
 import IconThumb
+import FileMetadata
 
 /// Miller column view (M9 ⌘3, QSpace/Finder style): a horizontally scrolling NSStackView of columns,
 /// each column = a single-column NSTableView (icon + name, row height 22, column width fixed at 220 in v1).
@@ -404,6 +405,7 @@ final class FileColumnViewController: NSViewController {
     @objc func duplicateItems(_ sender: Any?) { coordinator?.duplicate(selectedURLs) }
     @objc func moveToTrash(_ sender: Any?) { coordinator?.moveToTrash(selectedURLs) }
     @objc func newFolderHere(_ sender: Any?) { coordinator?.newFolder(in: currentDirectory, revealIn: nil) }
+    @objc func editTags(_ sender: Any?) { coordinator?.metadataActions.editTags(of: selectedItems, host: self) }
     @objc func newFileHere(_ sender: Any?) { coordinator?.newFile(in: currentDirectory, revealIn: nil) }
     @objc func copyToOtherPane(_ sender: Any?) { coordinator?.copyToOtherPane(selectedURLs) }
     @objc func moveToOtherPane(_ sender: Any?) { coordinator?.moveToOtherPane(selectedURLs) }
@@ -477,6 +479,14 @@ final class FileColumnViewController: NSViewController {
     override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
         panel.dataSource = nil
         panel.delegate = nil
+    }
+}
+
+extension FileColumnViewController: MetadataMenuHost {
+    var metadataModel: DirectoryViewModel { model }
+
+    func metadata(for urls: [URL]) -> [URL: ItemMetadata] {
+        columns.first { $0.items.contains { urls.contains($0.url) } }?.metadata ?? [:]
     }
 }
 
@@ -559,6 +569,9 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
     /// Column-private reader: columns are temporary views, so a local instance (the shared model stays untouched)
     private let reader = DirectoryReader()
     private var loadTask: Task<Void, Never>?
+    private var metadataTask: Task<Void, Never>?
+    /// Tags of this column's items. Columns load themselves, so they read their own.
+    private(set) var metadata: [URL: ItemMetadata] = [:]
 
     /// Guards against programmatic selection loops (chain row highlight/selection restore must not trigger further drill-down)
     private var isProgrammaticSelection = false
@@ -649,26 +662,53 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
         let request = ReadRequest(directory: directory,
                                   includeHidden: owner?.model.includeHidden ?? false,
                                   sort: owner?.model.sort ?? SortSpec())
+        let needsTagsFirst = owner?.model.tagsShapeList ?? false
         loadTask = Task { [weak self, reader] in
             let snap = try? await reader.load(request)
+            let loaded = snap?.items ?? []
+            // A filter or tag sort cannot show anything before the tags are known
+            let tags = needsTagsFirst ? try? await Engines.metadata.read(loaded.map(\.url)) : nil
             guard let self, !Task.isCancelled else { return }
             self.isLoading = false
             // Keep the existing selection before refreshing (re-reads after FSEvents/operations don't lose it)
             if self.desiredSelection.isEmpty {
                 self.desiredSelection = Set(self.selectedItems.map(\.url))
             }
-            self.items = snap?.items ?? []   // Read failed → empty column in place (no alert)
+            if let tags { self.metadata = tags }
+            // Read failed → empty column in place (no alert)
+            self.items = self.owner?.model.arranged(
+                loaded, metadata: self.metadata,
+                applyFilter: self.directory.path == self.owner?.model.directory.path) ?? loaded
             self.isProgrammaticSelection = true
             self.tableView.reloadData()
             self.isProgrammaticSelection = false
             self.applyDesiredSelectionIfLoaded()
             self.owner?.columnContentChanged(self)
+            if tags == nil { self.refreshMetadata(for: loaded) }
+        }
+    }
+
+    /// Reads tags after the column shows, then updates the visible rows in place
+    private func refreshMetadata(for items: [FileItem]) {
+        metadataTask?.cancel()
+        let urls = items.map(\.url)
+        metadataTask = Task { [weak self] in
+            guard let fresh = try? await Engines.metadata.read(urls), let self, !Task.isCancelled,
+                  fresh != self.metadata else { return }
+            self.metadata = fresh
+            let range = self.tableView.rows(in: self.tableView.visibleRect)
+            for row in range.location..<(range.location + range.length) where self.items.indices.contains(row) {
+                let cell = self.tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? NameCellView
+                cell?.decorate(tags: fresh[self.items[row].url]?.tags ?? [])
+            }
         }
     }
 
     func cancelLoad() {
         loadTask?.cancel()
         loadTask = nil
+        metadataTask?.cancel()
+        metadataTask = nil
         isLoading = false
     }
 
@@ -726,6 +766,7 @@ final class ColumnUnit: NSView, NSTableViewDataSource, NSTableViewDelegate {
         let cut = owner?.isCut(item.url) ?? false
         cell.configure(icon: Formatters.icon(for: item), name: item.name,
                        dimmed: item.isHidden || cut)
+        cell.decorate(tags: metadata[item.url]?.tags ?? [])
         return cell
     }
 

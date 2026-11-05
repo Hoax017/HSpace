@@ -5,6 +5,7 @@ import HSpaceContracts
 import ArchiveEngine
 import FolderSize
 import IconThumb
+import FileMetadata
 
 /// List view (the performance core): view-based NSTableView, fixed row height, row reuse, sortable columns.
 /// Read-only consumer of DirectoryViewModel (BG-1: no write-type file APIs in this layer);
@@ -79,6 +80,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         super.init(nibName: nil, bundle: nil)
         model.addOnUpdate { [weak self] in self?.applySnapshot() }
         model.addOnError { [weak self] message in self?.showEmptyState(message) }
+        model.addOnMetadataChange { [weak self] in self?.showMetadataChange() }
     }
 
     @available(*, unavailable)
@@ -186,6 +188,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         ("added", "column.added", 128, 88, false, true),
         ("size", "column.size", 68, 52, true, true),
         ("kind", "column.kind", 92, 64, false, true),
+        ("tags", "column.tags", 92, 64, false, true),
     ]
 
     private func addColumn(id: String, title: String, width: CGFloat, min: CGFloat,
@@ -273,6 +276,26 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         emptyLabel.isHidden = false
     }
 
+    /// Tags arrived or changed: updates visible rows in place, never the name editor. Rows scrolled in later read them in viewFor.
+    private func showMetadataChange() {
+        let range = tableView.rows(in: tableView.visibleRect)
+        var rows = IndexSet()
+        for row in range.location..<(range.location + range.length) {
+            guard let item = item(atRow: row) else { continue }
+            rows.insert(row)
+            let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? NameCellView
+            cell?.decorate(tags: model.metadata[item.url]?.tags ?? [])
+        }
+        var columns = IndexSet()
+        for (index, column) in tableView.tableColumns.enumerated()
+        where Self.metadataColumnIDs.contains(column.identifier.rawValue) { columns.insert(index) }
+        if !rows.isEmpty, !columns.isEmpty { tableView.reloadData(forRowIndexes: rows, columnIndexes: columns) }
+    }
+
+    private static let metadataColumnIDs: Set<String> = ["tags"]
+    /// The Tags column sorts through the model's tag sort, because tags are not part of `SortSpec`
+    private static let tagSortKey = "tags"
+
     /// Redraw only (called by the coordinator when cut dimming changes)
     /// Redraw only (cut dimming changed).
     /// **Must not use reloadData()**: it clears the selection, and in a "redraw" the rows haven't changed, so neither should the selection
@@ -287,7 +310,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
 
     /// Grouping is active when the preference is on and the current sort key is date-like
     private var groupingActive: Bool {
-        FileGrouping.active(model.sort)
+        FileGrouping.active(model)
     }
 
     static func isDateKey(_ k: SortSpec.Key) -> Bool { FileGrouping.isDateKey(k) }
@@ -701,6 +724,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
     @objc func newFolderHere(_ sender: Any?) { coordinator?.newFolder(in: currentDirectory, revealIn: self) }
     @objc func newFileHere(_ sender: Any?) { coordinator?.newFile(in: currentDirectory, revealIn: self) }
     @objc func renameSelected(_ sender: Any?) { beginRenameSelected() }
+    @objc func editTags(_ sender: Any?) { coordinator?.metadataActions.editTags(of: selectedItems, host: self) }
     @objc func copyToOtherPane(_ sender: Any?) { coordinator?.copyToOtherPane(selectedURLs) }
     @objc func moveToOtherPane(_ sender: Any?) { coordinator?.moveToOtherPane(selectedURLs) }
 
@@ -796,6 +820,11 @@ final class FileListViewController: NSViewController, FileRevealTarget {
     }
 }
 
+extension FileListViewController: MetadataMenuHost {
+    var metadataModel: DirectoryViewModel { model }
+    func metadata(for urls: [URL]) -> [URL: ItemMetadata] { model.metadata }
+}
+
 // MARK: - Menu validation (enable/disable by selection state)
 
 extension FileListViewController: @preconcurrency NSMenuItemValidation {
@@ -816,7 +845,7 @@ extension FileListViewController: @preconcurrency NSMenuItemValidation {
              #selector(duplicateItems(_:)), #selector(moveToTrash(_:)), #selector(openSelected(_:)),
              #selector(copyToOtherPane(_:)), #selector(moveToOtherPane(_:)),
              #selector(copy(_:)), #selector(cut(_:)), #selector(airdropSelected(_:)),
-             #selector(compressItems(_:)):
+             #selector(compressItems(_:)), #selector(editTags(_:)):
             return hasSelection
         case #selector(extractItems(_:)), #selector(extractItemsTo(_:)):
             return !selectedArchiveURLs.isEmpty
@@ -914,6 +943,7 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
             // Fast path shows the type icon first; a delivered content thumbnail is used directly (upgrade path in requestThumbnail)
             cell.configure(icon: thumbOverlay[item.url] ?? Formatters.icon(for: item),
                            name: item.name, dimmed: item.isHidden || cut)
+            cell.decorate(tags: model.metadata[item.url]?.tags ?? [])
             return cell
         }
 
@@ -936,6 +966,8 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
             }
         case "kind":
             cell.configure(Formatters.kind(forTypeID: item.contentTypeID, isDirectory: item.isDirectory), alignment: .left)
+        case "tags":
+            cell.configure((model.metadata[item.url]?.tags ?? []).map(\.name).joined(separator: ", "), alignment: .left)
         default:
             cell.configure("", alignment: .left)
         }
@@ -943,8 +975,13 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
-        guard let d = tableView.sortDescriptors.first, let key = d.key,
-              let sortKey = SortSpec.Key(rawValue: key) else { return }
+        guard let d = tableView.sortDescriptors.first, let key = d.key else { return }
+        if key == Self.tagSortKey {
+            model.setTagSort(ascending: d.ascending)
+            return
+        }
+        guard let sortKey = SortSpec.Key(rawValue: key) else { return }
+        model.setTagSort(ascending: nil)
         model.sort = SortSpec(key: sortKey, ascending: d.ascending, foldersFirst: model.sort.foldersFirst)
         // I-50: persist on sort change (otherwise sorting saves only on a clean exit, and an unclean exit restarts with the old sort); same as I-47 persist-on-navigate
         (NSApp.delegate as? AppDelegate)?.noteStateChanged()
@@ -956,7 +993,8 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
     /// while the column header arrow stayed on the default "Name", and users saw "the sort state was lost".
     /// Column ids map one-to-one to SortSpec.Key.rawValue (addColumn builds sortDescriptorPrototype from the same id).
     private func syncSortIndicatorFromModel() {
-        let wanted = NSSortDescriptor(key: model.sort.key.rawValue, ascending: model.sort.ascending)
+        let wanted = model.tagSortAscending.map { NSSortDescriptor(key: Self.tagSortKey, ascending: $0) }
+            ?? NSSortDescriptor(key: model.sort.key.rawValue, ascending: model.sort.ascending)
         let current = tableView.sortDescriptors.first
         // Skip the assignment if already consistent: it calls back sortDescriptorsDidChange and triggers a needless save
         guard current?.key != wanted.key || current?.ascending != wanted.ascending else { return }

@@ -51,6 +51,9 @@ enum MainMenu {
         KeyBindings.apply("getInfo", to: infoItem)
         fileMenu.addItem(withTitle: L10n.t("menu.rename"),
                          action: #selector(FileListViewController.renameSelected(_:)), keyEquivalent: "")
+        let tagsItem = fileMenu.addItem(withTitle: L10n.t("menu.editTags"),
+                                        action: #selector(FileListViewController.editTags(_:)), keyEquivalent: "")
+        KeyBindings.apply("editTags", to: tagsItem)
         let dupItem = fileMenu.addItem(withTitle: L10n.t("menu.duplicate"),
                          action: #selector(FileListViewController.duplicateItems(_:)), keyEquivalent: "")
         KeyBindings.apply("duplicate", to: dupItem)

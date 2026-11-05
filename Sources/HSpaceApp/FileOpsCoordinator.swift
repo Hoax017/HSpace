@@ -45,6 +45,9 @@ final class FileOpsCoordinator {
     /// Put Back ledger (AppDelegate injects the same instance; nil = no bookkeeping → Put Back is always unavailable)
     var trashLedger: TrashLedger?
 
+    /// Target of the tag menus (menu items hold their target weakly, so it lives here)
+    private(set) lazy var metadataActions = MetadataActions(coordinator: self)
+
     /// Records one access (file opened/folder entered) so Spotlight-style search can rank by usage. Fire-and-forget async commit to the actor.
     func recordAccess(_ url: URL) {
         guard let store = frecencyStore else { return }
@@ -520,7 +523,7 @@ final class FileOpsCoordinator {
     }
 
     /// Re-reads each visible pane's active list after an operation (real FS projection refresh)
-    private func reloadLists() {
+    func reloadLists() {
         grid?.visiblePanes.forEach { $0.reloadActiveList() }
     }
 

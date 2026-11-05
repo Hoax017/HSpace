@@ -58,6 +58,7 @@ final class PaneViewController: NSViewController {
     /// "Empty" button: **shown only when the pane displays a Trash root**, like the one in native Finder.
     /// In the address bar's right end rather than the context menu; user report: hidden in the context menu, it might as well not exist.
     private let emptyTrashButton = NSButton()
+    private let tagFilterPill = FilterPillButton()
     /// Button width slot (zero when hidden, so the breadcrumbs reclaim the width)
     private var emptyTrashWidth: NSLayoutConstraint!
     /// Breadcrumb trailing edge (leaves a 4pt gap while the button shows)
@@ -176,9 +177,13 @@ final class PaneViewController: NSViewController {
         let separator = NSBox()
         separator.boxType = .separator
 
+        tagFilterPill.isHidden = true
+        tagFilterPill.target = self
+        tagFilterPill.action = #selector(clearTagFilter(_:))
+
         let root = NSView()
         root.wantsLayer = true
-        for sub in [addressArea, separator, contentContainer, statusBar] {
+        for sub in [addressArea, separator, contentContainer, statusBar, tagFilterPill] {
             sub.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(sub)
         }
@@ -199,6 +204,9 @@ final class PaneViewController: NSViewController {
             statusBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             statusBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             statusBar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            tagFilterPill.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor, constant: -4),
+            tagFilterPill.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor, constant: -8),
+            tagFilterPill.heightAnchor.constraint(equalToConstant: 20),
         ])
         view = root
         mountActiveTab()
@@ -225,6 +233,10 @@ final class PaneViewController: NSViewController {
         let defaultSortKey = SortSpec.Key(rawValue: Preferences.defaultSortKey) ?? .name
         model.sort = SortSpec(key: defaultSortKey, ascending: Preferences.defaultSortAscending,
                               foldersFirst: Preferences.foldersFirst)
+        model.addOnUpdate { [weak self, weak model] in
+            guard let self, self.tab?.model === model else { return }
+            self.syncTagFilterPill()
+        }
         let listVC = FileListViewController(model: model)
         listVC.coordinator = coordinator
         listVC.onNavigate = { [weak self] target in self?.navigate(to: target) }
@@ -364,6 +376,17 @@ final class PaneViewController: NSViewController {
         // Status bar: counts refresh at once; volume capacity is read once per directory/tab change (read-only statfs, no polling)
         updateStatusCounts()
         statusBar.updateVolume(for: activeTab.browser.current)
+    }
+
+    /// While a tag filter hides items the pill says so, in every view mode, and one click ends it
+    private func syncTagFilterPill() {
+        let names = activeTab.model.tagFilter.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        tagFilterPill.title = L10n.f("tags.filter.pill", names.joined(separator: ", "))
+        tagFilterPill.isHidden = names.isEmpty
+    }
+
+    @objc private func clearTagFilter(_ sender: Any?) {
+        activeTab.model.setTagFilter([])
     }
 
     private func updateStatusCounts() {
