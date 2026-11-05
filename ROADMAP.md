@@ -123,7 +123,7 @@ Owns `FileOpsCoordinator.swift`, `Sources/Pods/Eraser`, `Sources/Pods/TrashLedge
 Owns `Sources/Pods/BookmarkStore`, `StashStore`, `SessionStore`.
 
 - [ ] **D1** (M) A corrupt JSON file must be kept aside and reported, never overwritten. `TrashLedger/Node.swift:73`, `StashStore/Node.swift:74`, `BookmarkStore/Node.swift:128`
-- [ ] **D2** (S) Report failed bookmark writes instead of showing success. `MainWindowController.swift:316`
+- [x] **D2** (S) Report failed bookmark writes instead of showing success. `MainWindowController.swift:316`
 - [ ] **D3** (S) Add a way to clear the local history of opened paths. `Sources/Pods/Frecency`
 
 ### Track E: App entry points
