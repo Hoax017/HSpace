@@ -33,6 +33,9 @@ enum BatchToolsMenu {
                      action: #selector(MainWindowController.showFileHash(_:)), keyEquivalent: "")
         menu.addItem(withTitle: L10n.t("menu.imageConvert"),
                      action: #selector(MainWindowController.showImageConvert(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: L10n.t("menu.folderSync"),
+                     action: #selector(MainWindowController.showFolderSync(_:)), keyEquivalent: "")
         item.submenu = menu
         return item
     }

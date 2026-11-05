@@ -7,6 +7,7 @@ import Transfer
 import LocalOps
 import ArchiveEngine
 import SessionStore
+import FolderSync
 import Frecency
 import OperationHistory
 import Scheduler
@@ -32,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let trashLedger = TrashLedger(directory: AppDelegate.supportDirectory)
     /// What was done and how to take it back (shared app-wide)
     let historyStore = HistoryStore(directory: AppDelegate.supportDirectory)
+    /// Saved folder sync settings
+    let syncPresetStore = SyncPresetStore(directory: AppDelegate.supportDirectory)
     /// Colour rules and other metadata settings (shared app-wide)
     let metadataStore = MetadataStore(directory: AppDelegate.supportDirectory)
     /// Rename presets and log (L11), shared app-wide

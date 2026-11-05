@@ -232,7 +232,7 @@ Owns a new `Scheduler` pod and `ProgressWindowController.swift`. Depends on trac
 - [x] **L40** (L) Scheduler: queue, priorities, per-path locks, pause and resume
 - [x] **L41** (M) Task list window and toolbar status
 - [x] **L42** (M) Operation history with undo groups
-- [ ] **L43** (L) Local folder sync: compare, filters, presets, direction, dry run. Must show a plan before any delete
+- [x] **L43** (L) Local folder sync: compare, filters, presets, direction, dry run. Must show a plan before any delete
 - [ ] **L44** (M) New file templates, with `$date(format)` names
 
 ### Lane 6: Archives
@@ -430,6 +430,14 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Undo a copy: the copy goes to the Trash. Undo a copy that merged into a folder: the folder stays
 - [ ] Undo a move when the original place is taken: nothing changes, and the sheet says why
 - [ ] Flatten a folder, then Undo its one history line: the files return and the emptied folders come back
+- [ ] Folder Sync in `~/nspace-test` with Dry Run on: Compare lists every action, Dry Run reports them, and no file changes
+- [ ] Mirror with Dry Run off: the delete question lists the extras, Return does nothing, and Cancel leaves everything
+- [ ] After a Mirror, Compare again: nothing to do. Undo its one history line: everything is back, the extras too
+- [ ] Mirror from an empty folder: the warning names the risk of a wrong folder or an unmounted volume
+- [ ] Edit a file after Compare, then Sync: it is left alone and the report says so
+- [ ] Sync with an unreadable subfolder: the summary says so, and the plan holds no delete
+- [ ] Cancel during Compare with Contents on a large folder, and during Sync: it stops, and a second Compare shows what is left
+- [ ] Save a preset with folders, reopen the sheet, choose it: everything returns. Delete Preset removes it
 - [ ] The task list works in light and dark mode, and with VoiceOver: Pause, Priority and Cancel are named
 
 ### Overall feel
