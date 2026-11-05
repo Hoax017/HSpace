@@ -140,7 +140,7 @@ Owns `AppDelegate.swift`, `FinderIntegration.swift`, `UISelfTest.swift`.
 
 Owns `ConflictSheet.swift` and the drop handlers in the three view controllers.
 
-- [ ] **F1** (S) Replace must not be the Return default. `ConflictSheet.swift:216`
+- [x] **F1** (S) Replace must not be the Return default. `ConflictSheet.swift:216`
 - [ ] **F2** (S) Drop feedback must match the action taken. `FileIconGridViewController.swift:838`, `FileColumnViewController.swift:351`
 - [ ] **F3** (S) Honour the terminal setting in all view modes. `FileIconGridViewController.swift:663`
 

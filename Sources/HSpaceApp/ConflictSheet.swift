@@ -213,11 +213,13 @@ private final class ConflictSheetController: NSObject {
         applyFolderCheck.title = L10n.t("conflict.applyFolder")
         applyFolderCheck.font = .systemFont(ofSize: 11)
 
-        // Three buttons: Cancel / Merge / Replace (right-aligned; Replace is the default = Return)
+        // Four buttons: Cancel / Merge / Keep Both / Replace (right-aligned). Return = Keep Both, never Replace:
+        // a stray Return must not overwrite anything, and Keep Both is the one choice that is always enabled and loses no data
         let cancelB = makeButton("conflict.cancel", #selector(onCancel)); cancelB.keyEquivalent = "\u{1b}"
         let mergeB = makeButton("conflict.merge", #selector(onMerge)); mergeButton = mergeB
         let keepBothB = makeButton("conflict.keepBoth", #selector(onKeepBoth)); keepBothButton = keepBothB
-        let replaceB = makeButton("conflict.replace", #selector(onReplace)); replaceB.keyEquivalent = "\r"
+        keepBothB.keyEquivalent = "\r"
+        let replaceB = makeButton("conflict.replace", #selector(onReplace))
         let buttonStack = NSStackView(views: [cancelB, mergeB, keepBothB, replaceB])
         buttonStack.orientation = .horizontal
         buttonStack.spacing = 8
