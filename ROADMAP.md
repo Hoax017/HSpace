@@ -230,7 +230,7 @@ Owns `BreadcrumbBar.swift`, `PathEditorField.swift`, `SidebarViewController.swif
 Owns a new `Scheduler` pod and `ProgressWindowController.swift`. Depends on track A. L41 and L42 depend on L40.
 
 - [x] **L40** (L) Scheduler: queue, priorities, per-path locks, pause and resume
-- [ ] **L41** (M) Task list window and toolbar status
+- [x] **L41** (M) Task list window and toolbar status
 - [ ] **L42** (M) Operation history with undo groups
 - [ ] **L43** (L) Local folder sync: compare, filters, presets, direction, dry run. Must show a plan before any delete
 - [ ] **L44** (M) New file templates, with `$date(format)` names
@@ -421,6 +421,12 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Copy a large folder and a second one to another folder at the same time: both progress
 - [ ] Copy into a folder, then rename an item being replaced there: the rename waits for the copy
 - [ ] Two copies with conflicts: one panel at a time
+- [ ] The tasks icon shows a count and a tooltip while work runs, and goes back to plain when idle; idle CPU stays at 0
+- [ ] Pause a cross-volume copy mid-file: bytes stop within a moment; Resume continues, Cancel leaves nothing
+- [ ] Pause All with a copy running and one queued, then add a third: nothing starts until Resume All
+- [ ] With 1 at once, queue two copies and set the second to High: it runs next
+- [ ] A failed task stays in the list until Clear Finished; finished ones go by themselves
+- [ ] The task list works in light and dark mode, and with VoiceOver: Pause, Priority and Cancel are named
 
 ### Overall feel
 

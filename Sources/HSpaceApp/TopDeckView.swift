@@ -67,6 +67,7 @@ final class TopDeckView: NSVisualEffectView {
     private let airdropButton = NSButton()
     private let terminalButton = NSButton()
     private let tasksButton = NSButton()
+    private let tasksBadge = NSTextField(labelWithString: "")
     private let trashButton = TrashDeckButton()
     private var tabRowLeading: NSLayoutConstraint!
 
@@ -141,6 +142,7 @@ final class TopDeckView: NSVisualEffectView {
                         tooltipKey: "toolbar.tasks",
                         action: #selector(ProgressWindowController.toggleVisible(_:)),
                         target: ProgressWindowController.shared)
+        buildTasksBadge()
         // Trash button semantics (v0.19.17, user report): **a click always opens the Trash**, regardless of selection.
         // Why not "delete if something is selected, open otherwise": users almost always have something selected (the screenshot did),
         // so someone heading for the Trash would delete the selected files. Deletion stays on ⌘⌫/context menu/dragging onto this button.
@@ -371,6 +373,30 @@ final class TopDeckView: NSVisualEffectView {
     }
 
     // MARK: Tools
+
+    /// Count of unfinished tasks on the corner of the tasks button; absent when idle. Follows the queue by notification, with no timer.
+    private func buildTasksBadge() {
+        tasksBadge.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+        tasksBadge.textColor = .secondaryLabelColor
+        tasksBadge.isHidden = true
+        tasksBadge.translatesAutoresizingMaskIntoConstraints = false
+        tasksButton.addSubview(tasksBadge)
+        NSLayoutConstraint.activate([
+            tasksBadge.trailingAnchor.constraint(equalTo: tasksButton.trailingAnchor),
+            tasksBadge.topAnchor.constraint(equalTo: tasksButton.topAnchor, constant: -2),
+        ])
+        NotificationCenter.default.addObserver(self, selector: #selector(taskStatusChanged(_:)),
+                                               name: .hspaceTaskStatusChanged, object: nil)
+    }
+
+    @objc private func taskStatusChanged(_ note: Notification) {
+        guard let summary = note.object as? TaskStatusSummary else { return }
+        tasksBadge.isHidden = summary.unfinished == 0
+        tasksBadge.stringValue = "\(summary.unfinished)"
+        tasksButton.contentTintColor = summary.unfinished == 0 ? .secondaryLabelColor : Theme.accent
+        tasksButton.toolTip = summary.unfinished == 0 ? L10n.t("toolbar.tasks") : summary.text
+        tasksButton.setAccessibilityValue(summary.text)
+    }
 
     private func buildIconButton(_ button: NSButton, symbol name: String, fallback: String?,
                                  tooltipKey: String, action: Selector, target: AnyObject?) {

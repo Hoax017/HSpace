@@ -620,3 +620,35 @@
 "flatten.title" = "Flatten “%@”?";
 "flatten.body" = "%d items move up into this folder, and %d subfolders go to the Trash once empty. Clashes with items already here open the conflict panel. Packages and hidden folders stay whole.";
 "flatten.confirm" = "Flatten";
+
+/* Task list (L41) */
+"menu.taskList" = "Task List";
+"tasks.pause" = "Pause";
+"tasks.resume" = "Resume";
+"tasks.pauseAll" = "Pause All";
+"tasks.resumeAll" = "Resume All";
+"tasks.clearFinished" = "Clear Finished";
+"tasks.atOnce" = "%d at once";
+"tasks.atOnceLabel" = "Tasks that can run at once";
+"tasks.priority" = "Priority";
+"tasks.priority.high" = "High";
+"tasks.priority.normal" = "Normal";
+"tasks.priority.low" = "Low";
+"tasks.queued" = "Queued";
+"tasks.waitingForPath" = "Waiting for a task using the same files";
+"tasks.paused" = "Paused";
+"tasks.status.idle" = "No active tasks";
+"tasks.status.running" = "%d running";
+"tasks.status.waiting" = "%d waiting";
+"tasks.status.paused" = "%d paused";
+"tasks.status.withPercent" = "%@ (%d%%)";
+"tasks.kind.copy" = "Copy";
+"tasks.kind.move" = "Move";
+"tasks.kind.trash" = "Move to Trash";
+"tasks.kind.duplicate" = "Duplicate";
+"tasks.kind.rename" = "Rename";
+"tasks.kind.newFolder" = "New Folder";
+"tasks.kind.newFile" = "New File";
+"tasks.kind.compress" = "Compress";
+"tasks.kind.extract" = "Extract";
+"tasks.kind.delete" = "Delete";

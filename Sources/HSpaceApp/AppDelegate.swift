@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Permanent delete gets its own node: an irreversible operation does not share a mature node with the other local operations
             await kernel.register(EraserNode(), for: [.delete])
             await kernel.setArbiter(conflictSheet)
-            ProgressWindowController.shared.start(kernel: kernel)
+            ProgressWindowController.shared.start(kernel: kernel, scheduler: scheduler)
             #if DEBUG
             // Performance self-check entry (for north star acceptance, not a product path): HSPACE_PERF_DIRS=a:b:c:d navigates each quad pane to one directory
             if let spec = ProcessInfo.processInfo.environment["HSPACE_PERF_DIRS"], !spec.isEmpty {
