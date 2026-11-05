@@ -114,6 +114,22 @@ enum Preferences {
         set { d.set(newValue, forKey: "maxConcurrentOperations") }
     }
 
+    /// How hard compression works. Read off the main actor too, because the archive node asks for it while it runs.
+    nonisolated static var archiveCompressionID: String {
+        UserDefaults.standard.string(forKey: "archiveCompression") ?? "normal"
+    }
+
+    static func setArchiveCompression(_ id: String) {
+        d.set(id, forKey: "archiveCompression")
+    }
+
+    static let archiveCompressionOptions: [(id: String, nameKey: String)] = [
+        ("store", "settings.archiveLevel.store"),
+        ("fast", "settings.archiveLevel.fast"),
+        ("normal", "settings.archiveLevel.normal"),
+        ("best", "settings.archiveLevel.best"),
+    ]
+
     /// Archive format choices (for the popup)
     static let archiveFormatOptions: [(id: String, nameKey: String)] = [
         ("zip", "settings.archiveFormat.zip"),

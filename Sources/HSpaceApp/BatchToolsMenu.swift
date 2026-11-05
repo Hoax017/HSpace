@@ -79,6 +79,10 @@ enum BatchToolsMenu {
             return !window.grid.activePane.toolSelection.isEmpty
         case #selector(MainWindowController.showImageConvert(_:)):
             return !window.selectedImages.isEmpty
+        case #selector(MainWindowController.showCompressWithPassword(_:)):
+            return !window.grid.activePane.toolSelection.isEmpty
+        case #selector(MainWindowController.showArchiveBrowser(_:)):
+            return window.selectedArchive != nil
         default:
             return nil
         }

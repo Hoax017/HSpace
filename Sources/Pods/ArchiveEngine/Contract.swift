@@ -6,19 +6,43 @@ import HSpaceContracts
 // with no third-party dependencies (the honest approach). Node boundaries follow irreversible side effects: one compress = one archive produced;
 // one extract = one content tree landed from an archive; each is one atomic commit unit.
 //
-// Passwords are refused with a logic error, for every format. zip and unzip take a password only on the command line,
-// where other processes can read it, or from a terminal, which this node does not have. tar has no encryption at all.
-// An empty password means no password. Password support returns with a way to pass it safely (L53).
+// Passwords work for zip only, in both directions. New archives use AES-256. A password never reaches an argument list:
+// tar gets it on a pipe, see InternalPassword.swift. Other formats refuse a password with a logic error:
+// tar.gz has no encryption, and the system tar cannot decrypt 7z or RAR. An empty password means no password.
 
 public struct ArchiveError: ClassifiedError {
     public let errorClass: ErrorClass
     public let localizedDescription: String
     public let path: String?
+    /// The archive refused the password, so asking again makes sense
+    public let isWrongPassword: Bool
 
     init(_ cls: ErrorClass, _ message: String, path: String? = nil) {
         self.errorClass = cls
         self.localizedDescription = message
         self.path = path
+        self.isWrongPassword = false
+    }
+
+    init(wrongPasswordFor archive: URL) {
+        self.errorClass = .external
+        self.localizedDescription = "Wrong password for \(archive.lastPathComponent)"
+        self.path = archive.path
+        self.isWrongPassword = true
+    }
+}
+
+/// How hard compression works, for zip and tar.gz alike
+public enum ArchiveCompression: String, Sendable, CaseIterable {
+    case store, fast, normal, best
+
+    var level: Int {
+        switch self {
+        case .store: return 0
+        case .fast: return 1
+        case .normal: return 6
+        case .best: return 9
+        }
     }
 }
 
@@ -57,6 +81,7 @@ public enum ArchiveFormat: Sendable, Equatable {
     case zip
     case tarGz, tarBz2, tarXz, tar   // tar family (including compressed variants)
     case gzip, bzip2, xz             // single-stream compression (not tar)
+    case sevenZip, rar               // read by the system tar; see "Review for L52" in ROADMAP.md
 
     /// Detects by URL extension (multi-part suffixes match first; returns nil when unknown)
     public static func detect(_ url: URL) -> ArchiveFormat? {
@@ -69,6 +94,8 @@ public enum ArchiveFormat: Sendable, Equatable {
         if n.hasSuffix(".gz") || n.hasSuffix(".z") { return .gzip }   // legacy .Z compress also goes through gunzip
         if n.hasSuffix(".bz2") { return .bzip2 }
         if n.hasSuffix(".xz") { return .xz }
+        if n.hasSuffix(".7z") { return .sevenZip }
+        if n.hasSuffix(".rar") { return .rar }
         return nil
     }
 
@@ -89,7 +116,7 @@ public extension ArchiveEngineNode {
     static func supportedExtensions() -> [String] {
         var exts: [String] = []
         if toolExists(Tools.unzip) { exts += ["zip"] }
-        if toolExists(Tools.tar) { exts += ["tar", "tar.gz", "tgz", "tar.bz2", "tbz2", "tbz", "tar.xz", "txz"] }
+        if toolExists(Tools.tar) { exts += ["tar", "tar.gz", "tgz", "tar.bz2", "tbz2", "tbz", "tar.xz", "txz", "7z", "rar"] }
         if toolExists(Tools.gunzip) { exts += ["gz", "Z"] }
         if toolExists(Tools.bunzip2) { exts += ["bz2"] }
         if toolExists(Tools.xz) { exts += ["xz"] }
@@ -101,7 +128,7 @@ public extension ArchiveEngineNode {
         guard let fmt = ArchiveFormat.detect(url) else { return false }
         switch fmt {
         case .zip: return toolExists(Tools.unzip)
-        case .tarGz, .tarBz2, .tarXz, .tar: return toolExists(Tools.tar)
+        case .tarGz, .tarBz2, .tarXz, .tar, .sevenZip, .rar: return toolExists(Tools.tar)
         case .gzip: return toolExists(Tools.gunzip)
         case .bzip2: return toolExists(Tools.bunzip2)
         case .xz: return toolExists(Tools.xz)
@@ -110,6 +137,106 @@ public extension ArchiveEngineNode {
 
     static func toolExists(_ path: String) -> Bool {
         FileManager.default.isExecutableFile(atPath: path)
+    }
+}
+
+// MARK: - Browsing without extracting
+
+/// One item of an archive, as its listing describes it. Everything here comes from the archive, so it is untrusted.
+public struct ArchiveEntry: Sendable, Hashable {
+    public enum Kind: Sendable, Hashable { case file, directory, link }
+
+    /// Relative, "/"-separated path, without "./". Names can hold any bytes: show `ArchiveTreeNode.name` instead.
+    public let path: String
+    public let kind: Kind
+    /// nil when the format does not say (a .gz has no listing)
+    public let size: Int64?
+    public let modified: Date?
+    /// False for an absolute path or one with "..": such an entry is shown and never extracted.
+    public let isSafe: Bool
+    /// The name in the archive, byte for byte. Legacy zips hold names that are not UTF-8.
+    let rawPath: [UInt8]
+}
+
+/// A folder or item of an archive. Folders that have no entry of their own are made up from the paths under them.
+/// Built once and only read afterwards.
+public final class ArchiveTreeNode: @unchecked Sendable {
+    /// Last path component, safe to show: control and text-direction characters are replaced
+    public let name: String
+    public internal(set) var entry: ArchiveEntry
+    /// Folders first, then by name as Finder sorts
+    public internal(set) var children: [ArchiveTreeNode] = []
+    public var isFolder: Bool { entry.kind == .directory }
+
+    init(name: String, entry: ArchiveEntry) {
+        self.name = name
+        self.entry = entry
+    }
+}
+
+/// Turns the output of `tar -tvf` into entries. `now` settles the year of recent dates, which tar leaves out.
+/// Throws external on a line that is not a listing line, so that a misread listing is never shown as the truth.
+public func parseArchiveListing(_ listing: Data, now: Date = Date()) throws -> [ArchiveEntry] {
+    try ArchiveListingParser(now: now).parse(listing)
+}
+
+/// The tree of a listing. Duplicate paths collapse to the last entry, the one that extraction leaves on disk.
+public func archiveTree(_ entries: [ArchiveEntry]) -> ArchiveTreeNode {
+    ArchiveTreeBuilder().build(entries)
+}
+
+public extension ArchiveEngineNode {
+    /// Whether `list` can read this file
+    static func isBrowsable(_ url: URL) -> Bool {
+        guard let format = ArchiveFormat.detect(url) else { return false }
+        switch format {
+        case .gzip, .bzip2, .xz: return isSupportedArchive(url)
+        default: return toolExists(Tools.tar)
+        }
+    }
+
+    /// Lists an archive without extracting anything. Cancelling the task stops the tool.
+    func list(_ archive: URL) async throws -> [ArchiveEntry] {
+        try await listEntries(archive)
+    }
+
+    /// Extracts `entries` into `directory`, keeping their paths below it, and returns where each one landed.
+    /// A folder comes with everything under it. An unsafe entry is refused before anything runs.
+    func extract(_ entries: [ArchiveEntry], from archive: URL, into directory: URL,
+                 password: String? = nil) async throws -> [URL] {
+        try await extractEntries(entries, from: archive, into: directory, password: password)
+    }
+
+    /// Whether extracting this archive needs a password. Answers for zip, the only format that can take one.
+    static func isEncrypted(_ archive: URL) async throws -> Bool {
+        guard ArchiveFormat.detect(archive) == .zip else { return false }
+        return try await Task.detached { try ZipProbe.hasEncryptedEntries(archive) }.value
+    }
+
+    /// Tries the password on the smallest file of the archive. A password that does not fit one line of input is refused with an error.
+    func password(_ password: String, unlocks archive: URL) async throws -> Bool {
+        try Self.checkPassword(password)
+        return try await passwordUnlocks(password, archive)
+    }
+
+    /// What Quick Look will take out at once, by the sizes the listing declares. Past this, extracting is the honest answer.
+    static let previewByteLimit: Int64 = 1 << 30
+
+    /// Extracts files for Quick Look. Only regular files come back, so a preview never follows a link planted in the archive.
+    /// Entries that are not files are skipped; more than `byteLimit` in total is refused before anything runs.
+    func extractForPreview(_ entries: [ArchiveEntry], from archive: URL, into directory: URL, password: String? = nil,
+                           byteLimit: Int64 = previewByteLimit) async throws -> [(entry: ArchiveEntry, url: URL)] {
+        try await extractPreview(entries, from: archive, into: directory, password: password, byteLimit: byteLimit)
+    }
+
+    /// A new private folder (0700) in the temporary directory, for what is taken out of an archive
+    static func makeScratchDirectory() throws -> URL {
+        try createScratchDirectory()
+    }
+
+    /// Removes a scratch folder, including read-only folders that an archive may have created in it.
+    static func discardScratchDirectory(_ url: URL) throws {
+        try removeScratchDirectory(url)
     }
 }
 
