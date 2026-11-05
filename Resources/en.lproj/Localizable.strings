@@ -652,3 +652,27 @@
 "tasks.kind.compress" = "Compress";
 "tasks.kind.extract" = "Extract";
 "tasks.kind.delete" = "Delete";
+
+/* Operation history (L42) */
+"menu.operationHistory" = "Operation History…";
+"history.title" = "Operation History";
+"history.column.date" = "Date";
+"history.column.action" = "Action";
+"history.column.items" = "Items";
+"history.column.state" = "State";
+"history.undo" = "Undo";
+"history.clear" = "Clear History";
+"history.clear.title" = "Clear the operation history?";
+"history.clear.body" = "These actions can no longer be undone from here. No file is touched.";
+"history.itemsMore" = "%@ and %d more";
+"history.state.done" = "Done";
+"history.state.final" = "Cannot be undone";
+"history.state.undone" = "Undone";
+"history.state.failed" = "Failed";
+"history.state.cancelled" = "Cancelled";
+"history.undone" = "Undone.";
+"history.undoneLeftInPlace" = "Undone, except %d items that joined existing ones and stay there.";
+"history.stopped" = "Undo stopped part way. What was already taken back stays that way.";
+"history.refused.missing" = "Nothing was changed: %1$d items cannot be taken back. %2$@ is no longer there.";
+"history.refused.occupied" = "Nothing was changed: %1$d items cannot be taken back. %2$@ is taken.";
+"history.group.folders" = "Merge or Flatten";

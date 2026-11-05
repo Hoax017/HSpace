@@ -8,6 +8,7 @@ import LocalOps
 import ArchiveEngine
 import SessionStore
 import Frecency
+import OperationHistory
 import Scheduler
 import TrashLedger
 import Eraser
@@ -29,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// com.apple.provenance, mdls shows no origin, Finder's own AppleScript `original item` returns -1728),
     /// so supporting put-back means keeping our own records.
     let trashLedger = TrashLedger(directory: AppDelegate.supportDirectory)
+    /// What was done and how to take it back (shared app-wide)
+    let historyStore = HistoryStore(directory: AppDelegate.supportDirectory)
     /// Colour rules and other metadata settings (shared app-wide)
     let metadataStore = MetadataStore(directory: AppDelegate.supportDirectory)
     /// Rename presets and log (L11), shared app-wide
@@ -305,6 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let wc = MainWindowController(kernel: kernel, frecencyStore: frecencyStore,
                                       trashLedger: trashLedger,
                                      initialDirectory: directory, select: selecting)
+        wc.coordinator.history = historyStore
         windowControllers.append(wc)
         wc.window?.delegate = self
         if orderFront { wc.showWindow(nil) }
@@ -322,6 +326,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ProblemAlert.show(await sessionStore.takeProblem())
         ProblemAlert.show(await frecencyStore.takeProblem())
         ProblemAlert.show(await trashLedger.takeProblem())
+        ProblemAlert.show(await historyStore.takeProblem())
         await MetadataSettings.load(from: metadataStore)
         ProblemAlert.show(await metadataStore.takeProblem())
     }

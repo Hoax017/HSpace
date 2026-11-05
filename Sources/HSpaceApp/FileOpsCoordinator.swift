@@ -5,6 +5,7 @@ import ArchiveEngine
 import Frecency
 import TrashLedger
 import FileMetadata
+import OperationHistory
 
 /// Reveals the result of an operation (after creating an item: select it and enter rename if needed); implemented by the list and icon views (column view passes nil)
 @MainActor
@@ -45,6 +46,11 @@ final class FileOpsCoordinator {
 
     /// Put Back ledger (AppDelegate injects the same instance; nil = no bookkeeping → Put Back is always unavailable)
     var trashLedger: TrashLedger?
+
+    /// Operation history (AppDelegate injects the same instance; nil = nothing is recorded)
+    var history: HistoryStore?
+    /// The line of the history that operations submitted now belong to
+    var activeHistoryGroup: (id: UUID, title: String)?
 
     /// Target of the tag menus (menu items hold their target weakly, so it lives here)
     private(set) lazy var metadataActions = MetadataActions(coordinator: self)
@@ -235,8 +241,8 @@ final class FileOpsCoordinator {
 
     // MARK: Kernel operations
 
-    func moveToTrash(_ urls: [URL]) {
-        guard !urls.isEmpty else { return }
+    func moveToTrash(_ urls: [URL], recorded: Bool = true, onComplete: (@MainActor (OperationReceipt?) -> Void)? = nil) {
+        guard !urls.isEmpty else { onComplete?(nil); return }
         // A case that appeared once the Trash became browsable: trashing an item **already in ~/.Trash**.
         // Measured: `fm.trashItem` is a safe no-op here (returns the same path, the file stays, no error),
         // so there is no data risk, but it would toast a false "moved N items to Trash". Refuse honestly instead.
@@ -246,9 +252,11 @@ final class FileOpsCoordinator {
         // Refusing the whole batch is predictable; narrowing the selection once lets the user continue.
         if urls.contains(where: { TrashLocation.isInsideTrash($0) }) {
             Toast.show(L10n.t("toast.alreadyInTrash"), in: grid?.view.window)
+            onComplete?(nil)
             return
         }
-        run(OperationSpec(kind: .trash, sources: urls)) { [weak self] receipt in
+        run(OperationSpec(kind: .trash, sources: urls), recorded: recorded) { [weak self] receipt in
+            defer { onComplete?(receipt) }
             guard let self, let receipt else { return }
             let items = receipt.trashedItems
             // What actually landed must be undoable, even if the whole run was marked .failed because of other items
@@ -334,8 +342,11 @@ final class FileOpsCoordinator {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != url.lastPathComponent else { completion(true); return }
         Task { @MainActor in
-            let id = await kernel.submit(OperationSpec(kind: .rename, sources: [url], newName: trimmed))
+            let spec = OperationSpec(kind: .rename, sources: [url], newName: trimmed)
+            let ticket = historyTicket(for: spec)
+            let id = await kernel.submit(spec)
             let ok = await waitTerminal(id)
+            await recordHistory(ticket, id: id)
             if ok { reloadLists() }
             completion(ok)
         }
@@ -476,7 +487,7 @@ final class FileOpsCoordinator {
     private func restoreOne(_ item: TrashedItem) async -> (TrashRestoreStep, URL?) {
         let occupied = TrashRestorePolicy.isOccupied(TrashRestorePolicy.landedURL(of: item))
         let parent = item.original.deletingLastPathComponent()
-        let receipt = await runToEnd(OperationSpec(kind: .move, sources: [item.trashed], destination: parent))
+        let receipt = await runUnrecorded(OperationSpec(kind: .move, sources: [item.trashed], destination: parent))
         // If the Trash renamed it because of a name clash → rename back to the original name after moving back
         let step = TrashRestorePolicy.step(after: receipt, of: item, landedWasOccupied: occupied)
         switch step {
@@ -485,14 +496,16 @@ final class FileOpsCoordinator {
         case .restored(let landed):
             return (step, landed)
         case .rename(let landed, let name):
-            let renamed = await runToEnd(OperationSpec(kind: .rename, sources: [landed], newName: name))
+            let renamed = await runUnrecorded(OperationSpec(kind: .rename, sources: [landed], newName: name))
             return (step, renamed?.createdURLs.first ?? landed)
         }
     }
 
     // MARK: Internal: submit + wait for terminal state + refresh
 
-    private func run(_ spec: OperationSpec, onComplete: (@MainActor (OperationReceipt?) -> Void)? = nil) {
+    private func run(_ spec: OperationSpec, recorded: Bool = true, onComplete: (@MainActor (OperationReceipt?) -> Void)? = nil) {
+        // Sampled here, not in the task: this is where the operation belongs to the active group, and sees the disk as it was
+        let ticket = recorded ? historyTicket(for: spec) : nil
         Task { @MainActor in
             let id = await kernel.submit(spec)
             var receipt: OperationReceipt?
@@ -504,15 +517,17 @@ final class FileOpsCoordinator {
                 receipt = await kernel.receipt(id)
                 break
             }
+            await recordHistory(ticket, id: id)
             onComplete?(receipt)
             reloadLists()
         }
     }
 
-    /// `run` for callers that must act on the outcome before starting the next operation.
-    private func runToEnd(_ spec: OperationSpec) async -> OperationReceipt? {
+    /// `run` for callers that must act on the outcome before starting the next operation, and
+    /// that take something back rather than do something new: undo leaves no history line of its own.
+    func runUnrecorded(_ spec: OperationSpec) async -> OperationReceipt? {
         await withCheckedContinuation { done in
-            run(spec) { done.resume(returning: $0) }
+            run(spec, recorded: false) { done.resume(returning: $0) }
         }
     }
 

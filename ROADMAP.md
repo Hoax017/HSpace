@@ -231,7 +231,7 @@ Owns a new `Scheduler` pod and `ProgressWindowController.swift`. Depends on trac
 
 - [x] **L40** (L) Scheduler: queue, priorities, per-path locks, pause and resume
 - [x] **L41** (M) Task list window and toolbar status
-- [ ] **L42** (M) Operation history with undo groups
+- [x] **L42** (M) Operation history with undo groups
 - [ ] **L43** (L) Local folder sync: compare, filters, presets, direction, dry run. Must show a plan before any delete
 - [ ] **L44** (M) New file templates, with `$date(format)` names
 
@@ -426,6 +426,10 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Pause All with a copy running and one queued, then add a third: nothing starts until Resume All
 - [ ] With 1 at once, queue two copies and set the second to High: it runs next
 - [ ] A failed task stays in the list until Clear Finished; finished ones go by themselves
+- [ ] Window > Operation History after a copy, a move, a rename and a Trash: each is listed, and Undo takes each back, also after a restart
+- [ ] Undo a copy: the copy goes to the Trash. Undo a copy that merged into a folder: the folder stays
+- [ ] Undo a move when the original place is taken: nothing changes, and the sheet says why
+- [ ] Flatten a folder, then Undo its one history line: the files return and the emptied folders come back
 - [ ] The task list works in light and dark mode, and with VoiceOver: Pause, Priority and Cancel are named
 
 ### Overall feel
