@@ -116,7 +116,7 @@ Owns `FileOpsCoordinator.swift`, `Sources/Pods/Eraser`, `Sources/Pods/TrashLedge
 - [x] **C3** (S) Keep Put Back records for items that failed to delete. `FileOpsCoordinator.swift:175`
 - [x] **C4** (M) Apply the "not into Trash" guard to drops, F5/F6 and the stash. `FileOpsCoordinator.swift:351`
 - [x] **C5** (S) Keep ledger entries for unmounted volumes. `TrashLedger/Node.swift:80`
-- [ ] **C6** (S) Resolve symlinks in the Eraser fence check. `Eraser/Contract.swift:27`
+- [x] **C6** (S) Resolve symlinks in the Eraser fence check. `Eraser/Contract.swift:27`
 
 ### Track D: Saved data
 

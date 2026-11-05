@@ -50,6 +50,83 @@ import HSpaceContracts
         #expect(FileManager.default.fileExists(atPath: stray.path))
     }
 
+    // MARK: Fence and symlinks (C6): the check must see where the path really leads
+
+    @Test func refusesAPathThroughASymlinkLeavingTheFence() async throws {
+        let dir = try FaultFixture.tempDir("hspace-er")
+        defer { FaultFixture.remove(dir) }
+        let fence = dir.appendingPathComponent("fence")
+        let victim = dir.appendingPathComponent("documents/thesis.txt")
+        try FaultFixture.write(to: victim)
+        try FileManager.default.createDirectory(at: fence, withIntermediateDirectories: true)
+        let door = fence.appendingPathComponent("door")
+        try FileManager.default.createSymbolicLink(at: door, withDestinationURL: victim.deletingLastPathComponent())
+
+        await #expect(throws: (any Error).self) {
+            _ = try await EraserNode().execute(
+                OperationSpec(kind: .delete, sources: [door.appendingPathComponent("thesis.txt")], destination: fence),
+                context: Self.context())
+        }
+        #expect(FileManager.default.fileExists(atPath: victim.path))
+    }
+
+    @Test func refusesDotDotAfterASymlink() throws {
+        let dir = try FaultFixture.tempDir("hspace-er")
+        defer { FaultFixture.remove(dir) }
+        let fence = dir.appendingPathComponent("fence")
+        let deep = dir.appendingPathComponent("outside/deep")
+        try FileManager.default.createDirectory(at: fence, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: deep, withIntermediateDirectories: true)
+        let door = fence.appendingPathComponent("door")
+        try FileManager.default.createSymbolicLink(at: door, withDestinationURL: deep)
+        // Reads as fence/victim.txt, but the OS resolves it to outside/victim.txt
+        let tricky = URL(fileURLWithPath: fence.path + "/door/../victim.txt")
+        #expect(!EraserLimits.isFenced(tricky, by: fence))
+    }
+
+    @Test func symlinkInsideTheFenceIsDeletedWithoutItsTarget() async throws {
+        let dir = try FaultFixture.tempDir("hspace-er")
+        defer { FaultFixture.remove(dir) }
+        let fence = dir.appendingPathComponent("fence")
+        let target = dir.appendingPathComponent("documents")
+        try FaultFixture.write(to: target.appendingPathComponent("keep.txt"))
+        try FileManager.default.createDirectory(at: fence, withIntermediateDirectories: true)
+        let link = fence.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        let r = try await EraserNode().execute(
+            OperationSpec(kind: .delete, sources: [link], destination: fence), context: Self.context())
+        #expect(r.filesDone == 1)
+        #expect(FileManager.default.fileExists(atPath: target.appendingPathComponent("keep.txt").path))
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: link.path)) == nil)
+    }
+
+    @Test func fenceReachedThroughASymlinkStillAcceptsItsContents() throws {
+        let dir = try FaultFixture.tempDir("hspace-er")
+        defer { FaultFixture.remove(dir) }
+        let fence = dir.appendingPathComponent("fence")
+        let item = fence.appendingPathComponent("a.txt")
+        try FaultFixture.write(to: item)
+        let alias = dir.appendingPathComponent("alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: fence)
+
+        #expect(EraserLimits.isFenced(item, by: alias))
+        #expect(EraserLimits.isFenced(alias.appendingPathComponent("a.txt"), by: fence))
+        #expect(!EraserLimits.isFenced(alias, by: fence))           // a link to the fence sits outside it
+    }
+
+    @Test func unresolvablePathsAreRefused() throws {
+        let dir = try FaultFixture.tempDir("hspace-er")
+        defer { FaultFixture.remove(dir) }
+        let dangling = try FaultFixture.danglingLink(at: dir.appendingPathComponent("dangling"))
+        let selfLoop = dir.appendingPathComponent("self")
+        try FileManager.default.createSymbolicLink(atPath: selfLoop.path, withDestinationPath: "self")
+
+        #expect(!EraserLimits.isFenced(dangling.appendingPathComponent("x"), by: dir))
+        #expect(!EraserLimits.isFenced(selfLoop.appendingPathComponent("x"), by: dir))
+        #expect(EraserLimits.isFenced(dangling, by: dir))           // the link itself can be removed
+    }
+
     @Test func refusesWithoutFence() async throws {
         let dir = try Self.tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
