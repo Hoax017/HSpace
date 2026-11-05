@@ -308,6 +308,52 @@ Can run in parallel with phases 3 and 4.
 - [ ] **R5** (S) Support for macOS 27
 - [ ] **R6** (S) First public release and install guide
 
+## Manual test checklist
+
+Things only a person can judge in the running app. Use `~/nspace-test` files only. Automated checks are not listed here. Tick items as you test them, and add a note when something is wrong.
+
+### Conflicts and transfers
+
+- [ ] Copy a file over an existing one: the panel opens, and Return chooses Keep Both
+- [ ] Replace on purpose: the target is replaced and nothing else changes
+- [ ] Cancel a large copy: no partial file remains in the target
+- [ ] Copy a folder holding a symlink: the link stays a link
+- [ ] Try to copy a folder into itself: it is refused with a clear message
+- [ ] Move a file to another volume: the source goes only after the copy finishes
+
+### Drag and drop
+
+- [ ] Drag between panes in list, icon and column views: the cursor matches the action taken
+- [ ] Set the drag preference to Move, then drag with Option held
+- [ ] Drop onto the Trash folder: refused, with a message
+
+### Trash
+
+- [ ] Move to Trash, then Put Back
+- [ ] Put Back when the original name is taken
+- [ ] Empty Trash with one item that cannot be deleted: its record stays
+
+### Archives
+
+- [ ] Extract over an existing folder: it asks first, and nothing is overwritten silently
+- [ ] Compress files from one folder, then from search results across folders
+- [ ] Confirm no password field offers zip encryption for now
+
+### App behaviour
+
+- [ ] Open `hspace://open?path=...` from a browser: it navigates and does nothing else
+- [ ] Open a `/net/...` path through `hspace://`: the UI stays responsive
+- [ ] Open a terminal from each view mode: it uses your terminal setting
+- [ ] Corrupt `bookmarks.json` in a copy of the app data: you get a warning and a kept-aside file
+- [ ] Clear history in Settings
+- [ ] Enable Reveal takeover, then restore Finder in Settings
+
+### Overall feel
+
+- [ ] Interface density and appearance compared with QSpace
+- [ ] Speed in a large folder
+- [ ] Idle CPU with four panes open
+
 ## Not planned
 
 - Payment, activation, invitations, accounts and other QSpace licensing features
