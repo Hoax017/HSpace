@@ -1,0 +1,222 @@
+import AppKit
+import BatchRename
+import HSpaceContracts
+import HSpaceKernel
+import HSpaceTestSupport
+import Testing
+@testable import HSpaceApp
+
+/// Through the real pod and the window's undo stack. No window is involved.
+@MainActor @Suite struct BatchRenameOpsTests {
+    private func coordinator() -> FileOpsCoordinator {
+        let coordinator = FileOpsCoordinator(kernel: OperationKernel(),
+                                             grid: PaneGridController(initialDirectory: URL(fileURLWithPath: "/")))
+        coordinator.undoManager.groupsByEvent = false
+        return coordinator
+    }
+
+    private func names(in dir: URL) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
+    }
+
+    @Test func aBatchIsOneUndoAndOneRedo() async throws {
+        let dir = try FaultFixture.tempDir("hspace-rename-ops")
+        defer { FaultFixture.remove(dir) }
+        let sources = ["a", "b", "c"].map { dir.appendingPathComponent($0) }
+        for url in sources { try FaultFixture.write(to: url) }
+        let coordinator = coordinator()
+        let ops = BatchRenameOps(coordinator: coordinator, store: nil)
+        let plan = try BatchRenamePlanner.plan(sources: sources, names: ["x", "y", "z"])
+
+        coordinator.undoManager.beginUndoGrouping()
+        _ = try await ops.apply(plan) { _, _ in }
+        coordinator.undoManager.endUndoGrouping()
+        #expect(try names(in: dir) == ["x", "y", "z"])
+        #expect(coordinator.undoManager.undoActionName == L10n.t("undo.batchRename"))
+
+        coordinator.undoManager.undo()
+        await ops.lastReversal?.value
+        #expect(try names(in: dir) == ["a", "b", "c"])
+        #expect(!coordinator.undoManager.canUndo)
+
+        coordinator.undoManager.redo()
+        await ops.lastReversal?.value
+        #expect(try names(in: dir) == ["x", "y", "z"])
+    }
+
+    @Test func everyBatchAndItsUndoReachTheLog() async throws {
+        let dir = try FaultFixture.tempDir("hspace-rename-ops")
+        defer { FaultFixture.remove(dir) }
+        let source = dir.appendingPathComponent("a")
+        try FaultFixture.write(to: source)
+        let store = RenameStore(directory: dir.appendingPathComponent("support"))
+        let coordinator = coordinator()
+        let ops = BatchRenameOps(coordinator: coordinator, store: store)
+
+        coordinator.undoManager.beginUndoGrouping()
+        _ = try await ops.apply(BatchRenamePlanner.plan(sources: [source], names: ["x"])) { _, _ in }
+        coordinator.undoManager.endUndoGrouping()
+        let done = try #require(await store.log().first)
+        #expect(!done.isReversed)
+
+        coordinator.undoManager.beginUndoGrouping()
+        await ops.undo(done)
+        coordinator.undoManager.endUndoGrouping()
+        #expect(try names(in: dir).contains("a"))
+        let log = await store.log()
+        #expect(log.count == 2)
+        #expect(log[0].reverses == done.id)
+        #expect(log[1].isReversed)
+
+        // The log's undo is on the undo stack too
+        coordinator.undoManager.undo()
+        await ops.lastReversal?.value
+        #expect(try names(in: dir).contains("x"))
+    }
+
+    @Test func aRefusedUndoFromTheLogIsReportedAndChangesNothing() async throws {
+        let dir = try FaultFixture.tempDir("hspace-rename-ops")
+        defer { FaultFixture.remove(dir) }
+        let source = dir.appendingPathComponent("a")
+        try FaultFixture.write(to: source)
+        let store = RenameStore(directory: dir.appendingPathComponent("support"))
+        let coordinator = coordinator()
+        let ops = BatchRenameOps(coordinator: coordinator, store: store)
+        var reported: [String] = []
+        ops.report = { reported.append($0) }
+
+        coordinator.undoManager.beginUndoGrouping()
+        _ = try await ops.apply(BatchRenamePlanner.plan(sources: [source], names: ["x"])) { _, _ in }
+        let done = try #require(await store.log().first)
+        try FaultFixture.write(to: source)
+        await ops.undo(done)
+        coordinator.undoManager.endUndoGrouping()
+
+        #expect(reported.count == 1)
+        #expect(try names(in: dir).contains("x"))
+        #expect(await store.log().count == 1)
+        #expect(await store.log().first?.isReversed == false)
+    }
+
+    @Test func aFailedBatchLeavesNothingToUndo() async throws {
+        let dir = try FaultFixture.tempDir("hspace-rename-ops")
+        defer { FaultFixture.remove(dir) }
+        let source = dir.appendingPathComponent("a")
+        try FaultFixture.write(to: source)
+        let coordinator = coordinator()
+        let ops = BatchRenameOps(coordinator: coordinator, store: nil)
+        let plan = try BatchRenamePlanner.plan(sources: [source], names: ["x"])
+        try FaultFixture.write(to: dir.appendingPathComponent("x"))
+
+        await #expect(throws: BatchRenameError.self) { _ = try await ops.apply(plan) { _, _ in } }
+        #expect(!coordinator.undoManager.canUndo)
+    }
+}
+
+@MainActor @Suite struct BatchRenameModelTests {
+    @Test func aBadExpressionIsShownAndBlocksApplying() async throws {
+        let model = BatchRenameModel(items: [RenameItem(url: URL(fileURLWithPath: "/nonexistent/a"))],
+                                     steps: [.replace(ReplaceStep(find: "(", replacement: "", isRegex: true))])
+        await model.refresh()
+        #expect(model.stepError != nil)
+        #expect(!model.canApply)
+    }
+
+    @Test func thePreviewFollowsTheSteps() async throws {
+        let dir = try FaultFixture.tempDir("hspace-rename-model")
+        defer { FaultFixture.remove(dir) }
+        let a = dir.appendingPathComponent("a.txt"), taken = dir.appendingPathComponent("b.txt")
+        try FaultFixture.write(to: a)
+        try FaultFixture.write(to: taken)
+        let model = BatchRenameModel(items: [RenameItem(url: a)], steps: [])
+        await model.refresh()
+        #expect(!model.canApply)
+        #expect(model.summary == L10n.t("rename.summary.none"))
+
+        model.setSteps([.replace(ReplaceStep(find: "a", replacement: "c"))])
+        await model.settle()
+        #expect(model.canApply)
+        #expect(model.plan?.rows.first?.newName == "c.txt")
+
+        model.setSteps([.replace(ReplaceStep(find: "a", replacement: "b"))])
+        await model.settle()
+        #expect(!model.canApply)
+        #expect(model.plan?.blockedCount == 1)
+    }
+
+    @Test func everyStepKindSurvivesItsRow() {
+        let steps: [RenameStep] = [
+            .replace(ReplaceStep(find: "a", replacement: "b", isRegex: true, caseSensitive: true, firstMatchOnly: true, scope: .wholeName)),
+            .changeCase(.sentence, scope: .fileExtension),
+            .text(.fullWidthToHalfWidth, scope: .wholeName),
+            .insert(text: "x", position: .replaceName),
+            .sequence(SequenceStep(start: 5, increment: 2, width: 3, position: .prefix, separator: "_", restartPerFolder: true)),
+            .date(DateStep(source: .created, format: "yy", position: .suffix, separator: "-")),
+        ]
+        for step in steps { #expect(RenameStepRow(step: step).step == step) }
+    }
+
+    @Test func everyTextMenuEntryHasAStepAndATitle() {
+        #expect(BatchToolsMenu.textSteps.count == NameCase.allCases.count + TextProcess.allCases.count)
+        for entry in BatchToolsMenu.textSteps {
+            #expect(RenameStepRow(step: entry.step).step == entry.step)
+        }
+    }
+
+    @Test func namesAreCopiedOnePerLine() {
+        let items = ["a.txt", "b c"].map {
+            FileItem(url: URL(fileURLWithPath: "/x/" + $0), name: $0, isDirectory: false, isPackage: false, isSymlink: false,
+                     isHidden: false, size: nil, modified: nil, created: nil, contentTypeID: nil)
+        }
+        #expect(BatchToolsMenu.nameList(items) == "a.txt\nb c")
+    }
+
+    @Test func aPresetReplacesTheSteps() {
+        let grid = PaneGridController(initialDirectory: URL(fileURLWithPath: "/"))
+        let ops = BatchRenameOps(coordinator: FileOpsCoordinator(kernel: OperationKernel(), grid: grid), store: nil)
+        let sheet = BatchRenameSheetController(items: [], steps: [.insert(text: "a", position: .prefix)], ops: ops, store: nil, host: NSWindow())
+        let steps: [RenameStep] = [.changeCase(.upper, scope: .stem), .sequence(SequenceStep(width: 2))]
+        sheet.load(RenamePreset(name: "p", steps: steps))
+        #expect(sheet.currentSteps == steps)
+    }
+
+    @Test func theSheetBuildsWithoutAWindowServerSession() {
+        let host = NSWindow()
+        let grid = PaneGridController(initialDirectory: URL(fileURLWithPath: "/"))
+        let ops = BatchRenameOps(coordinator: FileOpsCoordinator(kernel: OperationKernel(), grid: grid), store: nil)
+        let sheet = BatchRenameSheetController(items: [RenameItem(url: URL(fileURLWithPath: "/a"))], steps: [], ops: ops, store: nil, host: host)
+        #expect(sheet.model.items.count == 1)
+    }
+}
+
+@MainActor @Suite struct QuickRenameTests {
+    @Test func theTextStartsAsTheCurrentNames() {
+        let model = QuickRenameModel(sources: ["/x/a", "/x/b"].map { URL(fileURLWithPath: $0) })
+        #expect(model.initialText == "a\nb")
+    }
+
+    @Test func aLineCountMismatchAndACollisionAreShownInPlace() throws {
+        let dir = try FaultFixture.tempDir("hspace-quick-rename")
+        defer { FaultFixture.remove(dir) }
+        let a = dir.appendingPathComponent("a"), b = dir.appendingPathComponent("b")
+        try FaultFixture.write(to: a)
+        try FaultFixture.write(to: b)
+        let model = QuickRenameModel(sources: [a])
+        model.update(text: "x\ny")
+        #expect(!model.canApply)
+        #expect(model.problem != nil)
+        model.update(text: "b")
+        #expect(!model.canApply)
+        #expect(model.problem?.contains("b:") == true)
+        model.update(text: "c")
+        #expect(model.canApply)
+        #expect(model.problem == nil)
+    }
+
+    @Test func theSheetBuilds() {
+        let grid = PaneGridController(initialDirectory: URL(fileURLWithPath: "/"))
+        let ops = BatchRenameOps(coordinator: FileOpsCoordinator(kernel: OperationKernel(), grid: grid), store: nil)
+        let sheet = QuickRenameSheetController(sources: [URL(fileURLWithPath: "/a")], ops: ops, host: NSWindow())
+        #expect(sheet.model.sources.count == 1)
+    }
+}

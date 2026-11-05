@@ -192,14 +192,14 @@ New pod `FileMetadata`.
 
 New pods `BatchRename`, `FileHash`, `ImageConvert`.
 
-- [ ] **L10** (L) Batch rename: processors, sequence, date, case, replace, preview and collision check
-- [ ] **L11** (M) Batch rename presets and logs, with undo
-- [ ] **L12** (S) Quick rename variant for a few files
-- [ ] **L13** (M) File hash: MD5, SHA-1, SHA-256, compare, cancel
-- [ ] **L14** (M) Image conversion and resize, with Vision-based actions as a later option
-- [ ] **L15** (M) Match and select by pattern
-- [ ] **L16** (S) Text processing of selected names
-- [ ] **L17** (S) Merge and flatten folders, depends on A8
+- [x] **L10** (L) Batch rename: processors, sequence, date, case, replace, preview and collision check
+- [x] **L11** (M) Batch rename presets and logs, with undo
+- [x] **L12** (S) Quick rename variant for a few files
+- [x] **L13** (M) File hash: MD5, SHA-1, SHA-256, compare, cancel
+- [x] **L14** (M) Image conversion and resize. Vision-based actions stay a later option
+- [x] **L15** (M) Match and select by pattern
+- [x] **L16** (S) Text processing of selected names
+- [x] **L17** (S) Merge and flatten folders, depends on A8
 
 ### Lane 3: Viewing
 
@@ -385,6 +385,36 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 
 - [ ] "Always Move" with Option held (H8): macOS may refuse this drop. Decide what the preference should do. It also copies across volumes, despite its name
 - [ ] Grant Full Disk Access to the debug build, rerun `scripts/ui-smoke.sh`, and confirm the five Trash checks pass (H9)
+
+### Batch tools
+
+- [ ] Batch Rename (⇧⌘R) on ten files: type a replace, add a number step, and the preview follows each key
+- [ ] Rename onto a name already in the folder: the row is red, Rename stays disabled, and nothing changes
+- [ ] Swap two names with Replace, then press ⌘Z once: both come back; ⇧⌘Z repeats it
+- [ ] Batch rename in list, icon and column views, with the keyboard only and with VoiceOver: the sheet reads as a form
+- [ ] The sheet in light and dark mode: blocked rows stay readable
+- [ ] Save a preset, quit, reopen, and load it: the steps come back; delete it from the same menu
+- [ ] Quick Rename on three files: edit the lines, paste a list over them, then ⌘Return; a wrong line count is explained in place
+- [ ] Rename Log after a restart: Undo reverses an old batch; move a file away first and it refuses with a clear message
+
+- [ ] File Hash on a large file: the bar moves, Cancel stops it at once, and the digest matches `shasum -a 256`
+- [ ] Paste a digest copied from a download page: the matching cell turns green; in dark mode too
+
+- [ ] Convert a folder of photos to JPEG at 50%: progress moves, Cancel stops after the current image, and the originals are untouched
+- [ ] Convert a photo taken in portrait: it stays upright. Convert an animated GIF to GIF: it still plays
+- [ ] Convert to a folder on a nearly full drive: a clear error, and no hidden leftovers in that folder
+- [ ] ⌘Z after converting: the new files go to the Trash and the originals stay; ⇧⌘Z brings them back
+
+- [ ] Select by Pattern with `*.jpg; *.png` in list, icon and column views: the count is live, and the status bar shows the new selection
+- [ ] Add to and remove from a selection with the same sheet; a bad regular expression is explained in place
+
+- [ ] Batch Tools > Text Processing > Remove accents: the rename sheet opens with the preview ready; Rename, then ⌘Z restores
+- [ ] Copy Names on several items, paste into a text editor: one name per line
+
+- [ ] Merge two folders holding a same-named subfolder and a same-named file: the panel asks for each, and Merge combines the subfolders
+- [ ] Skip a clash during a merge: that folder stays, with the skipped file in it
+- [ ] Flatten a nested folder: same-named files become "name 2", and the empty subfolders are in the Trash, restorable with ⌘Z
+- [ ] Flatten across an unreadable subfolder: a clear error before anything moves
 
 ### Overall feel
 

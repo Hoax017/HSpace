@@ -28,6 +28,7 @@ enum FileContextMenuBuilder {
         menu.addItem(.separator())
         MetadataMenu.addDirectoryEntries(to: menu, target: target)
         menu.addItem(.separator())
+        menu.addItem(BatchToolsMenu.item())
         add(menu, "menu.getInfo", #selector(FileListViewController.getInfo(_:)), target,
             key: "i", mods: .command, symbol: "info.circle")
         add(menu, "menu.openInTerminal", #selector(FileListViewController.openInTerminal(_:)), target,
@@ -86,6 +87,8 @@ enum FileContextMenuBuilder {
             add(menu, "menu.moveToTrash", #selector(FileListViewController.moveToTrash(_:)), target,
                 key: "\u{8}", mods: .command, symbol: "trash")
         }
+        menu.addItem(.separator())
+        menu.addItem(BatchToolsMenu.item())
         menu.addItem(.separator())
 
         // Archives: compress any selection / extract supported archives (FG-1 honest disabling: no "Extract" without a supported item)
