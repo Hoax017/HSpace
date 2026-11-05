@@ -209,7 +209,7 @@ Owns the view controllers and `Sources/Pods/IconThumb`.
 - [x] **L21** (L) File inspector panel
 - [x] **L22** (M) View options per folder, and saved view styles with a manager
 - [x] **L23** (M) Custom hidden items and exclusion rules
-- [ ] **L24** (M) Folder sizes in list view, with a setting
+- [x] **L24** (M) Folder sizes in list view, with a setting
 - [ ] **L25** (M) Icon view options: size, spacing, label position
 - [ ] **L26** (S) Keyboard selection with Space
 - [ ] **L27** (M) Photos library browsing
@@ -467,6 +467,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Settings > Hidden Items: add `*.log`: open panes update at once. Set it to Exclude: Show Hidden Files no longer brings it back
 - [ ] A rule with a scope applies in that folder and below only. Clearing a pattern says what is wrong and keeps the old rule on disk
 - [ ] Nothing changes in Finder: the rules only change what HSpace shows
+- [ ] List view: visible folders show "…", then their size. Scroll a big folder off screen: the walk stops
+- [ ] Settings > Behavior > Folder sizes: Never shows "—" at once; Local volumes only leaves a network share alone; All folders walks it
+- [ ] Hide the Size column: no folder is walked
+- [ ] A folder without permission shows "—" and is not retried while you scroll
+- [ ] Select a folder whose size is known: the status bar total includes it. Sorting by size still orders folders by name, since most sizes are unknown at that moment
 
 ### Overall feel
 

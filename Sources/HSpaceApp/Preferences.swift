@@ -1,5 +1,6 @@
 import Foundation
 import FileMetadata
+import FolderSize
 
 /// Centralized app-layer preferences (single entry for externalized config, no hard-coding scattered around; the pod layer must not use this type and gets values by constructor injection).
 /// All keys are registered here and the settings window renders from this; a new configurable item = one more static property.
@@ -217,6 +218,12 @@ enum Preferences {
             return min(0.3, max(0, v))
         }
         set { d.set(min(0.3, max(0, newValue)), forKey: "inactivePaneDimming") }
+    }
+
+    /// When the list adds up folders. Local volumes by default: walking a network share costs its owner too.
+    static var folderSizeMode: FolderSizeMode {
+        get { d.string(forKey: "folderSizeMode").flatMap(FolderSizeMode.init(rawValue:)) ?? .localOnly }
+        set { d.set(newValue.rawValue, forKey: "folderSizeMode") }
     }
 
     // MARK: Side panel

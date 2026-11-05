@@ -65,7 +65,12 @@ final class FileListViewController: NSViewController, FileRevealTarget {
     private var sizeOverlay: [URL: Int64] = [:]
     private var thumbOverlay: [URL: NSImage] = [:]
     private var sizeTasks: [URL: Task<Void, Never>] = [:]
+    /// Folders that could not be added up (no permission, volume gone): not tried again until the folder changes
+    private var sizeFailures: Set<URL> = []
+    /// Whether the folder shown sits on a local volume. nil until known; read off the main thread, a dead mount can stall.
+    private var directoryIsLocal: Bool?
     private var thumbTasks: [URL: Task<Void, Never>] = [:]
+    private var localityTask: Task<Void, Never>?
     /// Thumbnail eligibility cached per UTType (no repeated conforms work on the scroll path)
     private static var thumbEligible: [String: Bool] = [:]
 
@@ -227,6 +232,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
     @objc private func columnsOrFontChanged(_ note: Notification) {
         tableView.rowHeight = Self.rowHeight(for: Formatters.listFontSize)
         rebuildOptionalColumns()
+        refreshVisibleDecorations()   // A hidden Size column or a changed setting stops or starts folder sizes
     }
 
     @objc private func toggleColumn(_ sender: NSMenuItem) {
@@ -247,6 +253,8 @@ final class FileListViewController: NSViewController, FileRevealTarget {
             lastSnapshotDirectory = model.directory
             cancelDecorationWork()
             sizeOverlay.removeAll()
+            sizeFailures.removeAll()
+            learnWhetherDirectoryIsLocal()
         }
         // Same-directory refreshes clear the thumbnail overlay too: file contents may have changed (the IconThumb cache key includes mtime, so a refetch either hits or regenerates)
         thumbOverlay.removeAll()
@@ -437,7 +445,7 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         if range.length > 0 {
             for row in range.location..<(range.location + range.length) {
                 guard let item = item(atRow: row) else { continue }   // Skip group headers
-                if item.isDirectory, item.size == nil, sizeOverlay[item.url] == nil {
+                if wantsFolderSize(item) {
                     wantedSizes.insert(item.url)
                     requestFolderSize(item.url)
                 }
@@ -467,19 +475,65 @@ final class FileListViewController: NSViewController, FileRevealTarget {
         return ok
     }
 
+    private var measuresFolders: Bool {
+        Preferences.folderSizeMode.shouldMeasure(isLocal: directoryIsLocal,
+                                                 columnVisible: tableView.column(withIdentifier: .init("size")) >= 0)
+    }
+
+    /// A folder with no size yet that the setting wants, and that has not already failed
+    private func wantsFolderSize(_ item: FileItem) -> Bool {
+        item.isDirectory && item.size == nil && sizeOverlay[item.url] == nil && !sizeFailures.contains(item.url) && measuresFolders
+    }
+
+    /// For tests: folders being added up now
+    var sizeRequestsInFlight: Int { sizeTasks.count }
+
+    /// Bytes shown for an item, folders included once added up
+    func knownSize(of item: FileItem) -> Int64? { item.size ?? sizeOverlay[item.url] }
+
+    private func learnWhetherDirectoryIsLocal() {
+        directoryIsLocal = nil
+        let directory = model.directory
+        localityTask?.cancel()
+        localityTask = Task { [weak self] in
+            let isLocal = await Task.detached {
+                (try? directory.resourceValues(forKeys: [.volumeIsLocalKey]))?.volumeIsLocal ?? false
+            }.value
+            guard let self, !Task.isCancelled, self.model.directory == directory else { return }
+            self.directoryIsLocal = isLocal
+            self.reloadSizeColumnOfVisibleRows()
+            self.refreshVisibleDecorations()
+        }
+    }
+
+    private func reloadSizeColumnOfVisibleRows() {
+        let col = tableView.column(withIdentifier: .init("size"))
+        let range = tableView.rows(in: tableView.visibleRect)
+        guard col >= 0, range.length > 0 else { return }
+        tableView.reloadData(forRowIndexes: IndexSet(integersIn: range.location..<(range.location + range.length)),
+                             columnIndexes: [col])
+    }
+
     private func requestFolderSize(_ url: URL) {
         guard sizeTasks[url] == nil else { return }
         sizeTasks[url] = Task { [weak self] in
-            let size = try? await Engines.folderSize.size(of: url)
+            let size: Int64?
+            do {
+                size = try await Engines.folderSize.size(of: url)
+            } catch is CancellationError {
+                return
+            } catch {
+                size = nil
+            }
             guard let self, !Task.isCancelled else { return }
             self.sizeTasks[url] = nil
-            guard let size else { return }
-            self.sizeOverlay[url] = size
+            if let size { self.sizeOverlay[url] = size } else { self.sizeFailures.insert(url) }
             // Refresh this row's size column only if it still represents the same URL
             guard let row = self.row(forURL: url) else { return }
             let col = self.tableView.column(withIdentifier: .init("size"))
             guard col >= 0 else { return }
             self.tableView.reloadData(forRowIndexes: [row], columnIndexes: [col])
+            if self.tableView.isRowSelected(row) { self.onSelectionChange?() }   // The status bar's total just grew
         }
     }
 
@@ -962,12 +1016,13 @@ extension FileListViewController: NSTableViewDataSource, NSTableViewDelegate {
         case "added":
             cell.configure(item.added.map { Formatters.relativeDate($0) } ?? "—", alignment: .left, monospacedDigits: true)
         case "size":
-            // Files use the snapshot byte count; directories are nil in the snapshot → backfilled FolderSize result, otherwise placeholder "—"
+            // Files use the snapshot byte count; directories are nil in the snapshot → backfilled FolderSize result.
+            // Until then "…" says it is on its way, and "—" that it will not come.
             if let bytes = item.size ?? sizeOverlay[item.url] {
                 let parts = Formatters.sizeParts(fromByteCount: bytes)
                 cell.configureSize(value: parts.value, unit: parts.unit, alignment: .right)
             } else {
-                cell.configure("—", alignment: .right, monospacedDigits: true)
+                cell.configure(wantsFolderSize(item) ? "…" : "—", alignment: .right, monospacedDigits: true)
             }
         case "kind":
             cell.configure(Formatters.kind(forTypeID: item.contentTypeID, isDirectory: item.isDirectory), alignment: .left)

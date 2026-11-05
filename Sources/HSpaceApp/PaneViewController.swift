@@ -404,7 +404,7 @@ final class PaneViewController: NSViewController {
         case .list:
             let sel = activeTab.listVC.selectedItems
             selected = sel.count
-            bytes = sel.reduce(0) { $0 + ($1.size ?? 0) }
+            bytes = sel.reduce(0) { $0 + (activeTab.listVC.knownSize(of: $1) ?? 0) }
         case .icons:
             let sel = activeTab.iconVC?.selectedItems ?? []
             selected = sel.count

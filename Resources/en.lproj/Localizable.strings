@@ -819,3 +819,9 @@
 "settings.hidden.target.any" = "All items";
 "settings.hidden.target.files" = "Files";
 "settings.hidden.target.folders" = "Folders";
+
+/* Folder sizes in list view (L24) */
+"settings.behavior.folderSizes" = "Folder sizes in lists:";
+"settings.behavior.folderSizes.all" = "All folders";
+"settings.behavior.folderSizes.localOnly" = "Local volumes only";
+"settings.behavior.folderSizes.never" = "Never";
