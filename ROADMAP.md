@@ -222,7 +222,7 @@ Owns `BreadcrumbBar.swift`, `PathEditorField.swift`, `SidebarViewController.swif
 - [x] **L31** (M) Quick locations and go-to-bookmark panel
 - [x] **L32** (M) Quick launcher with commands
 - [x] **L33** (M) Sidebar item accent colours and palettes
-- [ ] **L34** (M) Tab drag-out and reorder
+- [x] **L34** (M) Tab drag-out and reorder
 - [ ] **L35** (S) Bring to active Space, drag-shake gesture
 
 ### Lane 5: Operations
@@ -551,6 +551,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] A folder with a real file icon, and a volume, switch to a symbol that shows the colour; None brings the real icon back
 - [ ] Sidebar Palette, from the right-click menu or Settings > Appearance: Spectrum, Cool, Warm and Monochrome colour every row, and an item's own colour stays. Standard returns to the usual look
 - [ ] Colours survive a restart and a moved bookmark folder. They read well in light and dark mode, and selected rows stay legible
+- [ ] Clicking a tab still switches on the first click, also when coming from another app. Dragging a tab along the strip shows a mark in the gap, and dropping moves it; the same workspace stays active
+- [ ] Drag a tab clear of the window and release: it opens in its own window at that spot, with its panes and paths. Dragging onto the window itself, or pressing Esc during the drag, changes nothing
+- [ ] Drag a tab to another window's strip: it joins there at the mark. If it was the source window's last tab, that window closes
+- [ ] The last tab in a window cannot be dragged out into a new window. File > Move Tab Left, Right and to New Window do the same from the keyboard and gray out when they cannot apply
+- [ ] Dragging files onto the tab strip, and tabs onto panes, has no effect. VoiceOver reads each tab and can switch to it. After a restart moved tabs and detached windows come back
 
 ### Overall feel
 

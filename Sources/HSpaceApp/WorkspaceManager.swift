@@ -1,5 +1,6 @@
 import Foundation
 import SessionStore
+import TabDrag
 import TabNavigation
 
 /// Workspace manager (M17: workspace tabs moved out of native NSWindow tabbing and are self-managed).
@@ -85,6 +86,24 @@ final class WorkspaceManager {
         }
         recency.touch(activeIndex)
         return true
+    }
+
+    /// Moves a workspace in the tab order. The same workspace stays active. False when nothing moved.
+    @discardableResult
+    func move(from: Int, to: Int) -> Bool {
+        guard from != to, states.indices.contains(from), states.indices.contains(to) else { return false }
+        states.insert(states.remove(at: from), at: to)
+        activeIndex = TabMove.moved(activeIndex, from: from, to: to)
+        recency.move(from: from, to: to)
+        return true
+    }
+
+    /// A workspace arrives from another window and becomes active. The tab limit is left alone: a drop must not evict a tab.
+    func insert(_ w: SessionWindow, at index: Int) {
+        let position = min(max(0, index), states.count)
+        states.insert(w, at: position)
+        recency.insert(at: position)
+        activeIndex = position
     }
 
     /// Cycle (⌃⇥ / ⌃⇧⇥)

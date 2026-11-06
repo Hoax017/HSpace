@@ -931,3 +931,6 @@
 "sidebar.palette.warm" = "Warm";
 "sidebar.palette.mono" = "Monochrome";
 "settings.appearance.sidebarPalette" = "Sidebar palette:";
+"menu.moveTabLeft" = "Move Tab Left";
+"menu.moveTabRight" = "Move Tab Right";
+"menu.moveTabToNewWindow" = "Move Tab to New Window";

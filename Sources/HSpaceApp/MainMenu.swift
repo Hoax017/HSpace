@@ -34,6 +34,11 @@ enum MainMenu {
         let prevWsItem = fileMenu.addItem(withTitle: L10n.t("menu.prevWorkspace"),
                                           action: #selector(MainWindowController.previousWorkspace(_:)), keyEquivalent: "")
         KeyBindings.apply("prevWorkspace", to: prevWsItem)
+        for (key, id, action) in [("menu.moveTabLeft", "moveTabLeft", #selector(MainWindowController.moveTabLeft(_:))),
+                                  ("menu.moveTabRight", "moveTabRight", #selector(MainWindowController.moveTabRight(_:))),
+                                  ("menu.moveTabToNewWindow", "moveTabToNewWindow", #selector(MainWindowController.moveTabToNewWindow(_:)))] {
+            KeyBindings.apply(id, to: fileMenu.addItem(withTitle: L10n.t(key), action: action, keyEquivalent: ""))
+        }
         let newFolderItem = fileMenu.addItem(withTitle: L10n.t("menu.newFolder"),
                                              action: #selector(FileListViewController.newFolderHere(_:)), keyEquivalent: "")
         KeyBindings.apply("newFolder", to: newFolderItem)

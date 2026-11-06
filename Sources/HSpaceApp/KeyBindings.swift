@@ -20,6 +20,9 @@ enum KeyBindings {
         Entry(id: "moveToOtherPane", titleKey: "menu.moveToOtherPane", defaultKey: "\u{F709}", defaultMods: []),
         Entry(id: "nextWorkspace", titleKey: "menu.nextWorkspace", defaultKey: "]", defaultMods: [.command, .shift]),
         Entry(id: "prevWorkspace", titleKey: "menu.prevWorkspace", defaultKey: "[", defaultMods: [.command, .shift]),
+        Entry(id: "moveTabLeft", titleKey: "menu.moveTabLeft", defaultKey: "", defaultMods: []),
+        Entry(id: "moveTabRight", titleKey: "menu.moveTabRight", defaultKey: "", defaultMods: []),
+        Entry(id: "moveTabToNewWindow", titleKey: "menu.moveTabToNewWindow", defaultKey: "", defaultMods: []),
         // ⌃⇥ / ⌃⇧⇥ workspace cycling (Tab cannot be a menu keyEquivalent, so an event monitor reads the modifiers from this registry,
         // rather than hard-coding them, satisfying §0 "all shortcuts go through the KeyBindings registry")
         Entry(id: "cycleWorkspace", titleKey: "menu.nextWorkspace", defaultKey: "\t", defaultMods: [.control]),

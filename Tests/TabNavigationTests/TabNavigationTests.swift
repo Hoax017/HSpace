@@ -27,6 +27,21 @@ import Testing
         #expect(recency.order == [2])
     }
 
+    @Test func movingATabKeepsTheHistoryOnTheSameTabs() {
+        var recency = TabRecency(active: 0)
+        recency.touch(1)
+        recency.touch(2)
+        recency.move(from: 0, to: 2)   // tabs a b c become b c a
+        #expect(recency.order == [1, 0, 2])
+    }
+
+    @Test func aNewTabIsTheMostRecent() {
+        var recency = TabRecency(active: 0)
+        recency.touch(1)
+        recency.insert(at: 1)
+        #expect(recency.order == [1, 2, 0])
+    }
+
     @Test func tabsNeverUsedFollowInTabOrder() {
         var recency = TabRecency(active: 3)
         recency.touch(1)

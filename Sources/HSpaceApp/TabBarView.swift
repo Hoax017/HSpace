@@ -1,4 +1,5 @@
 import AppKit
+import TabDrag
 
 /// Per-pane compact tab bar: select/new/close/middle-click close (QSpace per-pane tab semantics)
 @MainActor
@@ -6,6 +7,17 @@ final class TabBarView: NSView {
     var onSelect: ((Int) -> Void)?
     var onClose: ((Int) -> Void)?
     var onNew: (() -> Void)?
+    /// A tab was dragged to another place in this bar
+    var onMove: ((_ from: Int, _ to: Int) -> Void)?
+    /// A tab was dropped clear of its window; the point is in screen coordinates
+    var onDetach: ((_ index: Int, _ screenPoint: NSPoint) -> Void)?
+    /// A tab from another window was dropped in this bar's gap
+    var onAdopt: ((_ payload: TabDragPayload, _ gap: Int) -> Void)?
+
+    private static let dragType = NSPasteboard.PasteboardType(TabDragPayload.pasteboardType)
+    /// Shows where a dragged tab would land (positioned by frame, no layout change: FG-4)
+    private let insertionMark = NSView()
+    private var draggedIndex: Int?
 
     private let stack = NSStackView()
     private let scroll = NSScrollView()
@@ -51,9 +63,14 @@ final class TabBarView: NSView {
         emptyWidth.priority = .init(1)   // lowest priority: overridden by content constraints with an accessory, shrinks to 0 without one
         emptyWidth.isActive = true
 
+        insertionMark.wantsLayer = true
+        insertionMark.isHidden = true
+        registerForDraggedTypes([Self.dragType])
+
         addSubview(scroll)
         addSubview(accessoryHost)
         addSubview(addButton)
+        addSubview(insertionMark)
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: topAnchor),
             scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -98,17 +115,115 @@ final class TabBarView: NSView {
     }
 
     func update(titles: [String], active: Int) {
-        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        // Updated in place: selecting happens on mouse down, and a tab rebuilt there would never see its own drag
+        let existing = items
         for (i, title) in titles.enumerated() {
-            let item = TabItemView(title: title, isActive: i == active,
-                                   closable: titles.count > 1, height: itemHeight)
-            item.onSelect = { [weak self] in self?.onSelect?(i) }
-            item.onClose = { [weak self] in self?.onClose?(i) }
-            stack.addArrangedSubview(item)
+            let item = i < existing.count ? existing[i] : makeItem()
+            item.index = i
+            item.configure(title: title, isActive: i == active, closable: titles.count > 1)
         }
+        existing.dropFirst(titles.count).forEach { $0.removeFromSuperview() }
+    }
+
+    private var items: [TabItemView] { stack.arrangedSubviews.compactMap { $0 as? TabItemView } }
+
+    private func makeItem() -> TabItemView {
+        let item = TabItemView(height: itemHeight)
+        item.onSelect = { [weak self, weak item] in
+            if let self, let item { self.onSelect?(item.index) }
+        }
+        item.onClose = { [weak self, weak item] in
+            if let self, let item { self.onClose?(item.index) }
+        }
+        item.onBeginDrag = { [weak self, weak item] event in
+            if let self, let item { self.beginDrag(of: item, with: event) }
+        }
+        stack.addArrangedSubview(item)
+        return item
     }
 
     @objc private func newTab() { onNew?() }
+
+    // MARK: Dragging tabs (L34)
+
+    private func beginDrag(of item: TabItemView, with event: NSEvent) {
+        guard let windowNumber = window?.windowNumber else { return }
+        let pasteboardItem = NSPasteboardItem()
+        do {
+            pasteboardItem.setData(try TabDragPayload(windowNumber: windowNumber, index: item.index).encoded(), forType: Self.dragType)
+        } catch {
+            return   // two integers always encode; without a payload there is simply no drag
+        }
+        let dragging = NSDraggingItem(pasteboardWriter: pasteboardItem)
+        dragging.setDraggingFrame(item.bounds, contents: item.snapshot())
+        draggedIndex = item.index
+        item.beginDraggingSession(with: [dragging], event: event, source: self)
+    }
+
+    private var itemEdges: [(min: Double, max: Double)] {
+        items.map { item in
+            let frame = item.convert(item.bounds, to: self)
+            return (Double(frame.minX), Double(frame.maxX))
+        }
+    }
+
+    private func gap(for info: any NSDraggingInfo) -> Int {
+        TabMove.gap(at: Double(convert(info.draggingLocation, from: nil).x), edges: itemEdges)
+    }
+
+    private func showInsertionMark(at gap: Int) {
+        let edges = itemEdges
+        guard !edges.isEmpty else { return }
+        let x = gap < edges.count ? edges[gap].min : edges[edges.count - 1].max
+        insertionMark.layer?.backgroundColor = Theme.accent.cgColor
+        insertionMark.frame = NSRect(x: x - 1, y: 4, width: 2, height: bounds.height - 8)
+        insertionMark.isHidden = false
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        draggingUpdated(sender)
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard payload(of: sender) != nil else { return [] }
+        showInsertionMark(at: gap(for: sender))
+        return .move
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        insertionMark.isHidden = true
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        insertionMark.isHidden = true
+        guard let payload = payload(of: sender) else { return false }
+        return drop(payload, inGap: gap(for: sender))
+    }
+
+    private func payload(of info: any NSDraggingInfo) -> TabDragPayload? {
+        info.draggingPasteboard.data(forType: Self.dragType).flatMap(TabDragPayload.decoded)
+    }
+
+    /// True when the drop is taken. A drop back on the tab's own place counts: nothing moves, and nothing may detach.
+    func drop(_ payload: TabDragPayload, inGap gap: Int) -> Bool {
+        guard payload.windowNumber == window?.windowNumber else {
+            // Next turn: taking the tab can close the window whose drag session is still finishing
+            DispatchQueue.main.async { [weak self] in self?.onAdopt?(payload, gap) }
+            return true
+        }
+        if let to = TabMove.destination(from: payload.index, gap: gap, count: items.count) {
+            onMove?(payload.index, to)
+        }
+        return true
+    }
+
+    // ---- Test channel ----
+    var testItemCount: Int { items.count }
+    func testItem(_ i: Int) -> NSView { items[i] }
+    func testItemTitle(_ i: Int) -> String { items[i].title }
+    func testItemIsActive(_ i: Int) -> Bool { items[i].isActive }
+    var testInsertionMarkFrame: NSRect? { insertionMark.isHidden ? nil : insertionMark.frame }
+    func testShowInsertionMark(gap: Int) { showInsertionMark(at: gap) }
 
     // ---- Self-test channel (I-72) ----
     /// Frame of pod i in this bar's coordinate system
@@ -176,35 +291,53 @@ final class TabBarView: NSView {
     }
 }
 
+extension TabBarView: NSDraggingSource {
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .withinApplication ? .move : []
+    }
+
+    func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { true }
+
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        guard let index = draggedIndex else { return }
+        draggedIndex = nil
+        let end = TabDragEnd(accepted: operation != [], cancelled: NSEvent.pressedMouseButtons & 1 != 0,
+                             insideSourceWindow: window?.frame.contains(screenPoint) ?? true, tabCount: testItemCount)
+        if end.detaches { onDetach?(index, screenPoint) }
+    }
+}
+
 /// A single tab (pod style; close button on hover; middle-click closes)
 @MainActor
 private final class TabItemView: NSView {
+    /// Pointer travel that turns a press into a drag
+    private static let dragThreshold: CGFloat = 4
+
+    var index = 0
     var onSelect: (() -> Void)?
     var onClose: (() -> Void)?
+    var onBeginDrag: ((NSEvent) -> Void)?
 
     private let label = NSTextField(labelWithString: "")
     private let closeButton = NSButton()
-    private let isActive: Bool
-    private let closable: Bool
+    private(set) var isActive = false
+    private var closable = false
     private var tracking: NSTrackingArea?
+    /// Where the press began; nil once a drag has started or the button is up
+    private var pressPoint: NSPoint?
 
     /// Same as TabBarView: in the title bar area window dragging must not take over, or mouseDown never arrives (I-12)
     override var mouseDownCanMoveWindow: Bool { false }
 
-    init(title: String, isActive: Bool, closable: Bool, height: CGFloat) {
-        self.isActive = isActive
-        self.closable = closable
+    var title: String { label.stringValue }
+
+    init(height: CGFloat) {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 5
-        layer?.backgroundColor = isActive
-            ? Theme.accent.withAlphaComponent(0.18).cgColor
-            : NSColor.clear.cgColor
 
-        label.stringValue = title
         label.font = .systemFont(ofSize: 11)
         label.lineBreakMode = .byTruncatingTail
-        label.textColor = isActive ? .labelColor : .secondaryLabelColor
         label.translatesAutoresizingMaskIntoConstraints = false
 
         closeButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: L10n.t("tab.close"))
@@ -230,10 +363,38 @@ private final class TabItemView: NSView {
             widthAnchor.constraint(lessThanOrEqualToConstant: 160),
             heightAnchor.constraint(equalToConstant: height),
         ])
+        setAccessibilityElement(true)
+        setAccessibilityRole(.radioButton)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("UI is built in code; no xib") }
+
+    func configure(title: String, isActive: Bool, closable: Bool) {
+        self.isActive = isActive
+        self.closable = closable
+        label.stringValue = title
+        label.textColor = isActive ? .labelColor : .secondaryLabelColor
+        layer?.backgroundColor = isActive ? Theme.accent.withAlphaComponent(0.18).cgColor : NSColor.clear.cgColor
+        if !closable { closeButton.isHidden = true }
+        setAccessibilityLabel(title)
+        setAccessibilityValue(isActive ? 1 : 0)
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        onSelect?()
+        return true
+    }
+
+    /// What follows the pointer during a drag
+    func snapshot() -> NSImage {
+        let image = NSImage(size: bounds.size)
+        if let rep = bitmapImageRepForCachingDisplay(in: bounds) {
+            cacheDisplay(in: bounds, to: rep)
+            image.addRepresentation(rep)
+        }
+        return image
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -259,7 +420,19 @@ private final class TabItemView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        pressPoint = event.locationInWindow
         onSelect?()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = pressPoint,
+              hypot(event.locationInWindow.x - start.x, event.locationInWindow.y - start.y) >= Self.dragThreshold else { return }
+        pressPoint = nil
+        onBeginDrag?(event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        pressPoint = nil
     }
 
     override func otherMouseDown(with event: NSEvent) {

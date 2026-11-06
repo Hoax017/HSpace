@@ -5,6 +5,7 @@ import StashStore
 import SessionStore
 import Frecency
 import TrashLedger
+import TabDrag
 
 /// Main window (M17 custom deck): two continuous columns:
 /// left sidebarColumn (full-height .sidebar material: traffic light row + stash shelf + bookmarks),
@@ -458,6 +459,44 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         }
     }
 
+    // MARK: Moving tabs (L34: by dragging, or from the File menu)
+
+    private func finishWorkspaceChange(restoring: Bool) {
+        if restoring { grid.restoreSession(workspaces.activeState) }
+        refreshWorkspaceTabs()
+        focusActivePane()
+        syncDeck()
+        (NSApp.delegate as? AppDelegate)?.noteStateChanged()
+    }
+
+    func moveWorkspace(from: Int, to: Int) {
+        snapshotIntoActive()
+        if workspaces.move(from: from, to: to) { finishWorkspaceChange(restoring: false) }
+    }
+
+    @objc func moveTabLeft(_ sender: Any?) { moveWorkspace(from: workspaces.activeIndex, to: workspaces.activeIndex - 1) }
+    @objc func moveTabRight(_ sender: Any?) { moveWorkspace(from: workspaces.activeIndex, to: workspaces.activeIndex + 1) }
+    @objc func moveTabToNewWindow(_ sender: Any?) { detachWorkspace(at: workspaces.activeIndex, topLeft: nil) }
+
+    /// Hands a workspace over to another window. Taking the last one closes this window, as closing it would.
+    func releaseWorkspace(at index: Int) -> SessionWindow? {
+        snapshotIntoActive()
+        guard workspaces.states.indices.contains(index) else { return nil }
+        let state = workspaces.states[index]
+        closeWorkspace(at: index)
+        return state
+    }
+
+    func detachWorkspace(at index: Int, topLeft: NSPoint?) {
+        guard workspaces.count > 1, let delegate = NSApp.delegate as? AppDelegate,
+              let state = releaseWorkspace(at: index) else { return }
+        let directory = URL(fileURLWithPath: WorkspaceManager.path(of: state) ?? NSHomeDirectory())
+        let controller = delegate.openWindow(at: directory)
+        controller.restoreWorkspaces(SessionWorkspaces(workspaces: [state], activeWorkspace: 0))
+        if let topLeft { controller.window?.setFrameTopLeftPoint(topLeft) }
+        delegate.noteStateChanged()
+    }
+
     @objc func closeActiveWorkspace(_ sender: Any?) {
         closeWorkspace(at: workspaces.activeIndex)
     }
@@ -473,6 +512,9 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         if let enabled = DetailPanelMenu.validate(item, in: self) { return enabled }
         if let enabled = ViewStyleMenu.validate(item, in: self) { return enabled }
         if item.action == #selector(showRecentTabs(_:)) { return workspaces.count > 1 }
+        if item.action == #selector(moveTabLeft(_:)) { return workspaces.activeIndex > 0 }
+        if item.action == #selector(moveTabRight(_:)) { return workspaces.activeIndex < workspaces.count - 1 }
+        if item.action == #selector(moveTabToNewWindow(_:)) { return workspaces.count > 1 }
         if item.action == #selector(switchWorkspaceByNumber(_:)) {
             item.state = item.tag == workspaces.activeIndex ? .on : .off
             return item.tag < workspaces.count
@@ -608,6 +650,17 @@ extension MainWindowController: TopDeckDelegate {
     func deckNewWorkspace() { newWorkspaceTab(nil) }
     func deckSelectWorkspace(_ index: Int) { switchWorkspace(to: index) }
     func deckCloseWorkspace(_ index: Int) { closeWorkspace(at: index) }
+    func deckMoveWorkspace(from: Int, to: Int) { moveWorkspace(from: from, to: to) }
+    func deckDetachWorkspace(_ index: Int, at screenPoint: NSPoint) { detachWorkspace(at: index, topLeft: screenPoint) }
+
+    func deckAdoptWorkspace(_ payload: TabDragPayload, gap: Int) {
+        let delegate = NSApp.delegate as? AppDelegate
+        guard let source = delegate?.mainWindowController(for: NSApp.window(withWindowNumber: payload.windowNumber)),
+              source !== self, let state = source.releaseWorkspace(at: payload.index) else { return }
+        snapshotIntoActive()
+        workspaces.insert(state, at: gap)
+        finishWorkspaceChange(restoring: true)
+    }
 
     func deckHistory(forward: Bool) -> [URL] {
         let b = grid.activePane.activeTab.browser

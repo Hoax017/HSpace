@@ -29,6 +29,22 @@ public struct TabRecency: Sendable, Equatable {
         order = order.compactMap { $0 >= count ? $0 - count : nil }
     }
 
+    /// The tab at `from` moved to `to`
+    public mutating func move(from: Int, to: Int) {
+        order = order.map { position in
+            if position == from { return to }
+            if from < position, position <= to { return position - 1 }
+            if to <= position, position < from { return position + 1 }
+            return position
+        }
+    }
+
+    /// A new tab arrived at `index`: tabs from there on shift up by one. It counts as just used.
+    public mutating func insert(at index: Int) {
+        order = order.map { $0 >= index ? $0 + 1 : $0 }
+        order.insert(index, at: 0)
+    }
+
     /// Every tab: used ones by recency, then the rest in tab order
     public func all(count: Int) -> [Int] {
         let known = order.filter { $0 >= 0 && $0 < count }
