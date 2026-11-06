@@ -16,7 +16,7 @@ public final class ScratchVolume: @unchecked Sendable {
         url = imageDir.appendingPathComponent("mount", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         let image = imageDir.appendingPathComponent("volume.dmg").path
-        try Self.hdiutil(["create", "-quiet", "-size", "\(sizeMB)m", "-fs", "APFS",
+        try Self.hdiutil(["create", "-quiet", "-ov", "-size", "\(sizeMB)m", "-fs", "APFS",
                           "-volname", "HSpaceTest", image])
         try Self.hdiutil(["attach", "-quiet", "-nobrowse", "-noverify", "-noautoopen",
                           "-mountpoint", url.path, image])
@@ -62,7 +62,21 @@ public final class ScratchVolume: @unchecked Sendable {
         try? handle.synchronize()
     }
 
+    /// hdiutil can fail silently when several tests use it at once on a busy CI runner, so it gets three tries.
     private static func hdiutil(_ args: [String]) throws {
+        var attempt = 1
+        while true {
+            do {
+                return try runHdiutil(args)
+            } catch {
+                guard attempt < 3 else { throw error }
+                Thread.sleep(forTimeInterval: Double(attempt))
+                attempt += 1
+            }
+        }
+    }
+
+    private static func runHdiutil(_ args: [String]) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
         process.arguments = args
@@ -73,7 +87,8 @@ public final class ScratchVolume: @unchecked Sendable {
         let message = errors.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            throw ScratchVolumeError.tool(String(decoding: message, as: UTF8.self))
+            let text = String(decoding: message, as: UTF8.self)
+            throw ScratchVolumeError.tool("hdiutil \(args[0]) exited \(process.terminationStatus): \(text)")
         }
     }
 }
