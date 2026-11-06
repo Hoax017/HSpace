@@ -30,6 +30,7 @@ enum KeyBindings {
         // Recent tab switcher: hold the modifiers and press Tab, like the system's app switcher. Same monitor as above.
         Entry(id: "recentTabs", titleKey: "menu.recentTabs", defaultKey: "\t", defaultMods: [.option]),
         Entry(id: "recentTabsBack", titleKey: "menu.recentTabsBack", defaultKey: "\t", defaultMods: [.option, .shift]),
+        Entry(id: "bringToActiveSpace", titleKey: "menu.bringToActiveSpace", defaultKey: "", defaultMods: []),
         Entry(id: "newFolder", titleKey: "menu.newFolder", defaultKey: "n", defaultMods: [.command, .shift]),
         Entry(id: "newFile", titleKey: "menu.newFile", defaultKey: "n", defaultMods: [.command, .option]),
         Entry(id: "quickLook", titleKey: "menu.quickLook", defaultKey: " ", defaultMods: []),

@@ -934,3 +934,6 @@
 "menu.moveTabLeft" = "Move Tab Left";
 "menu.moveTabRight" = "Move Tab Right";
 "menu.moveTabToNewWindow" = "Move Tab to New Window";
+"menu.bringToActiveSpace" = "Bring to Active Space";
+"settings.behavior.bringToActiveSpace" = "Summoning HSpace brings its window to the current Space";
+"settings.behavior.dragShake" = "Shake the pointer while dragging files to summon the stash shelf";

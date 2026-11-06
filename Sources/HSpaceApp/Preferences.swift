@@ -33,6 +33,18 @@ enum Preferences {
         set { d.set(newValue, forKey: "foldersFirst") }
     }
 
+    /// Summoning HSpace brings its window to the current Space, instead of switching to the window's Space (L35)
+    static var bringToActiveSpace: Bool {
+        get { d.bool(forKey: "bringToActiveSpace") }
+        set { d.set(newValue, forKey: "bringToActiveSpace") }
+    }
+
+    /// Shaking the pointer during a file drag summons HSpace with its stash shelf (L35). Off by default: it watches drags in every app.
+    static var dragShake: Bool {
+        get { d.bool(forKey: "dragShake") }
+        set { d.set(newValue, forKey: "dragShake") }
+    }
+
     /// Default terminal ("auto" = iTerm first, falling back to Terminal)
     static var terminalChoice: String {
         get { d.string(forKey: "terminalChoice") ?? "auto" }

@@ -223,7 +223,7 @@ Owns `BreadcrumbBar.swift`, `PathEditorField.swift`, `SidebarViewController.swif
 - [x] **L32** (M) Quick launcher with commands
 - [x] **L33** (M) Sidebar item accent colours and palettes
 - [x] **L34** (M) Tab drag-out and reorder
-- [ ] **L35** (S) Bring to active Space, drag-shake gesture
+- [x] **L35** (S) Bring to active Space, drag-shake gesture
 
 ### Lane 5: Operations
 
@@ -556,6 +556,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Drag a tab to another window's strip: it joins there at the mark. If it was the source window's last tab, that window closes
 - [ ] The last tab in a window cannot be dragged out into a new window. File > Move Tab Left, Right and to New Window do the same from the keyboard and gray out when they cannot apply
 - [ ] Dragging files onto the tab strip, and tabs onto panes, has no effect. VoiceOver reads each tab and can switch to it. After a restart moved tabs and detached windows come back
+- [ ] With a window on another Space: Window > Bring to Active Space, or the same item in the Dock menu, moves all windows here without switching Space. The window then stays on this Space when you change Space
+- [ ] Settings > Behavior, Summoning HSpace brings its window: the global hotkey and a Dock click bring the window here. Off, they switch to the window's Space as before. A full-screen window is only raised
+- [ ] Settings > Behavior, Shake the pointer: drag files from Finder and shake left and right a few times: HSpace comes to this Space with the sidebar open, and the files drop on the stash shelf
+- [ ] Shaking while dragging text or a window does nothing, and a slow drag does not trigger it. Check a shake during a drag started inside HSpace too
+- [ ] With the shake setting off, and with it on at rest, idle CPU stays at 0.0%
 
 ### Overall feel
 

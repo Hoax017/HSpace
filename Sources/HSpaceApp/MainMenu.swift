@@ -217,6 +217,9 @@ enum MainMenu {
         tasksItem.target = ProgressWindowController.shared
         windowMenu.addItem(withTitle: L10n.t("menu.operationHistory"),
                            action: #selector(MainWindowController.showOperationHistory(_:)), keyEquivalent: "")
+        KeyBindings.apply("bringToActiveSpace", to: windowMenu.addItem(withTitle: L10n.t("menu.bringToActiveSpace"),
+                                                                       action: #selector(AppDelegate.bringWindowsToActiveSpace(_:)),
+                                                                       keyEquivalent: ""))
         windowMenu.addItem(withTitle: L10n.t("menu.recentTabs"),
                            action: #selector(MainWindowController.showRecentTabs(_:)), keyEquivalent: "")
         windowMenu.addItem(.separator())
