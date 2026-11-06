@@ -139,6 +139,8 @@ The palette is **system semantic colors + a single dynamic accent**: there is no
 
 **The File-Colour Exception.** File colours are the user's own marks, so a coloured name is the one exception to the Three-Ink Rule. They use system colours only and show nothing unless the user sets them. A selected row keeps the system's ink.
 
+**The Sidebar-Colour Exception.** Sidebar item colours and palettes are also the user's own marks: an icon tint from system colours only, by name (`SidebarColor`), showing nothing unless the user sets them. A row whose icon cannot be tinted swaps it for an SF Symbol. Titles keep their ink, so a colour never carries meaning alone.
+
 **The Tabular-Where-It-Counts Rule.** Tabular digits are used for digits that change with refresh or selection: stash count pill, status bar (count / "N selected · size" pill / available capacity), and the list's size/modified/created/added date columns. All go through `.monospacedDigitSystemFont` (converged in M21; the status bar and size/date columns previously used plain `systemFont` by mistake, which has been fixed to match the mockup's `font-variant-numeric: tabular-nums`). Non-numeric text (name/kind/path) still uses regular `systemFont`.
 
 ## Layout

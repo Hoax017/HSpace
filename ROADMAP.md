@@ -221,7 +221,7 @@ Owns `BreadcrumbBar.swift`, `PathEditorField.swift`, `SidebarViewController.swif
 - [x] **L30** (M) Recent tab switcher
 - [x] **L31** (M) Quick locations and go-to-bookmark panel
 - [x] **L32** (M) Quick launcher with commands
-- [ ] **L33** (M) Sidebar item accent colours and palettes
+- [x] **L33** (M) Sidebar item accent colours and palettes
 - [ ] **L34** (M) Tab drag-out and reorder
 - [ ] **L35** (S) Bring to active Space, drag-shake gesture
 
@@ -547,6 +547,10 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] A command that the menus gray out right now, such as Duplicate with nothing selected, is not offered. Return runs a command in the active pane, in list, icon and column views
 - [ ] Start with > and only commands remain. A path or a location still goes there, and Command-Return opens it in a new tab
 - [ ] After restart, recent commands are still first
+- [ ] Right-click a bookmark, iCloud or a volume: Color lists system colours with swatches and None. A choice tints that row's icon at once in every window, and the current colour is ticked
+- [ ] A folder with a real file icon, and a volume, switch to a symbol that shows the colour; None brings the real icon back
+- [ ] Sidebar Palette, from the right-click menu or Settings > Appearance: Spectrum, Cool, Warm and Monochrome colour every row, and an item's own colour stays. Standard returns to the usual look
+- [ ] Colours survive a restart and a moved bookmark folder. They read well in light and dark mode, and selected rows stay legible
 
 ### Overall feel
 
