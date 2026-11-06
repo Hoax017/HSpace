@@ -182,6 +182,12 @@ enum MainMenu {
         let pathItem = goMenu.addItem(withTitle: L10n.t("menu.goToPath"),
                        action: #selector(PaneViewController.editPath(_:)), keyEquivalent: "")
         KeyBindings.apply("goToPath", to: pathItem)
+        let quickLocations = goMenu.addItem(withTitle: L10n.t("menu.quickLocations"),
+                                            action: #selector(MainWindowController.showQuickLocations(_:)), keyEquivalent: "")
+        KeyBindings.apply("quickLocations", to: quickLocations)
+        let goToBookmark = goMenu.addItem(withTitle: L10n.t("menu.goToBookmark"),
+                                          action: #selector(MainWindowController.showBookmarkPanel(_:)), keyEquivalent: "")
+        KeyBindings.apply("goToBookmark", to: goToBookmark)
         goMenu.addItem(.separator())
         // Focused search: default ⌘F current folder / ⇧⌘F global (rebindable in settings)
         let hereSearch = goMenu.addItem(withTitle: L10n.t("menu.searchHere"),

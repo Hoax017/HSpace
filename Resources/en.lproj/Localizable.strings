@@ -896,3 +896,14 @@
 "photos.all" = "All Photos";
 "menu.recentTabs" = "Recent Tabs…";
 "menu.recentTabsBack" = "Recent Tabs, Backward";
+"menu.quickLocations" = "Quick Locations…";
+"menu.goToBookmark" = "Go to Bookmark…";
+"quick.empty" = "No matches";
+"quick.locations.placeholder" = "Go to a bookmark, volume, recent folder or path";
+"quick.bookmarks.placeholder" = "Go to a bookmark";
+"quick.kind.bookmark" = "Bookmark";
+"quick.kind.place" = "iCloud";
+"quick.kind.volume" = "Volume";
+"quick.kind.recent" = "Recent";
+"quick.kind.typed" = "Go to Path";
+"quick.missing" = "%@ no longer exists.";

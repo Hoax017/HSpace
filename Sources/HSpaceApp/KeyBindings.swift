@@ -50,6 +50,8 @@ enum KeyBindings {
         Entry(id: "goUp", titleKey: "menu.goUp", defaultKey: "\u{F700}", defaultMods: [.command]),
         Entry(id: "goDown", titleKey: "menu.goDown", defaultKey: "\u{F701}", defaultMods: [.command]),
         Entry(id: "goToPath", titleKey: "menu.goToPath", defaultKey: "l", defaultMods: [.command]),
+        Entry(id: "quickLocations", titleKey: "menu.quickLocations", defaultKey: "g", defaultMods: [.command, .shift]),
+        Entry(id: "goToBookmark", titleKey: "menu.goToBookmark", defaultKey: "b", defaultMods: [.command, .option]),
         Entry(id: "goTrash", titleKey: "menu.goTrash", defaultKey: "", defaultMods: []),
         // User-requested defaults: ⌘F current folder, ⇧⌘F global
         Entry(id: "searchHere", titleKey: "menu.searchHere", defaultKey: "f", defaultMods: [.command]),

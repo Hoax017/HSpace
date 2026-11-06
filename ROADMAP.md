@@ -219,7 +219,7 @@ Owns the view controllers and `Sources/Pods/IconThumb`.
 Owns `BreadcrumbBar.swift`, `PathEditorField.swift`, `SidebarViewController.swift`, `TabBarView.swift`.
 
 - [x] **L30** (M) Recent tab switcher
-- [ ] **L31** (M) Quick locations and go-to-bookmark panel
+- [x] **L31** (M) Quick locations and go-to-bookmark panel
 - [ ] **L32** (M) Quick launcher with commands
 - [ ] **L33** (M) Sidebar item accent colours and palettes
 - [ ] **L34** (M) Tab drag-out and reorder
@@ -538,6 +538,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] With several tabs open, hold Option and press Tab: after a moment a panel lists tabs by last use; each Tab steps, Shift-Tab steps back, and releasing Option switches. A quick press and release swaps the last two tabs with no flash
 - [ ] Esc while the panel shows stays on the current tab, and a click on a row switches to it. Window > Recent Tabs stays open until Return, Esc or a click, and works with arrow keys
 - [ ] The panel reads well in light and dark mode, and VoiceOver announces each tab as you step
+- [ ] Go > Quick Locations (Shift-Command-G): bookmarks, iCloud, volumes and recent folders appear; typing filters, also by abbreviation; arrows move, Return goes, Esc or a click elsewhere closes and focus returns to the pane
+- [ ] Type /usr/bin or ~/Documents: a Go to Path row comes first. A path to a file opens its folder with the file selected. A path that does not exist says so
+- [ ] Command-Return opens the location in a new tab. Go > Go to Bookmark (Option-Command-B) lists bookmarks only
+- [ ] A deleted folder never shows as recent, and a bookmark deleted while the panel is open shows a message instead of an empty pane
+- [ ] Panel reads well in light and dark mode; VoiceOver names the field and reads the rows
 
 ### Overall feel
 

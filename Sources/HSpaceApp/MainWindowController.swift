@@ -562,7 +562,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
     }
 
     /// Enter to locate: directories (not packages) are entered directly; files/packages go to the parent with the item selected (reuses the prepareReveal reveal chain)
-    private func revealSearchHit(_ url: URL) {
+    func revealSearchHit(_ url: URL) {
         let pane = grid.activePane
         var isDir: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
