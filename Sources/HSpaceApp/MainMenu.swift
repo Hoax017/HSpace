@@ -188,6 +188,9 @@ enum MainMenu {
         let goToBookmark = goMenu.addItem(withTitle: L10n.t("menu.goToBookmark"),
                                           action: #selector(MainWindowController.showBookmarkPanel(_:)), keyEquivalent: "")
         KeyBindings.apply("goToBookmark", to: goToBookmark)
+        let quickLauncher = goMenu.addItem(withTitle: L10n.t("menu.quickLauncher"),
+                                           action: #selector(MainWindowController.showQuickLauncher(_:)), keyEquivalent: "")
+        KeyBindings.apply("quickLauncher", to: quickLauncher)
         goMenu.addItem(.separator())
         // Focused search: default ⌘F current folder / ⇧⌘F global (rebindable in settings)
         let hereSearch = goMenu.addItem(withTitle: L10n.t("menu.searchHere"),

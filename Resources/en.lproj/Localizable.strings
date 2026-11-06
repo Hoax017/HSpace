@@ -907,3 +907,6 @@
 "quick.kind.recent" = "Recent";
 "quick.kind.typed" = "Go to Path";
 "quick.missing" = "%@ no longer exists.";
+"menu.quickLauncher" = "Quick Launcher…";
+"quick.launcher.placeholder" = "Find a command or a location. Start with > for commands only";
+"quick.commandGone" = "%@ is not available right now.";

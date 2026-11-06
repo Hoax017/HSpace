@@ -52,6 +52,7 @@ enum KeyBindings {
         Entry(id: "goToPath", titleKey: "menu.goToPath", defaultKey: "l", defaultMods: [.command]),
         Entry(id: "quickLocations", titleKey: "menu.quickLocations", defaultKey: "g", defaultMods: [.command, .shift]),
         Entry(id: "goToBookmark", titleKey: "menu.goToBookmark", defaultKey: "b", defaultMods: [.command, .option]),
+        Entry(id: "quickLauncher", titleKey: "menu.quickLauncher", defaultKey: "p", defaultMods: [.command, .shift]),
         Entry(id: "goTrash", titleKey: "menu.goTrash", defaultKey: "", defaultMods: []),
         // User-requested defaults: ⌘F current folder, ⇧⌘F global
         Entry(id: "searchHere", titleKey: "menu.searchHere", defaultKey: "f", defaultMods: [.command]),
@@ -108,12 +109,17 @@ enum KeyBindings {
     static func display(_ id: String) -> String {
         let b = binding(id)
         guard !b.key.isEmpty else { return "—" }
+        return display(key: b.key, mods: b.mods)
+    }
+
+    static func display(key: String, mods: NSEvent.ModifierFlags) -> String {
+        guard !key.isEmpty else { return "" }
         var out = ""
-        if b.mods.contains(.control) { out += "⌃" }
-        if b.mods.contains(.option) { out += "⌥" }
-        if b.mods.contains(.shift) { out += "⇧" }
-        if b.mods.contains(.command) { out += "⌘" }
-        return out + symbolName(for: b.key)
+        if mods.contains(.control) { out += "⌃" }
+        if mods.contains(.option) { out += "⌥" }
+        if mods.contains(.shift) { out += "⇧" }
+        if mods.contains(.command) { out += "⌘" }
+        return out + symbolName(for: key)
     }
 
     private static func symbolName(for key: String) -> String {

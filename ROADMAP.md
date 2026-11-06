@@ -220,7 +220,7 @@ Owns `BreadcrumbBar.swift`, `PathEditorField.swift`, `SidebarViewController.swif
 
 - [x] **L30** (M) Recent tab switcher
 - [x] **L31** (M) Quick locations and go-to-bookmark panel
-- [ ] **L32** (M) Quick launcher with commands
+- [x] **L32** (M) Quick launcher with commands
 - [ ] **L33** (M) Sidebar item accent colours and palettes
 - [ ] **L34** (M) Tab drag-out and reorder
 - [ ] **L35** (S) Bring to active Space, drag-shake gesture
@@ -543,6 +543,10 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Command-Return opens the location in a new tab. Go > Go to Bookmark (Option-Command-B) lists bookmarks only
 - [ ] A deleted folder never shows as recent, and a bookmark deleted while the panel is open shows a message instead of an empty pane
 - [ ] Panel reads well in light and dark mode; VoiceOver names the field and reads the rows
+- [ ] Go > Quick Launcher (Shift-Command-P): recently used commands come first, then the rest. Typing finds menu commands with their menu path and shortcut, and locations in the same list
+- [ ] A command that the menus gray out right now, such as Duplicate with nothing selected, is not offered. Return runs a command in the active pane, in list, icon and column views
+- [ ] Start with > and only commands remain. A path or a location still goes there, and Command-Return opens it in a new tab
+- [ ] After restart, recent commands are still first
 
 ### Overall feel
 

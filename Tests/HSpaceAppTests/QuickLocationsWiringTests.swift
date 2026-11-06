@@ -153,7 +153,7 @@ import Testing
     }
 
     @Test func theMenuAndShortcutsAreRegistered() {
-        NSApp.mainMenu = MainMenu.build()
+        NSApplication.shared.mainMenu = MainMenu.build()
         #expect(MainMenu.uiTestMenuItem(for: #selector(MainWindowController.showQuickLocations(_:)))?.ownerTitle == L10n.t("menu.go"))
         #expect(MainMenu.uiTestMenuItem(for: #selector(MainWindowController.showBookmarkPanel(_:)))?.ownerTitle == L10n.t("menu.go"))
         #expect(KeyBindings.entry("quickLocations") != nil)

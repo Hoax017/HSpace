@@ -131,7 +131,7 @@ private final class FakeHost: TabSwitcherHost {
     }
 
     @Test func theMenuAndShortcutsAreRegistered() throws {
-        NSApp.mainMenu = MainMenu.build()
+        NSApplication.shared.mainMenu = MainMenu.build()
         #expect(MainMenu.uiTestMenuItem(for: #selector(MainWindowController.showRecentTabs(_:))) != nil)
         #expect(KeyBindings.entry("recentTabs")?.defaultKey == "\t")
         #expect(KeyBindings.entry("recentTabsBack")?.defaultMods == [.option, .shift])
