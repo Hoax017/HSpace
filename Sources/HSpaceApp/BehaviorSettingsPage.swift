@@ -53,6 +53,11 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
             selectedTag: FolderSizeMode.allCases.firstIndex(of: Preferences.folderSizeMode) ?? 0,
             action: #selector(folderSizesChanged(_:)))
 
+        let bringHere = checkRow("settings.behavior.bringToActiveSpace",
+            checked: Preferences.bringToActiveSpace, action: #selector(bringToActiveSpaceChanged(_:)))
+        let dragShake = checkRow("settings.behavior.dragShake",
+            checked: Preferences.dragShake, action: #selector(dragShakeChanged(_:)))
+
         let sortRow = makeSortRow()
 
         let tabLimitNote = note("settings.behavior.tabLimit.note")
@@ -72,7 +77,7 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
         let openNote = note("settings.behavior.openTarget.note")
 
         let stack = NSStackView(views: [
-            enterRow, backspaceRow, dragRow, blank, spaceSelects, grouping, smartSearch, folderSizes, sortRow,
+            enterRow, backspaceRow, dragRow, blank, spaceSelects, grouping, smartSearch, bringHere, dragShake, folderSizes, sortRow,
             NSBox.separatorLine(), wsLimitRow, tabLimitNote,
             NSBox.separatorLine(), openHeader, openRow, openNote,
         ])
@@ -225,6 +230,15 @@ final class BehaviorSettingsPage: NSObject, SettingsPage {
 
     @objc private func spaceSelectsChanged(_ sender: NSButton) {
         Preferences.spaceSelects = sender.state == .on
+    }
+
+    @objc private func bringToActiveSpaceChanged(_ sender: NSButton) {
+        Preferences.bringToActiveSpace = sender.state == .on
+    }
+
+    @objc private func dragShakeChanged(_ sender: NSButton) {
+        Preferences.dragShake = sender.state == .on
+        (NSApp.delegate as? AppDelegate)?.dragShake.setEnabled(Preferences.dragShake)
     }
 
     @objc private func folderSizesChanged(_ sender: NSPopUpButton) {

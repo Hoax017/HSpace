@@ -139,6 +139,8 @@ The palette is **system semantic colors + a single dynamic accent**: there is no
 
 **The File-Colour Exception.** File colours are the user's own marks, so a coloured name is the one exception to the Three-Ink Rule. They use system colours only and show nothing unless the user sets them. A selected row keeps the system's ink.
 
+**The Sidebar-Colour Exception.** Sidebar item colours and palettes are also the user's own marks: an icon tint from system colours only, by name (`SidebarColor`), showing nothing unless the user sets them. A row whose icon cannot be tinted swaps it for an SF Symbol. Titles keep their ink, so a colour never carries meaning alone.
+
 **The Tabular-Where-It-Counts Rule.** Tabular digits are used for digits that change with refresh or selection: stash count pill, status bar (count / "N selected · size" pill / available capacity), and the list's size/modified/created/added date columns. All go through `.monospacedDigitSystemFont` (converged in M21; the status bar and size/date columns previously used plain `systemFont` by mistake, which has been fixed to match the mockup's `font-variant-numeric: tabular-nums`). Non-numeric text (name/kind/path) still uses regular `systemFont`.
 
 ## Layout
@@ -237,6 +239,7 @@ Constrained by official SF Symbols and semantic colors, each component's shape, 
 - **Capsule**: 5px radius, 28pt tall in the deck (`itemHeight`; 20pt is the `TabBarView` default), 160pt max width. **Active** = `Theme.accent @ 18%` background + `labelColor` text; **inactive** = transparent background + `secondaryLabelColor`. Font size 11.
 - **hover-reveal close button** (`xmark`, SF7): hidden at rest, shown only on mouse enter (and only when closable, `titles.count > 1`); middle-click closes directly.
 - When reused inside the deck, `useTransparentBackground()` lets the `.titlebar` material show through; the trailing `+` creates a new one.
+- **Dragging**: a tab drags from the strip with a snapshot of itself; a 2pt `Theme.accent` mark, placed by frame, shows the gap. Dropped in a strip it moves or changes window; dropped clear of its window it opens one of its own. Every drag has a File menu command for the keyboard.
 
 ### Count pill (stash shelf, `count-pill`)
 - 8px radius, 16pt tall, `Theme.accent @ 10%` background, `labelColor` text (⚠️ not accent-colored text, unlike the mockup), font 12pt monospaced-digit medium, trailing `chevron.down` (SF8).

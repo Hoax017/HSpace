@@ -59,17 +59,23 @@ enum GlobalHotkey {
 
     /// Show/hide toggle (hotkey callback; UISelfTest calls it directly for real-effect assertions)
     static func toggle() {
+        let delegate = NSApp.delegate as? AppDelegate
+        let bringsHere = Preferences.bringToActiveSpace
         if NSApp.isActive {
-            NSApp.hide(nil)
+            // Active, but with its window on another Space: the owner sees nothing, so hiding would be the wrong way round
+            if bringsHere, let window = delegate?.frontmostMainWindow, !window.isOnActiveSpace {
+                ActiveSpace.bring(window)
+            } else {
+                NSApp.hide(nil)
+            }
         } else {
             NSApp.unhide(nil)
             NSApp.activate()
             // unhide is asynchronous: isVisible from NSApp.windows is still false at this point, so asking it "is there a main window"
             // gets a false no, and each hotkey summon opens a surplus empty window (always on slow machines). Ask AppDelegate's window ledger instead:
             // it is updated synchronously in windowWillClose and is the only synchronously reliable answer.
-            let delegate = NSApp.delegate as? AppDelegate
-            if delegate?.hasLiveMainWindow == true {
-                delegate?.frontmostMainWindow?.makeKeyAndOrderFront(nil)
+            if delegate?.hasLiveMainWindow == true, let window = delegate?.frontmostMainWindow {
+                if bringsHere { ActiveSpace.bring(window) } else { window.makeKeyAndOrderFront(nil) }
             } else {
                 delegate?.openWindow(at: FileManager.default.homeDirectoryForCurrentUser)
             }

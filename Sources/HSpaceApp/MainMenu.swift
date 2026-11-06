@@ -34,6 +34,11 @@ enum MainMenu {
         let prevWsItem = fileMenu.addItem(withTitle: L10n.t("menu.prevWorkspace"),
                                           action: #selector(MainWindowController.previousWorkspace(_:)), keyEquivalent: "")
         KeyBindings.apply("prevWorkspace", to: prevWsItem)
+        for (key, id, action) in [("menu.moveTabLeft", "moveTabLeft", #selector(MainWindowController.moveTabLeft(_:))),
+                                  ("menu.moveTabRight", "moveTabRight", #selector(MainWindowController.moveTabRight(_:))),
+                                  ("menu.moveTabToNewWindow", "moveTabToNewWindow", #selector(MainWindowController.moveTabToNewWindow(_:)))] {
+            KeyBindings.apply(id, to: fileMenu.addItem(withTitle: L10n.t(key), action: action, keyEquivalent: ""))
+        }
         let newFolderItem = fileMenu.addItem(withTitle: L10n.t("menu.newFolder"),
                                              action: #selector(FileListViewController.newFolderHere(_:)), keyEquivalent: "")
         KeyBindings.apply("newFolder", to: newFolderItem)
@@ -182,6 +187,15 @@ enum MainMenu {
         let pathItem = goMenu.addItem(withTitle: L10n.t("menu.goToPath"),
                        action: #selector(PaneViewController.editPath(_:)), keyEquivalent: "")
         KeyBindings.apply("goToPath", to: pathItem)
+        let quickLocations = goMenu.addItem(withTitle: L10n.t("menu.quickLocations"),
+                                            action: #selector(MainWindowController.showQuickLocations(_:)), keyEquivalent: "")
+        KeyBindings.apply("quickLocations", to: quickLocations)
+        let goToBookmark = goMenu.addItem(withTitle: L10n.t("menu.goToBookmark"),
+                                          action: #selector(MainWindowController.showBookmarkPanel(_:)), keyEquivalent: "")
+        KeyBindings.apply("goToBookmark", to: goToBookmark)
+        let quickLauncher = goMenu.addItem(withTitle: L10n.t("menu.quickLauncher"),
+                                           action: #selector(MainWindowController.showQuickLauncher(_:)), keyEquivalent: "")
+        KeyBindings.apply("quickLauncher", to: quickLauncher)
         goMenu.addItem(.separator())
         // Focused search: default ⌘F current folder / ⇧⌘F global (rebindable in settings)
         let hereSearch = goMenu.addItem(withTitle: L10n.t("menu.searchHere"),
@@ -203,6 +217,11 @@ enum MainMenu {
         tasksItem.target = ProgressWindowController.shared
         windowMenu.addItem(withTitle: L10n.t("menu.operationHistory"),
                            action: #selector(MainWindowController.showOperationHistory(_:)), keyEquivalent: "")
+        KeyBindings.apply("bringToActiveSpace", to: windowMenu.addItem(withTitle: L10n.t("menu.bringToActiveSpace"),
+                                                                       action: #selector(AppDelegate.bringWindowsToActiveSpace(_:)),
+                                                                       keyEquivalent: ""))
+        windowMenu.addItem(withTitle: L10n.t("menu.recentTabs"),
+                           action: #selector(MainWindowController.showRecentTabs(_:)), keyEquivalent: "")
         windowMenu.addItem(.separator())
         // Direct workspace digits ⌘1..9 (I-13; tag = workspace index, validate grays out items beyond the current count)
         for n in 1...9 {

@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Conflict arbitration sheet (the kernel's only arbiter): held strongly here, the kernel keeps only a weak-semantics reference
     private let conflictSheet = ConflictSheet()
     private var windowControllers: [MainWindowController] = []
+    /// Shake gesture during file drags (L35); inert unless the setting is on
+    let dragShake = DragShakeMonitor()
     /// Sole commit owner of session snapshots (M11)
     let sessionStore = SessionStore(directory: AppDelegate.supportDirectory)
     /// Usage learning (M28): app-wide open/enter accounting feeds frecency ranking in focused search. Single instance, injected into each window's coordinator and the search panel.
@@ -81,6 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSUpdateDynamicServices()
         // M24: global show/hide hotkey (Carbon, no AX needed; the preference is externalized and recordable in Settings > General)
         GlobalHotkey.apply()
+        dragShake.onShake = { [weak self] in self?.summonForDrop() }
+        dragShake.setEnabled(Preferences.dragShake)
         // Composition root (BG-2): declaratively inject the What: pod nodes + conflict arbiter + progress subscription
         Task { @MainActor in
             await kernel.register(TransferNode(pauseGate: { [scheduler] in scheduler.waitWhilePaused($0) }),
@@ -200,6 +204,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
             openWindow(at: FileManager.default.homeDirectoryForCurrentUser)
+        } else if Preferences.bringToActiveSpace, let window = frontmostMainWindow {
+            ActiveSpace.bring(window)
         }
         return true
     }
@@ -293,6 +299,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Whether any main window is alive. **Do not use isVisible from NSApp.windows**: unhide is asynchronous,
     /// right after NSApp.unhide(nil) windows still report isVisible false, which reads as "no main window" and opens a surplus empty one
     /// (extra windows when the global hotkey summons HSpace). The window ledger is updated synchronously in windowWillClose and can be trusted.
+    var liveMainWindows: [MainWindowController] { windowControllers.filter { $0.window != nil } }
+
     var hasLiveMainWindow: Bool { windowControllers.contains { $0.window != nil } }
 
     /// Look up a window's controller (cross-window drag and drop sends undo/toasts back to the source window)

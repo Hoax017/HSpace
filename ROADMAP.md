@@ -218,12 +218,12 @@ Owns the view controllers and `Sources/Pods/IconThumb`.
 
 Owns `BreadcrumbBar.swift`, `PathEditorField.swift`, `SidebarViewController.swift`, `TabBarView.swift`.
 
-- [ ] **L30** (M) Recent tab switcher
-- [ ] **L31** (M) Quick locations and go-to-bookmark panel
-- [ ] **L32** (M) Quick launcher with commands
-- [ ] **L33** (M) Sidebar item accent colours and palettes
-- [ ] **L34** (M) Tab drag-out and reorder
-- [ ] **L35** (S) Bring to active Space, drag-shake gesture
+- [x] **L30** (M) Recent tab switcher
+- [x] **L31** (M) Quick locations and go-to-bookmark panel
+- [x] **L32** (M) Quick launcher with commands
+- [x] **L33** (M) Sidebar item accent colours and palettes
+- [x] **L34** (M) Tab drag-out and reorder
+- [x] **L35** (S) Bring to active Space, drag-shake gesture
 
 ### Lane 5: Operations
 
@@ -532,6 +532,35 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Select several, Copy to Active Pane: originals arrive in the active pane's folder under their own names; a taken name gets a number
 - [ ] An item stored only in iCloud downloads and arrives. Cancel during a copy: only finished files remain, no partial file
 - [ ] Limited access shows only the chosen photos. The library in Photos is unchanged. VoiceOver reads kind and date
+
+### Navigation
+
+- [ ] With several tabs open, hold Option and press Tab: after a moment a panel lists tabs by last use; each Tab steps, Shift-Tab steps back, and releasing Option switches. A quick press and release swaps the last two tabs with no flash
+- [ ] Esc while the panel shows stays on the current tab, and a click on a row switches to it. Window > Recent Tabs stays open until Return, Esc or a click, and works with arrow keys
+- [ ] The panel reads well in light and dark mode, and VoiceOver announces each tab as you step
+- [ ] Go > Quick Locations (Shift-Command-G): bookmarks, iCloud, volumes and recent folders appear; typing filters, also by abbreviation; arrows move, Return goes, Esc or a click elsewhere closes and focus returns to the pane
+- [ ] Type /usr/bin or ~/Documents: a Go to Path row comes first. A path to a file opens its folder with the file selected. A path that does not exist says so
+- [ ] Command-Return opens the location in a new tab. Go > Go to Bookmark (Option-Command-B) lists bookmarks only
+- [ ] A deleted folder never shows as recent, and a bookmark deleted while the panel is open shows a message instead of an empty pane
+- [ ] Panel reads well in light and dark mode; VoiceOver names the field and reads the rows
+- [ ] Go > Quick Launcher (Shift-Command-P): recently used commands come first, then the rest. Typing finds menu commands with their menu path and shortcut, and locations in the same list
+- [ ] A command that the menus gray out right now, such as Duplicate with nothing selected, is not offered. Return runs a command in the active pane, in list, icon and column views
+- [ ] Start with > and only commands remain. A path or a location still goes there, and Command-Return opens it in a new tab
+- [ ] After restart, recent commands are still first
+- [ ] Right-click a bookmark, iCloud or a volume: Color lists system colours with swatches and None. A choice tints that row's icon at once in every window, and the current colour is ticked
+- [ ] A folder with a real file icon, and a volume, switch to a symbol that shows the colour; None brings the real icon back
+- [ ] Sidebar Palette, from the right-click menu or Settings > Appearance: Spectrum, Cool, Warm and Monochrome colour every row, and an item's own colour stays. Standard returns to the usual look
+- [ ] Colours survive a restart and a moved bookmark folder. They read well in light and dark mode, and selected rows stay legible
+- [ ] Clicking a tab still switches on the first click, also when coming from another app. Dragging a tab along the strip shows a mark in the gap, and dropping moves it; the same workspace stays active
+- [ ] Drag a tab clear of the window and release: it opens in its own window at that spot, with its panes and paths. Dragging onto the window itself, or pressing Esc during the drag, changes nothing
+- [ ] Drag a tab to another window's strip: it joins there at the mark. If it was the source window's last tab, that window closes
+- [ ] The last tab in a window cannot be dragged out into a new window. File > Move Tab Left, Right and to New Window do the same from the keyboard and gray out when they cannot apply
+- [ ] Dragging files onto the tab strip, and tabs onto panes, has no effect. VoiceOver reads each tab and can switch to it. After a restart moved tabs and detached windows come back
+- [ ] With a window on another Space: Window > Bring to Active Space, or the same item in the Dock menu, moves all windows here without switching Space. The window then stays on this Space when you change Space
+- [ ] Settings > Behavior, Summoning HSpace brings its window: the global hotkey and a Dock click bring the window here. Off, they switch to the window's Space as before. A full-screen window is only raised
+- [ ] Settings > Behavior, Shake the pointer: drag files from Finder and shake left and right a few times: HSpace comes to this Space with the sidebar open, and the files drop on the stash shelf
+- [ ] Shaking while dragging text or a window does nothing, and a slow drag does not trigger it. Check a shake during a drag started inside HSpace too
+- [ ] With the shake setting off, and with it on at rest, idle CPU stays at 0.0%
 
 ### Overall feel
 

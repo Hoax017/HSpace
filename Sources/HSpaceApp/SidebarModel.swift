@@ -2,6 +2,7 @@ import AppKit
 import HSpaceContracts
 import VolumeInfo
 import BookmarkStore
+import SidebarColors
 
 /// Sidebar tree model: bookmarks (BookmarkStore, including starting location seeds) + iCloud + locations (VolumeInfo).
 /// The stash shelf (StashStore) is shown in its own area, not in the outline. NSOutlineView needs reference identity, so nodes are classes.
@@ -36,9 +37,13 @@ final class SidebarLeafNode {
     let titleColor: NSColor?
     /// Icon tint (Finder-style blue favorites icon)
     let tint: NSColor?
+    /// Key of this item's colour in the store
+    let colorKey: String
+    /// The colour the owner gave this item, not one from a palette
+    let chosenColor: SidebarColor?
 
     init(payload: Payload, title: String, icon: NSImage, url: URL?, subtitle: String? = nil,
-         titleColor: NSColor? = nil, tint: NSColor? = nil) {
+         titleColor: NSColor? = nil, tint: NSColor? = nil, colorKey: String = "", chosenColor: SidebarColor? = nil) {
         self.payload = payload
         self.title = title
         self.icon = icon
@@ -46,12 +51,36 @@ final class SidebarLeafNode {
         self.subtitle = subtitle
         self.titleColor = titleColor
         self.tint = tint
+        self.colorKey = colorKey
+        self.chosenColor = chosenColor
+    }
+}
+
+/// Icon and tint of a row once its colour is applied
+@MainActor
+private struct SidebarRowLook {
+    var icon: NSImage
+    var tint: NSColor?
+    var chosen: SidebarColor?
+
+    /// A real file icon cannot be tinted, so a coloured row swaps it for a symbol that can
+    init(key: String, index: Int, settings: SidebarColorSettings, icon: NSImage, tint: NSColor?, symbol: String) {
+        self.icon = icon
+        self.tint = tint
+        chosen = settings.items[key]
+        guard let color = settings.color(for: key, index: index) else { return }
+        self.tint = color.nsColor
+        if !icon.isTemplate, let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) {
+            image.size = NSSize(width: 16, height: 16)
+            self.icon = image
+        }
     }
 }
 
 @MainActor
 final class SidebarModel {
     let bookmarkStore: BookmarkStore
+    let colors: any SidebarColorStoring
     private let volumeInfo = VolumeInfo()
 
     /// Stash shelf controller (injected by MainWindowController; consumed by the StashShelfView area since M14)
@@ -61,8 +90,9 @@ final class SidebarModel {
     var onChange: (() -> Void)?
     private var volumeWatchTask: Task<Void, Never>?
 
-    init(bookmarkStore: BookmarkStore) {
+    init(bookmarkStore: BookmarkStore, colors: (any SidebarColorStoring)? = nil) {
         self.bookmarkStore = bookmarkStore
+        self.colors = colors ?? SidebarColorsHost.store
     }
 
     func start() {
@@ -78,6 +108,7 @@ final class SidebarModel {
                 UserDefaults.standard.set(true, forKey: seedsMergedKey)
             }
             ProblemAlert.show(await self.bookmarkStore.takeProblem())
+            ProblemAlert.show(self.colors.takeProblem())
             self.rebuild()
         }
         // Auto-refresh on volume mount/unmount
@@ -120,8 +151,9 @@ final class SidebarModel {
     private func applyRebuild(bookmarks: [BookmarkItem]) {
         // Bookmark group: starting location seeds stack with user bookmarks. Known paths prefer Finder's original sidebar icons (CoreTypes templates),
         // then SF Symbol + symbol blue, otherwise the real file icon.
+        let settings = colors.settings()
         let bookmarkGroup = SidebarGroupNode(kind: .bookmarks, title: L10n.t("sidebar.bookmarks"))
-        bookmarkGroup.children = bookmarks.map { item in
+        bookmarkGroup.children = bookmarks.enumerated().map { index, item in
             let url = bookmarkStore.resolve(item)
             let icon: NSImage
             var tint: NSColor? = nil
@@ -137,8 +169,10 @@ final class SidebarModel {
                     ?? NSWorkspace.shared.icon(for: .folder)
             }
             icon.size = NSSize(width: 16, height: 16)
-            return SidebarLeafNode(payload: .bookmark(item), title: item.name, icon: icon,
-                                   url: url, tint: tint)
+            let key = SidebarItemKey.bookmark(item.id)
+            let look = SidebarRowLook(key: key, index: index, settings: settings, icon: icon, tint: tint, symbol: "folder.fill")
+            return SidebarLeafNode(payload: .bookmark(item), title: item.name, icon: look.icon, url: url, tint: look.tint,
+                                   colorKey: key, chosenColor: look.chosen)
         }
 
         // Separate iCloud group (same structure as QSpace): has an entry and shows only if the iCloud Drive directory exists
@@ -149,13 +183,15 @@ final class SidebarModel {
             let icon = NSImage(systemSymbolName: "icloud", accessibilityDescription: L10n.t("sidebar.icloud"))
                 ?? NSWorkspace.shared.icon(for: .folder)
             icon.size = NSSize(width: 16, height: 16)
+            let key = SidebarItemKey.place(path: icloudURL.path)
+            let look = SidebarRowLook(key: key, index: 0, settings: settings, icon: icon, tint: .systemBlue, symbol: "icloud")
             icloudGroup.children = [SidebarLeafNode(payload: .place(icloudURL),
-                                                    title: L10n.t("sidebar.icloud"), icon: icon,
-                                                    url: icloudURL, tint: .systemBlue)]
+                                                    title: L10n.t("sidebar.icloud"), icon: look.icon,
+                                                    url: icloudURL, tint: look.tint, colorKey: key, chosenColor: look.chosen)]
         }
 
         let volumeGroup = SidebarGroupNode(kind: .volumes, title: L10n.t("sidebar.volumes"))
-        volumeGroup.children = volumeInfo.volumes().map { vol in
+        volumeGroup.children = volumeInfo.volumes().enumerated().map { index, vol in
             let icon = NSWorkspace.shared.icon(forFile: vol.url.path)
             icon.size = NSSize(width: 16, height: 16)
             // Read-only volumes (DMGs etc.) have 0 available capacity: show "Read Only" rather than a misleading "0 KB available"
@@ -166,8 +202,10 @@ final class SidebarModel {
             } else {
                 subtitle = L10n.t("sidebar.readOnly")
             }
-            return SidebarLeafNode(payload: .volume(vol), title: vol.name, icon: icon, url: vol.url,
-                                   subtitle: subtitle)
+            let key = SidebarItemKey.place(path: vol.url.path)
+            let look = SidebarRowLook(key: key, index: index, settings: settings, icon: icon, tint: nil, symbol: "externaldrive.fill")
+            return SidebarLeafNode(payload: .volume(vol), title: vol.name, icon: look.icon, url: vol.url,
+                                   subtitle: subtitle, tint: look.tint, colorKey: key, chosenColor: look.chosen)
         }
 
         // Emit groups in Preferences.sidebarGroupOrder order (user request: bookmarks can be dragged to the top).

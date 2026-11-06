@@ -1,4 +1,5 @@
 import AppKit
+import SidebarColors
 
 /// Appearance settings page (v1 subset of QSpace's appearance options): light/dark mode / theme palette / list font size / active pane highlight / inactive pane dimming.
 /// Everything applies immediately and persists: mode, accent, highlight and dimming refresh via Theme.broadcastChanged; font size refreshes through the column rebuild path.
@@ -23,6 +24,8 @@ final class AppearanceSettingsPage: NSObject, SettingsPage {
             buildFontRow(),
             buildHighlightRow(),
             buildDimRow(),
+            NSBox.separatorLine(),
+            buildSidebarPaletteRow(),
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -39,6 +42,34 @@ final class AppearanceSettingsPage: NSObject, SettingsPage {
             stack.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor),
         ])
         return v
+    }
+
+    // MARK: Sidebar palette (L33)
+
+    private func buildSidebarPaletteRow() -> NSView {
+        let popup = NSPopUpButton()
+        for palette in SidebarPalette.allCases {
+            popup.addItem(withTitle: palette.title)
+            popup.lastItem?.representedObject = palette.rawValue
+        }
+        popup.selectItem(at: SidebarPalette.allCases.firstIndex(of: SidebarColorsHost.store.settings().palette) ?? 0)
+        popup.target = self
+        popup.action = #selector(sidebarPaletteChanged(_:))
+        let label = NSTextField(labelWithString: L10n.t("settings.appearance.sidebarPalette"))
+        label.font = .systemFont(ofSize: 12)
+        popup.setAccessibilityLabel(label.stringValue)
+        let row = NSStackView(views: [label, popup])
+        row.orientation = .horizontal
+        row.spacing = 8
+        return row
+    }
+
+    @objc private func sidebarPaletteChanged(_ sender: NSPopUpButton) {
+        guard let raw = sender.selectedItem?.representedObject as? String, let palette = SidebarPalette(rawValue: raw) else { return }
+        if let failure = SidebarColorsHost.apply({ try SidebarColorsHost.store.setPalette(palette) }) {
+            ToolUI.showError(failure, in: sender.window)
+            sender.selectItem(at: SidebarPalette.allCases.firstIndex(of: SidebarColorsHost.store.settings().palette) ?? 0)
+        }
     }
 
     // MARK: Section titles

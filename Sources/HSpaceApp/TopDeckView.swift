@@ -1,4 +1,5 @@
 import AppKit
+import TabDrag
 
 // Direction contract, copied from the top of docs/design/M17-deck-spec.md (the sole authority)
 // THESIS: take the native macOS professional tool standard to the limit: Finder's material language × QSpace's density and topology;
@@ -34,6 +35,9 @@ protocol TopDeckDelegate: AnyObject {
     func deckNewWorkspace()
     func deckSelectWorkspace(_ index: Int)
     func deckCloseWorkspace(_ index: Int)
+    func deckMoveWorkspace(from: Int, to: Int)
+    func deckDetachWorkspace(_ index: Int, at screenPoint: NSPoint)
+    func deckAdoptWorkspace(_ payload: TabDragPayload, gap: Int)
     /// Navigation history (popped up by long-pressing the back/forward segment; most recent first)
     func deckHistory(forward: Bool) -> [URL]
     func deckJumpHistory(forward: Bool, index: Int)
@@ -93,6 +97,9 @@ final class TopDeckView: NSVisualEffectView {
         workspaceTabBar.onSelect = { [weak self] i in self?.deckDelegate?.deckSelectWorkspace(i) }
         workspaceTabBar.onClose = { [weak self] i in self?.deckDelegate?.deckCloseWorkspace(i) }
         workspaceTabBar.onNew = { [weak self] in self?.deckDelegate?.deckNewWorkspace() }
+        workspaceTabBar.onMove = { [weak self] from, to in self?.deckDelegate?.deckMoveWorkspace(from: from, to: to) }
+        workspaceTabBar.onDetach = { [weak self] index, point in self?.deckDelegate?.deckDetachWorkspace(index, at: point) }
+        workspaceTabBar.onAdopt = { [weak self] payload, gap in self?.deckDelegate?.deckAdoptWorkspace(payload, gap: gap) }
         // Version badge embedded in the tab strip's trailing accessory slot (left of "+"; M22)
         workspaceTabBar.setTrailingAccessory(versionBadge)
         tabRow.translatesAutoresizingMaskIntoConstraints = false

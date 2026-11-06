@@ -2,6 +2,7 @@ import AppKit
 import HSpaceContracts
 import VolumeInfo
 import BookmarkStore
+import SidebarColors
 
 /// Left sidebar: source list groups (bookmarks/iCloud/locations, reorderable by dragging header rows).
 /// Read-only plus navigation intents (BG-1); bookmark add/remove/change is committed through the BookmarkStore pod.
@@ -96,6 +97,8 @@ final class SidebarViewController: NSViewController {
         ])
         view = root
 
+        // Colours and palettes change from any window or from Settings
+        NotificationCenter.default.addObserver(self, selector: #selector(colorsChanged(_:)), name: .hspaceThemeChanged, object: nil)
         model.start()
     }
 
@@ -116,6 +119,24 @@ final class SidebarViewController: NSViewController {
         bannerTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { [weak self] _ in
             Task { @MainActor in self?.banner.isHidden = true }
         }
+    }
+
+    @objc private func colorsChanged(_ note: Notification) { model.rebuild() }
+
+    // MARK: Colours
+
+    @objc private func chooseColor(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? SidebarColorChoice else { return }
+        report(SidebarColorsHost.apply { try model.colors.setColor(choice.color, for: choice.key) })
+    }
+
+    @objc private func choosePalette(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let palette = SidebarPalette(rawValue: raw) else { return }
+        report(SidebarColorsHost.apply { try model.colors.setPalette(palette) })
+    }
+
+    private func report(_ failure: String?) {
+        if let failure { showBanner(failure) }
     }
 
     // MARK: Eject
@@ -152,6 +173,8 @@ final class SidebarViewController: NSViewController {
         Task {
             do {
                 try await model.bookmarkStore.remove(item.id)
+                // A bookmark's colour goes with it. Its key is never reused, so a failure here leaves only an unused line.
+                report(SidebarColorsHost.apply { try model.colors.setColor(nil, for: leaf.colorKey) })
             } catch {
                 showBanner(error.localizedDescription)
             }
@@ -408,9 +431,20 @@ extension SidebarViewController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let row = outline.clickedRow
-        guard row >= 0 else { return }
-        guard let leaf = outline.item(atRow: row) as? SidebarLeafNode,
-              case .bookmark = leaf.payload else { return }
+        defer {
+            if !menu.items.isEmpty { menu.addItem(.separator()) }
+            menu.addItem(SidebarColorMenu.paletteItem(current: model.colors.settings().palette, target: self,
+                                                      action: #selector(choosePalette(_:))))
+        }
+        guard row >= 0, let leaf = outline.item(atRow: row) as? SidebarLeafNode else { return }
+        let colorItem = SidebarColorMenu.colorItem(current: leaf.chosenColor, target: self, action: #selector(chooseColor(_:)))
+        for entry in colorItem.submenu?.items ?? [] where !entry.isSeparatorItem {
+            let raw = entry.representedObject as? String ?? ""
+            entry.representedObject = SidebarColorChoice(key: leaf.colorKey, color: SidebarColor(rawValue: raw))
+        }
+        menu.addItem(colorItem)
+        guard case .bookmark = leaf.payload else { return }
+        menu.addItem(.separator())
         let rename = menu.addItem(withTitle: L10n.t("sidebar.rename"),
                                   action: #selector(renameBookmark(_:)), keyEquivalent: "")
         rename.target = self
@@ -444,6 +478,17 @@ extension SidebarViewController: NSTextFieldDelegate {
             }
             model.rebuild()
         }
+    }
+}
+
+/// What a colour menu entry carries
+private final class SidebarColorChoice: NSObject {
+    let key: String
+    let color: SidebarColor?
+
+    init(key: String, color: SidebarColor?) {
+        self.key = key
+        self.color = color
     }
 }
 
