@@ -894,3 +894,5 @@
 "photos.kind.photo" = "Photo";
 "photos.kind.video" = "Video";
 "photos.all" = "All Photos";
+"menu.recentTabs" = "Recent Tabs…";
+"menu.recentTabsBack" = "Recent Tabs, Backward";

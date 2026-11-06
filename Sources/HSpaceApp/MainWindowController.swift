@@ -36,6 +36,8 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
     /// and later layouts reapply isHidden (measured: width back to 202 but still hidden=true), so expanding always fails.
     private var sidebarCollapsedState = false
     private var keyMonitor: Any?
+    /// Recent tab switcher (L30); does nothing until a shortcut starts it
+    private(set) lazy var tabSwitcher = TabSwitcherController(host: self)
 
     init(kernel: OperationKernel, frecencyStore: FrecencyStore? = nil,
          trashLedger: TrashLedger? = nil,
@@ -219,6 +221,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
     func teardown() {
         NotificationCenter.default.removeObserver(self)
         detail.teardown()
+        tabSwitcher.cancel()
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
@@ -424,6 +427,11 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         (NSApp.delegate as? AppDelegate)?.noteStateChanged()
     }
 
+    /// Window > Recent Tabs. Without a held shortcut it stays open until something is picked.
+    @objc func showRecentTabs(_ sender: Any?) {
+        tabSwitcher.start(backward: false, heldModifiers: [])
+    }
+
     func switchWorkspace(to index: Int) {
         guard index != workspaces.activeIndex else { return }
         snapshotIntoActive()
@@ -464,6 +472,7 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
         if let enabled = TemplateMenu.validate(item, in: self) { return enabled }
         if let enabled = DetailPanelMenu.validate(item, in: self) { return enabled }
         if let enabled = ViewStyleMenu.validate(item, in: self) { return enabled }
+        if item.action == #selector(showRecentTabs(_:)) { return workspaces.count > 1 }
         if item.action == #selector(switchWorkspaceByNumber(_:)) {
             item.state = item.tag == workspaces.activeIndex ? .on : .off
             return item.tag < workspaces.count
@@ -504,8 +513,17 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
 
     private func installKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, event.window === self.window, event.keyCode == 48 else { return event }
+            guard let self, event.window === self.window, event.keyCode == 48,
+                  !self.tabSwitcher.isActive else { return event }
             let mods = event.modifierFlags.intersection([.command, .control, .option, .shift])
+            // The switcher takes the keyboard from here until its modifiers go up
+            for (id, backward) in [("recentTabs", false), ("recentTabsBack", true)] {
+                let binding = KeyBindings.binding(id)
+                if binding.key == "\t", mods == binding.mods {
+                    self.tabSwitcher.start(backward: backward, heldModifiers: binding.mods)
+                    return nil
+                }
+            }
             // Workspace cycle modifiers come from the KeyBindings registry (cycleWorkspace/Back), no longer hard-coded ⌃/⌃⇧
             let fwd = KeyBindings.binding("cycleWorkspace")
             let back = KeyBindings.binding("cycleWorkspaceBack")

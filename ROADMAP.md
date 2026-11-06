@@ -218,7 +218,7 @@ Owns the view controllers and `Sources/Pods/IconThumb`.
 
 Owns `BreadcrumbBar.swift`, `PathEditorField.swift`, `SidebarViewController.swift`, `TabBarView.swift`.
 
-- [ ] **L30** (M) Recent tab switcher
+- [x] **L30** (M) Recent tab switcher
 - [ ] **L31** (M) Quick locations and go-to-bookmark panel
 - [ ] **L32** (M) Quick launcher with commands
 - [ ] **L33** (M) Sidebar item accent colours and palettes
@@ -532,6 +532,12 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Select several, Copy to Active Pane: originals arrive in the active pane's folder under their own names; a taken name gets a number
 - [ ] An item stored only in iCloud downloads and arrives. Cancel during a copy: only finished files remain, no partial file
 - [ ] Limited access shows only the chosen photos. The library in Photos is unchanged. VoiceOver reads kind and date
+
+### Navigation
+
+- [ ] With several tabs open, hold Option and press Tab: after a moment a panel lists tabs by last use; each Tab steps, Shift-Tab steps back, and releasing Option switches. A quick press and release swaps the last two tabs with no flash
+- [ ] Esc while the panel shows stays on the current tab, and a click on a row switches to it. Window > Recent Tabs stays open until Return, Esc or a click, and works with arrow keys
+- [ ] The panel reads well in light and dark mode, and VoiceOver announces each tab as you step
 
 ### Overall feel
 

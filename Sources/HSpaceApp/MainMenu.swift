@@ -203,6 +203,8 @@ enum MainMenu {
         tasksItem.target = ProgressWindowController.shared
         windowMenu.addItem(withTitle: L10n.t("menu.operationHistory"),
                            action: #selector(MainWindowController.showOperationHistory(_:)), keyEquivalent: "")
+        windowMenu.addItem(withTitle: L10n.t("menu.recentTabs"),
+                           action: #selector(MainWindowController.showRecentTabs(_:)), keyEquivalent: "")
         windowMenu.addItem(.separator())
         // Direct workspace digits ⌘1..9 (I-13; tag = workspace index, validate grays out items beyond the current count)
         for n in 1...9 {
