@@ -6,7 +6,7 @@ enum RevealSettingError: Error, Equatable {
 
     var message: String {
         switch self {
-        case .notRestored(let handler): "Could not restore Finder: Reveal is still set to \(handler)."
+        case .notRestored(let handler): L10n.f("reveal.notRestored", handler)
         }
     }
 }

@@ -25,8 +25,16 @@ import Testing
         #expect(setting.handler == nil)
     }
 
-    @Test func theFailureNamesTheAppStillHoldingReveal() {
-        #expect(RevealSettingError.notRestored(handler: "com.example.app").message.contains("com.example.app"))
+    @Test func theFailureNamesTheAppStillHoldingReveal() throws {
+        #expect(RevealSettingError.notRestored(handler: "com.example.app").message == L10n.f("reveal.notRestored", "com.example.app"))
+        // The test bundle has no app strings, so each shipped table proves the handler reaches the message
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Resources")
+        for language in try FileManager.default.contentsOfDirectory(atPath: resources.path) where language.hasSuffix(".lproj") {
+            let table = try #require(Bundle(path: resources.appendingPathComponent(language).path))
+            let format = L10n.lookup("reveal.notRestored", in: table, fallback: nil)
+            #expect(String(format: format, "com.example.app").contains("com.example.app"), "\(language)")
+        }
     }
 
     @Test func theRealFunctionTargetsTheGlobalKey() throws {
