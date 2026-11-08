@@ -28,6 +28,11 @@ jobs:
       - name: Tests
         run: ./scripts/test.sh
 
+      - name: Bundle the app and its extensions
+        run: |
+          ./scripts/build-app.sh debug
+          ./scripts/check-bundle.sh
+
       - name: Pod lint
         run: ./scripts/pod-lint-swift.sh
 

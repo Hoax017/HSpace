@@ -13,6 +13,7 @@ import OperationHistory
 import Scheduler
 import TrashLedger
 import Eraser
+import ExtensionBridge
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -43,6 +44,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let metadataStore = MetadataStore(directory: AppDelegate.supportDirectory)
     /// Rename presets and log (L11), shared app-wide
     let renameStore = RenameStore(directory: AppDelegate.supportDirectory)
+    /// What the app extensions may read, and the check on what they ask for (L60, L61)
+    let extensionBridge = ExtensionBridgeHub(supportDirectory: AppDelegate.supportDirectory)
+    /// Stash links from the extensions that arrive before session restore finishes (same reason as pendingExternalOpens)
+    private var pendingStashLinks: [URL] = []
+    /// Services menu requests (L63) that arrive before session restore finishes
+    private var pendingServiceWork: [@MainActor () -> Void] = []
 
     /// Application support directory: UITEST uses an isolated temp directory so test fixture paths and records never pollute the user's real session or search ranking
     /// (test sandbox hard rule, same as the I-46 windowFrame isolation; since I-47 sessionStore goes through this too, because navigation persists the session immediately).
@@ -91,6 +98,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         dragShake.setEnabled(Preferences.dragShake)
         startAppExclusions()
+        extensionBridge.onError = { [weak self] message in
+            Toast.show(message, in: self?.activeMainWindowController()?.window)
+        }
         // Composition root (BG-2): declaratively inject the What: pod nodes + conflict arbiter + progress subscription
         Task { @MainActor in
             await kernel.register(TransferNode(pauseGate: { [scheduler] in scheduler.waitWhilePaused($0) }),
@@ -234,7 +244,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// hspace:// links (I-25 third-party integration) can only navigate: hspace://open?path=<directory> / hspace://reveal?path=<item>.
     /// Open mode (externalOpenTarget): anything but newWindow, with a window present -> reuse that window and open a new workspace tab there.
     func application(_ application: NSApplication, open urls: [URL]) {
-        routeExternalOpens(urls.map { $0.scheme?.lowercased() == "hspace" ? HSpaceURL.parse($0) : .system($0) })
+        // hspace://stash comes from HSpace's own extensions and carries their secret (L60, L61)
+        receiveStashLinks(urls.filter(StashLink.isStashLink))
+        let opens = urls.filter { !StashLink.isStashLink($0) }
+        routeExternalOpens(opens.map { $0.scheme?.lowercased() == "hspace" ? HSpaceURL.parse($0) : .system($0) })
+    }
+
+    /// Adds what a trusted stash link names to the frontmost window's stash shelf. A link without the secret
+    /// (a web page, another app) only gets a message.
+    private func receiveStashLinks(_ links: [URL]) {
+        guard !links.isEmpty else { return }
+        guard sessionReady else {
+            pendingStashLinks.append(contentsOf: links)
+            return
+        }
+        Task { @MainActor in
+            for link in links {
+                switch await extensionBridge.stashTargets(of: link) {
+                case .success(let urls):
+                    guard let wc = activeMainWindowController() else { continue }
+                    wc.stashShelf.add(urls)
+                    wc.window?.makeKeyAndOrderFront(nil)
+                case .failure(let refusal):
+                    Toast.show(refusal.message, in: activeMainWindowController()?.window)
+                }
+            }
+        }
     }
 
     /// Services menu entry (Finder context menu > Services > Open with HSpace; I-25)
@@ -289,7 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Active main window (destination for open mode activePane): prefer keyWindow, then mainWindow, then any live window
-    private func activeMainWindowController() -> MainWindowController? {
+    func activeMainWindowController() -> MainWindowController? {
         if let key = NSApp.keyWindow?.windowController as? MainWindowController { return key }
         if let main = NSApp.mainWindow?.windowController as? MainWindowController { return main }
         // Fall back to the **frontmost** visible main window (orderedWindows is front to back), not the "last created" one:
@@ -329,6 +364,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                       trashLedger: trashLedger,
                                      initialDirectory: directory, select: selecting)
         wc.coordinator.history = historyStore
+        wc.stashShelf.onItemsChanged = { [weak self] items, store in
+            self?.extensionBridge.stashChanged(items, store: store)
+        }
         windowControllers.append(wc)
         wc.window?.delegate = self
         if orderFront { wc.showWindow(nil) }
@@ -424,7 +462,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
 
     /// I-60: deliver external opens queued during session restore (windows exist now, so the normal "new workspace tab in existing window" branch applies)
+    /// Runs now, or once session restore has made the windows (a service can launch HSpace)
+    func whenSessionReady(_ work: @escaping @MainActor () -> Void) {
+        if sessionReady { work() } else { pendingServiceWork.append(work) }
+    }
+
     private func flushPendingExternalOpens() {
+        let serviceWork = pendingServiceWork
+        pendingServiceWork = []
+        serviceWork.forEach { $0() }
+        let stashLinks = pendingStashLinks
+        pendingStashLinks = []
+        receiveStashLinks(stashLinks)
         guard !pendingExternalOpens.isEmpty else { return }
         let queued = pendingExternalOpens
         pendingExternalOpens = []

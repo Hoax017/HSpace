@@ -7,6 +7,7 @@ final class PermissionsSettingsPage: NSObject, SettingsPage {
     var pageTitleKey: String { "settings.tab.permissions" }
 
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
+    private let finderExtensionLabel = NSTextField(wrappingLabelWithString: "")
 
     func makeView() -> NSView {
         let header = NSTextField(labelWithString: L10n.t("settings.perm.fdaTitle"))
@@ -30,7 +31,8 @@ final class PermissionsSettingsPage: NSObject, SettingsPage {
         note.textColor = .tertiaryLabelColor
 
         let stack = NSStackView(views: [header, statusLabel, buttons,
-                                        NSBox.separatorLine(), note])
+                                        NSBox.separatorLine(), note,
+                                        NSBox.separatorLine()] + finderExtensionViews())
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -49,6 +51,13 @@ final class PermissionsSettingsPage: NSObject, SettingsPage {
 
     /// Re-probes and refreshes the status line (after granting, "Check Again" on this page shows it at once)
     private func refreshStatus() {
+        if ExtensionBridgeHub.isFinderExtensionEnabled {
+            finderExtensionLabel.stringValue = L10n.t("settings.perm.finderExtOn")
+            finderExtensionLabel.textColor = .systemGreen
+        } else {
+            finderExtensionLabel.stringValue = L10n.t("settings.perm.finderExtOff")
+            finderExtensionLabel.textColor = .secondaryLabelColor
+        }
         if FinderIntegration.hasFullDiskAccess() {
             statusLabel.stringValue = L10n.t("settings.perm.granted")
             statusLabel.textColor = .systemGreen
@@ -56,6 +65,24 @@ final class PermissionsSettingsPage: NSObject, SettingsPage {
             statusLabel.stringValue = L10n.t("settings.perm.denied")
             statusLabel.textColor = .systemOrange
         }
+    }
+
+    /// Finder extension (L60): whether it is on, and the way to the system list where the user turns it on
+    private func finderExtensionViews() -> [NSView] {
+        let header = NSTextField(labelWithString: L10n.t("settings.perm.finderExtTitle"))
+        header.font = .systemFont(ofSize: 13, weight: .semibold)
+        finderExtensionLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        let open = NSButton(title: L10n.t("settings.perm.finderExtOpen"), target: self,
+                            action: #selector(openExtensionSettings))
+        open.bezelStyle = .push
+        let note = NSTextField(wrappingLabelWithString: L10n.t("settings.perm.finderExtNote"))
+        note.font = .systemFont(ofSize: 11)
+        note.textColor = .tertiaryLabelColor
+        return [header, finderExtensionLabel, open, note]
+    }
+
+    @objc private func openExtensionSettings() {
+        ExtensionBridgeHub.showExtensionSettings()
     }
 
     @objc private func openSettings() {

@@ -878,6 +878,16 @@ final class PaneViewController: NSViewController {
     /// set the directory first, then call this; each view's pending mechanism applies the selection after the async read finishes (I-44).
     func reveal(_ url: URL) { revealAfterLoad(url) }
 
+    /// Selects exactly these items of the shown folder; none clears the selection (AppleScript, L62)
+    func selectItems(_ urls: [URL]) {
+        switch activeTab.viewMode {
+        case .list: activeTab.listVC.select(urls: urls)
+        case .icons: activeTab.iconVC?.select(urls: urls)
+        case .columns: activeTab.columnVC?.select(urls: urls)
+        }
+        updateStatusCounts()
+    }
+
     /// Navigation history (for the long-press history menu): most recent first
     var backHistory: [URL] { activeTab.browser.backHistory }
     var forwardHistory: [URL] { activeTab.browser.forwardHistory }
