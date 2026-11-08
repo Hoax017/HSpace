@@ -1,0 +1,9 @@
+/* Support/Info.plist texts in French. Keys are Info.plist keys; "Folder" is the document type name (CFBundleTypeName). */
+"NSPhotoLibraryUsageDescription" = "HSpace affiche votre photothèque et copie les éléments que vous choisissez dans un dossier. Il ne modifie jamais la photothèque.";
+"NSDesktopFolderUsageDescription" = "HSpace a besoin d’accéder au Bureau pour parcourir et gérer ses fichiers.";
+"NSDocumentsFolderUsageDescription" = "HSpace a besoin d’accéder à Documents pour parcourir et gérer ses fichiers.";
+"NSDownloadsFolderUsageDescription" = "HSpace a besoin d’accéder à Téléchargements pour parcourir et gérer ses fichiers.";
+"NSNetworkVolumesUsageDescription" = "HSpace a besoin d’accéder aux volumes réseau pour parcourir et gérer leurs fichiers.";
+"NSRemovableVolumesUsageDescription" = "HSpace a besoin d’accéder aux volumes amovibles pour parcourir et gérer leurs fichiers.";
+"NSAppleEventsUsageDescription" = "HSpace demande au Finder d’afficher les commentaires que vous définissez, pour qu’ils apparaissent aussi dans la fenêtre Lire les informations du Finder.";
+"Folder" = "Dossier";

@@ -1,0 +1,5 @@
+/* Services menu titles in French. Each key is an NSMenuItem "default" title from NSServices in Support/Info.plist. */
+"Open in HSpace" = "Ouvrir dans HSpace";
+"Show File Hashes in HSpace" = "Afficher les empreintes dans HSpace";
+"Batch Rename in HSpace" = "Renommer par lot dans HSpace";
+"Add to HSpace Stash" = "Ajouter à la réserve HSpace";

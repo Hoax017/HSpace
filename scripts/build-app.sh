@@ -28,8 +28,10 @@ plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Inf
 plutil -replace CFBundleVersion -string "$BUILD_NUM" "$APP/Contents/Info.plist"
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 
-# Localization and icons
-cp -R Resources/en.lproj "$APP/Contents/Resources/"
+# Localization (every Resources/*.lproj: en is the development region, fr since L68) and icons
+for LPROJ in Resources/*.lproj; do
+  cp -R "$LPROJ" "$APP/Contents/Resources/"
+done
 if [ ! -f Support/HSpace.icns ]; then
   swift scripts/generate-icon.swift Support/icon_1024.png
   ./scripts/make-icns.sh
@@ -53,7 +55,16 @@ for EXT_DIR in Support/Extensions/*/; do
   plutil -replace CFBundleShortVersionString -string "$VERSION" "$EXT/Contents/Info.plist"
   plutil -replace CFBundleVersion -string "$BUILD_NUM" "$EXT/Contents/Info.plist"
   plutil -lint "$EXT/Contents/Info.plist" >/dev/null
-  cp -R Resources/en.lproj "$EXT/Contents/Resources/"
+  # The app's strings table in every language, then the extension's own InfoPlist.strings (its display name)
+  for LPROJ in Resources/*.lproj; do
+    mkdir -p "$EXT/Contents/Resources/$(basename "$LPROJ")"
+    cp "$LPROJ/Localizable.strings" "$EXT/Contents/Resources/$(basename "$LPROJ")/"
+  done
+  for LPROJ in "$EXT_DIR"*.lproj; do
+    [ -d "$LPROJ" ] || continue
+    mkdir -p "$EXT/Contents/Resources/$(basename "$LPROJ")"
+    cp "$LPROJ"/*.strings "$EXT/Contents/Resources/$(basename "$LPROJ")/"
+  done
   codesign --force --sign "${SIGN_IDENTITY:--}" --identifier "$EXT_ID" --entitlements "$EXT_ENT" "$EXT"
 done
 
