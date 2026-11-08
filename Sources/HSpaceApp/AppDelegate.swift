@@ -46,6 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let extensionBridge = ExtensionBridgeHub(supportDirectory: AppDelegate.supportDirectory)
     /// Stash links from the extensions that arrive before session restore finishes (same reason as pendingExternalOpens)
     private var pendingStashLinks: [URL] = []
+    /// Services menu requests (L63) that arrive before session restore finishes
+    private var pendingServiceWork: [@MainActor () -> Void] = []
 
     /// Application support directory: UITEST uses an isolated temp directory so test fixture paths and records never pollute the user's real session or search ranking
     /// (test sandbox hard rule, same as the I-46 windowFrame isolation; since I-47 sessionStore goes through this too, because navigation persists the session immediately).
@@ -316,7 +318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Active main window (destination for open mode activePane): prefer keyWindow, then mainWindow, then any live window
-    private func activeMainWindowController() -> MainWindowController? {
+    func activeMainWindowController() -> MainWindowController? {
         if let key = NSApp.keyWindow?.windowController as? MainWindowController { return key }
         if let main = NSApp.mainWindow?.windowController as? MainWindowController { return main }
         // Fall back to the **frontmost** visible main window (orderedWindows is front to back), not the "last created" one:
@@ -452,7 +454,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
 
     /// I-60: deliver external opens queued during session restore (windows exist now, so the normal "new workspace tab in existing window" branch applies)
+    /// Runs now, or once session restore has made the windows (a service can launch HSpace)
+    func whenSessionReady(_ work: @escaping @MainActor () -> Void) {
+        if sessionReady { work() } else { pendingServiceWork.append(work) }
+    }
+
     private func flushPendingExternalOpens() {
+        let serviceWork = pendingServiceWork
+        pendingServiceWork = []
+        serviceWork.forEach { $0() }
         let stashLinks = pendingStashLinks
         pendingStashLinks = []
         receiveStashLinks(stashLinks)

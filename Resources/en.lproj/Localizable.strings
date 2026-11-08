@@ -370,6 +370,12 @@
 "share.openFirst" = "Open HSpace once, then share again.";
 "share.cancel" = "Cancel";
 "share.add" = "Add";
+/* L63 Services */
+"service.nothingUsable" = "The Services menu sent nothing HSpace can use: only files and folders on this Mac.";
+"service.onlyFolders" = "File hashes are for files. Select files rather than folders.";
+"service.missing" = "“%@” is no longer there.";
+"service.inTrash" = "Items in the Trash cannot be renamed: Put Back finds them by name.";
+"service.busy" = "Close the open sheet in HSpace first, then try again.";
 "fda.prompt.title" = "Grant Full Disk Access?";
 "fda.prompt.body" = "HSpace does not yet have Full Disk Access, so some protected folders can't be browsed. Open System Settings to grant it now?";
 "fda.prompt.grant" = "Open Settings";

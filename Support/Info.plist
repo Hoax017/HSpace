@@ -96,6 +96,57 @@
 				<string>public.item</string>
 			</array>
 		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Show File Hashes in HSpace</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>showHashesInHSpace</string>
+			<key>NSPortName</key>
+			<string>HSpace</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Batch Rename in HSpace</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>batchRenameInHSpace</string>
+			<key>NSPortName</key>
+			<string>HSpace</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.item</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Add to HSpace Stash</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>addToHSpaceStash</string>
+			<key>NSPortName</key>
+			<string>HSpace</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.item</string>
+			</array>
+		</dict>
 	</array>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>

@@ -279,7 +279,7 @@ Build step, no Xcode needed: each extension is a plain SwiftPM executable whose 
 - [x] **L60** (L) Finder Sync extension with badges
 - [x] **L61** (M) Share extension for the stash
 - [x] **L62** (L) AppleScript support: windows, panes, selection, stash
-- [ ] **L63** (S) More Services: hash, batch rename, add to stash
+- [x] **L63** (S) More Services: hash, batch rename, add to stash
 - [ ] **L64** (M) Context menu customization
 - [ ] **L65** (M) Preferences export and import
 - [ ] **L66** (M) Workspace and window management options, app exclusions
@@ -581,6 +581,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] `set active of pane 2 of browser window 1 to true` in a two-pane layout focuses it; `get browser window id <n>` finds the same window again
 - [ ] `add to stash POSIX file "…"` and `remove from stash …` change the shelf of the front window, `get stash items` lists it, and the files themselves stay untouched
 - [ ] A missing path, an item from another folder in a selection, and pane 9 each give the script an error with a clear message, and nothing changes. The first script asks for automation permission once
+- [ ] After a rebuild, run `/System/Library/CoreServices/pbs -update` or log out and in: Finder's right-click > Services lists Show File Hashes in HSpace (files only), Batch Rename in HSpace and Add to HSpace Stash. Turn them on under Keyboard Shortcuts > Services if they are missing
+- [ ] Show File Hashes on two files: HSpace comes forward with the hash sheet for them, and Cancel stops a large file. On folders only, a message says hashes are for files
+- [ ] Batch Rename on files from one folder: the rename sheet previews them, Rename renames, and Undo in HSpace puts the names back. Items in the Trash are refused with a message
+- [ ] Add to HSpace Stash: the items land on the front window's shelf. With HSpace quit, each service launches it and still acts once the window is up
+- [ ] With a sheet already open in HSpace, a hash or rename service says to close it first and opens nothing
 
 ### Overall feel
 

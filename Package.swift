@@ -3,7 +3,7 @@ import PackageDescription
 
 // Pod list: adding a capability = append a name here + create a Sources/Pods/<name>/ directory (the single explicit point of BG-11 incremental addition)
 let pods: [String] = ["DirectoryReader", "Transfer", "PathComplete", "DirectoryWatch", "FolderSize", "IconThumb", "LocalOps", "VolumeInfo", "BookmarkStore", "SessionStore", "StashStore", "SearchEngine", "ArchiveEngine", "Frecency", "Eraser", "TrashLedger", "FileMetadata", "BatchRename", "FileHash", "ImageConvert", "Scheduler", "OperationHistory", "FolderSync", "FileTemplates", "ArchivePasswords", "SidePanel", "FileInspector", "ViewStyles", "HiddenRules", "KeyboardSelection", "PhotoLibrary", "TabNavigation", "QuickLocations", "QuickLauncher", "SidebarColors", "TabDrag", "DragShake"]
-    + ["ExtensionBridge", "ScriptSupport"]   // Lane 7: system integration
+    + ["ExtensionBridge", "ScriptSupport", "ServiceRequests"]   // Lane 7: system integration
 
 let podTargets: [Target] = pods.map {
     .target(name: $0, dependencies: ["HSpaceContracts"], path: "Sources/Pods/\($0)")
