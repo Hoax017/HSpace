@@ -937,3 +937,49 @@
 "menu.bringToActiveSpace" = "Bring to Active Space";
 "settings.behavior.bringToActiveSpace" = "Summoning HSpace brings its window to the current Space";
 "settings.behavior.dragShake" = "Shake the pointer while dragging files to summon the stash shelf";
+
+/* Context menu customization (L64) */
+"settings.tab.contextMenu" = "Context Menu";
+"settings.contextMenu.note" = "Choose the entries each context menu shows, and their order within each group. Entries appear only when they apply to what you clicked.";
+"settings.contextMenu.kind" = "Menu:";
+"settings.contextMenu.kind.item" = "Selected items";
+"settings.contextMenu.kind.directory" = "Empty space";
+"settings.contextMenu.compress" = "Compress";
+"settings.contextMenu.up" = "Move “%@” up";
+"settings.contextMenu.down" = "Move “%@” down";
+"settings.contextMenu.reset" = "Restore Default Menu";
+
+/* Preferences export and import (L65) */
+"menu.exportPreferences" = "Export Preferences…";
+"menu.importPreferences" = "Import Preferences…";
+"prefs.export.title" = "Export Preferences";
+"prefs.export.fileName" = "HSpace Preferences.json";
+"prefs.export.done" = "Preferences exported";
+"prefs.export.doneSkipped" = "Preferences exported. %d settings with unusable values were left out";
+"prefs.export.failed" = "The preferences could not be exported";
+"prefs.import.title" = "Import Preferences";
+"prefs.import.failed" = "The preferences could not be imported";
+"prefs.import.confirm" = "Replace your settings with the ones in “%@”?";
+"prefs.import.confirmDetail" = "The file sets %d settings. Every other setting goes back to its default. Your current settings are saved first. Archive passwords are never in a preferences file and stay as they are.";
+"prefs.import.replace" = "Replace Settings";
+"prefs.import.done" = "Preferences imported";
+"prefs.import.doneDetail" = "Your previous settings were saved to %@. New panes and windows use the imported settings; restart HSpace for the Settings window to show them.";
+
+/* Window and workspace options, app exclusions (L66) */
+"settings.tab.windows" = "Windows";
+"settings.windows.launch" = "At launch:";
+"settings.windows.launch.restore" = "Reopen the last windows and tabs";
+"settings.windows.launch.home" = "Open one window at Home";
+"settings.windows.newWindow" = "New windows open at:";
+"settings.windows.newWindow.home" = "Home";
+"settings.windows.newWindow.current" = "The current folder";
+"settings.windows.lastTab" = "Closing the last tab:";
+"settings.windows.lastTab.closeWindow" = "Closes the window";
+"settings.windows.lastTab.keepWindow" = "Keeps the window, at Home";
+"settings.windows.quit" = "Quit HSpace when its last window closes";
+"settings.windows.excluded" = "Excluded apps";
+"settings.windows.excludedNote" = "While one of these apps is in front, the global hotkey goes to that app and shaking a drag does not summon HSpace.";
+"settings.windows.excludedNone" = "No apps excluded";
+"settings.windows.addApp" = "Add App…";
+"settings.windows.removeApp" = "Remove “%@”";
+"settings.windows.addAppFailed" = "These apps have no bundle identifier and could not be added";

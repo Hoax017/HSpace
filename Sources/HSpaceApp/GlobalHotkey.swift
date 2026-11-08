@@ -12,6 +12,15 @@ enum GlobalHotkey {
 
     static let prefKey = "globalHotkey"
 
+    /// True while an excluded app is in front (L66): the combo is released so that app receives it
+    private(set) static var isSuspended = false
+
+    static func setSuspended(_ suspended: Bool) {
+        guard suspended != isSuspended else { return }
+        isSuspended = suspended
+        apply()
+    }
+
     /// Current binding (modsRaw is NSEvent.ModifierFlags.rawValue)
     static var current: (mods: NSEvent.ModifierFlags, keyCode: UInt32, display: String)? {
         guard let raw = UserDefaults.standard.string(forKey: prefKey) else { return nil }
@@ -34,7 +43,7 @@ enum GlobalHotkey {
     @discardableResult
     static func apply() -> Bool {
         unregister()
-        guard let (mods, keyCode, _) = current else { return true }
+        guard !isSuspended, let (mods, keyCode, _) = current else { return true }
         var carbonMods: UInt32 = 0
         if mods.contains(.command) { carbonMods |= UInt32(cmdKey) }
         if mods.contains(.option) { carbonMods |= UInt32(optionKey) }

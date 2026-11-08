@@ -39,16 +39,16 @@ enum MetadataMenu {
         edit.representedObject = MetadataActions.EditTarget(items: selection, host: host)
         submenu.addItem(edit)
         parent.submenu = submenu
-        menu.addItem(parent)
+        menu.addItem(FileContextMenuBuilder.tagged(parent, "tags"))
 
         let comment = NSMenuItem(title: L10n.t("menu.editComment"),
                                  action: #selector(MetadataActions.editCommentFromMenu(_:)), keyEquivalent: "")
         comment.target = actions
         comment.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: nil)
         comment.representedObject = MetadataActions.EditTarget(items: selection, host: host)
-        menu.addItem(comment)
+        menu.addItem(FileContextMenuBuilder.tagged(comment, "editComment"))
 
-        menu.addItem(colorMenu(urls: urls, loaded: loaded, actions: actions))
+        menu.addItem(FileContextMenuBuilder.tagged(colorMenu(urls: urls, loaded: loaded, actions: actions), "fileColor"))
 
         let folders = selection.filter(MetadataActions.isFolder)
         guard !folders.isEmpty else { return }
@@ -57,14 +57,14 @@ enum MetadataMenu {
         icon.target = actions
         icon.image = NSImage(systemSymbolName: "folder.badge.gearshape", accessibilityDescription: nil)
         icon.representedObject = MetadataActions.EditTarget(items: folders, host: host)
-        menu.addItem(icon)
+        menu.addItem(FileContextMenuBuilder.tagged(icon, "editFolderIcon"))
         let custom = folders.filter { loaded[$0.url]?.hasCustomIcon == true }.map(\.url)
         guard !custom.isEmpty else { return }
         let remove = NSMenuItem(title: L10n.t("menu.removeFolderIcon"),
                                 action: #selector(MetadataActions.removeFolderIcon(_:)), keyEquivalent: "")
         remove.target = actions
         remove.representedObject = custom
-        menu.addItem(remove)
+        menu.addItem(FileContextMenuBuilder.tagged(remove, "removeFolderIcon"))
     }
 
     private static func colorMenu(urls: [URL], loaded: [URL: ItemMetadata], actions: MetadataActions) -> NSMenuItem {
@@ -106,14 +106,14 @@ enum MetadataMenu {
             submenu.addItem(none)
         }
         parent.submenu = submenu
-        menu.addItem(parent)
+        menu.addItem(FileContextMenuBuilder.tagged(parent, "filterByTag"))
 
         let sort = NSMenuItem(title: L10n.t("menu.sortByTags"), action: #selector(MetadataActions.toggleTagSort(_:)),
                               keyEquivalent: "")
         sort.target = actions
         sort.state = model.tagSortAscending == nil ? .off : .on
         sort.representedObject = model
-        menu.addItem(sort)
+        menu.addItem(FileContextMenuBuilder.tagged(sort, "sortByTags"))
     }
 
     /// The kind a file can set a default app for, or nil
