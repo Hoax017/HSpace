@@ -278,7 +278,7 @@ Owns new app extension targets. L60 and L61 need a proper Xcode target or an equ
 - [ ] **L61** (M) Share extension for the stash
 - [ ] **L62** (L) AppleScript support: windows, panes, selection, stash
 - [ ] **L63** (S) More Services: hash, batch rename, add to stash
-- [ ] **L64** (M) Context menu customization
+- [x] **L64** (M) Context menu customization
 - [ ] **L65** (M) Preferences export and import
 - [ ] **L66** (M) Workspace and window management options, app exclusions
 - [ ] **L67** (M) Desktop mode, if it is still useful on macOS 26
@@ -395,6 +395,11 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Enable Reveal takeover, then restore Finder in Settings
 - [ ] Corrupt `trash-ledger.json` or `stash.json` in a copy of the app data: a warning names the kept-aside file, and the Full Disk Access prompt does not overlap it
 - [ ] Make a restore of default bookmarks fail (read-only app data): the error shows, not "0 restored"
+
+### Context menu, preferences and windows
+
+- [ ] Settings, Context Menu: hide entries and reorder them in both menus. The next right-click in list, icon and column views matches, with no doubled separator. Restore Default Menu brings everything back
+- [ ] The Context Menu page works with VoiceOver: each up and down button names its entry
 
 ### File metadata
 

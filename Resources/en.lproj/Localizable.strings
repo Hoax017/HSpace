@@ -937,3 +937,14 @@
 "menu.bringToActiveSpace" = "Bring to Active Space";
 "settings.behavior.bringToActiveSpace" = "Summoning HSpace brings its window to the current Space";
 "settings.behavior.dragShake" = "Shake the pointer while dragging files to summon the stash shelf";
+
+/* Context menu customization (L64) */
+"settings.tab.contextMenu" = "Context Menu";
+"settings.contextMenu.note" = "Choose the entries each context menu shows, and their order within each group. Entries appear only when they apply to what you clicked.";
+"settings.contextMenu.kind" = "Menu:";
+"settings.contextMenu.kind.item" = "Selected items";
+"settings.contextMenu.kind.directory" = "Empty space";
+"settings.contextMenu.compress" = "Compress";
+"settings.contextMenu.up" = "Move “%@” up";
+"settings.contextMenu.down" = "Move “%@” down";
+"settings.contextMenu.reset" = "Restore Default Menu";

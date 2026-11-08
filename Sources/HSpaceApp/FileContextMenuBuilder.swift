@@ -10,9 +10,12 @@ enum FileContextMenuBuilder {
 
     static func menu(selection: [FileItem], directory: URL,
                      target: AnyObject) -> NSMenu {
-        selection.isEmpty
+        let menu = selection.isEmpty
             ? directoryMenu(directory: directory, target: target)
             : itemMenu(selection: selection, directory: directory, target: target)
+        // The owner's choices of entries and order (L64), applied last so every entry above stays one line
+        ContextMenuCustomization.apply(to: menu, kind: selection.isEmpty ? .directory : .item)
+        return menu
     }
 
     // MARK: Directory-level menu (empty space)
@@ -23,13 +26,13 @@ enum FileContextMenuBuilder {
             key: "N", mods: [.command, .shift], symbol: "folder.badge.plus")
         add(menu, "menu.newFile", #selector(FileListViewController.newFileHere(_:)), target,
             key: "n", mods: [.command, .option], symbol: "doc.badge.plus")
-        menu.addItem(TemplateMenu.item())
+        menu.addItem(tagged(TemplateMenu.item(), "newFromTemplate"))
         add(menu, "menu.paste", #selector(FileListViewController.pasteItems(_:)), target,
             key: "v", mods: .command, symbol: "doc.on.clipboard")
         menu.addItem(.separator())
         MetadataMenu.addDirectoryEntries(to: menu, target: target)
         menu.addItem(.separator())
-        menu.addItem(BatchToolsMenu.item())
+        menu.addItem(tagged(BatchToolsMenu.item(), "batchTools"))
         add(menu, "menu.getInfo", #selector(FileListViewController.getInfo(_:)), target,
             key: "i", mods: .command, symbol: "info.circle")
         add(menu, "menu.openInTerminal", #selector(FileListViewController.openInTerminal(_:)), target,
@@ -67,6 +70,7 @@ enum FileContextMenuBuilder {
                                   action: #selector(MainWindowController.addSelectionToBookmarks(_:)),
                                   keyEquivalent: "")
             bm.image = NSImage(systemSymbolName: "bookmark", accessibilityDescription: nil)
+            tagged(bm, "addBookmark")
             menu.addItem(.separator())
         }
 
@@ -74,6 +78,7 @@ enum FileContextMenuBuilder {
         let hide = menu.addItem(withTitle: L10n.t("menu.hideItems"),
                                 action: #selector(MainWindowController.hideSelection(_:)), keyEquivalent: "")
         hide.image = NSImage(systemSymbolName: "eye.slash", accessibilityDescription: nil)
+        tagged(hide, "hideItems")
         menu.addItem(.separator())
 
         if single != nil {
@@ -92,7 +97,7 @@ enum FileContextMenuBuilder {
                 key: "\u{8}", mods: .command, symbol: "trash")
         }
         menu.addItem(.separator())
-        menu.addItem(BatchToolsMenu.item())
+        menu.addItem(tagged(BatchToolsMenu.item(), "batchTools"))
         menu.addItem(.separator())
 
         // Archives: compress any selection / extract supported archives (FG-1 honest disabling: no "Extract" without a supported item)
@@ -105,7 +110,7 @@ enum FileContextMenuBuilder {
             key: "N", mods: [.command, .shift], symbol: "folder.badge.plus")
         add(menu, "menu.newFile", #selector(FileListViewController.newFileHere(_:)), target,
             key: "n", mods: [.command, .option], symbol: "doc.badge.plus")
-        menu.addItem(TemplateMenu.item())
+        menu.addItem(tagged(TemplateMenu.item(), "newFromTemplate"))
         add(menu, "menu.getInfo", #selector(FileListViewController.getInfo(_:)), target,
             key: "i", mods: .command, symbol: "info.circle")
         add(menu, "menu.openInTerminal", #selector(FileListViewController.openInTerminal(_:)), target,
@@ -124,6 +129,7 @@ enum FileContextMenuBuilder {
         let url = file.url
         let item = NSMenuItem(title: L10n.t("menu.openWith"), action: nil, keyEquivalent: "")
         item.image = NSImage(systemSymbolName: "app.dashed", accessibilityDescription: nil)
+        tagged(item, "openWith")
         let submenu = NSMenu()
         let apps = NSWorkspace.shared.urlsForApplications(toOpen: url)
         let defaultApp = NSWorkspace.shared.urlForApplication(toOpen: url)
@@ -164,11 +170,13 @@ enum FileContextMenuBuilder {
                                   keyEquivalent: "")
         compress.target = target
         compress.image = NSImage(systemSymbolName: "doc.zipper", accessibilityDescription: nil)
+        tagged(compress, "compress")
         menu.addItem(compress)
         // No target: the responder chain reaches MainWindowController in any view mode
         let encrypted = menu.addItem(withTitle: L10n.t("menu.compressWithPassword"),
                                      action: #selector(MainWindowController.showCompressWithPassword(_:)), keyEquivalent: "")
         encrypted.image = NSImage(systemSymbolName: "lock.doc", accessibilityDescription: nil)
+        tagged(encrypted, "compressWithPassword")
 
         guard selection.contains(where: { ArchiveEngineNode.isSupportedArchive($0.url) }) else { return }
         add(menu, "menu.extract", #selector(FileListViewController.extractItems(_:)), target,
@@ -179,6 +187,7 @@ enum FileContextMenuBuilder {
             let browse = menu.addItem(withTitle: L10n.t("menu.browseArchive"),
                                       action: #selector(MainWindowController.showArchiveBrowser(_:)), keyEquivalent: "")
             browse.image = NSImage(systemSymbolName: "archivebox", accessibilityDescription: nil)
+            tagged(browse, "browseArchive")
         }
     }
 
@@ -193,7 +202,15 @@ enum FileContextMenuBuilder {
         item.keyEquivalentModifierMask = mods
         item.target = target
         if let symbol { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
+        tagged(item, key.hasPrefix("menu.") ? String(key.dropFirst(5)) : key)
         menu.addItem(item)
+        return item
+    }
+
+    /// Names a top-level entry for the owner's menu layout (`ContextMenuCatalog`)
+    @discardableResult
+    static func tagged(_ item: NSMenuItem, _ id: String) -> NSMenuItem {
+        item.identifier = NSUserInterfaceItemIdentifier(id)
         return item
     }
 }

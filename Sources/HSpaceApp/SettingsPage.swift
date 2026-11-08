@@ -19,5 +19,6 @@ enum SettingsPages {
         KindGroupsSettingsPage(),
         SidePanelSettingsPage(),
         HiddenItemsSettingsPage(),
+        ContextMenuSettingsPage(),
     ]
 }
