@@ -8,12 +8,12 @@ enum ExternalOpenRejection: Error, Equatable, Sendable {
 
     var message: String {
         switch self {
-        case .unsupportedAction: "HSpace links can only open or reveal a location."
-        case .invalidPath: "This link does not contain a valid location."
-        case .remotePath: "HSpace links cannot open network locations."
-        case .notFound: "The requested location no longer exists."
-        case .notADirectory: "This link must point to a folder."
-        case .timedOut: "The requested location is not responding."
+        case .unsupportedAction: L10n.t("externalOpen.unsupportedAction")
+        case .invalidPath: L10n.t("externalOpen.invalidPath")
+        case .remotePath: L10n.t("externalOpen.remotePath")
+        case .notFound: L10n.t("externalOpen.notFound")
+        case .notADirectory: L10n.t("externalOpen.notADirectory")
+        case .timedOut: L10n.t("externalOpen.timedOut")
         }
     }
 }

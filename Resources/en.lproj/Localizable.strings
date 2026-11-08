@@ -441,7 +441,7 @@
 /* File metadata (Lane 1) */
 "column.tags" = "Tags";
 "menu.tags" = "Tags";
-"menu.editTags" = "Edit Tags...";
+"menu.editTags" = "Edit Tags…";
 "menu.filterByTag" = "Filter by Tag";
 "menu.filterByTag.none" = "No Tags in This Folder";
 "menu.sortByTags" = "Sort by Tags";
@@ -467,7 +467,7 @@
 "toast.metadataPartial" = "Changed %1$d, %2$d failed: %3$@";
 "toast.metadataCancelled" = "Cancelled. Nothing was changed";
 "column.comment" = "Comment";
-"menu.editComment" = "Edit Comment...";
+"menu.editComment" = "Edit Comment…";
 "undo.comment" = "Change Comment";
 "info.comment" = "Comment:";
 "comment.titleOne" = "Comment on %@";
@@ -502,7 +502,7 @@
 "settings.rule.kind.2" = "Has tag";
 "settings.rule.kind.3" = "Is a folder";
 "settings.rule.kind.4" = "Changed within days";
-"menu.editFolderIcon" = "Folder Icon...";
+"menu.editFolderIcon" = "Folder Icon…";
 "menu.removeFolderIcon" = "Remove Custom Icon";
 "undo.folderIcon" = "Change Folder Icon";
 "folderIcon.titleOne" = "Icon of %@";
@@ -513,7 +513,7 @@
 "folderIcon.showEmoji" = "Emoji Picker";
 "folderIcon.emojiAlone" = "Emoji only, without the folder";
 "folderIcon.image" = "Picture";
-"folderIcon.chooseImage" = "Choose...";
+"folderIcon.chooseImage" = "Choose…";
 "folderIcon.preview" = "Icon preview";
 "group.otherKinds" = "Other";
 "kindGroup.folders" = "Folders";
@@ -1014,3 +1014,12 @@
 "settings.windows.addApp" = "Add App…";
 "settings.windows.removeApp" = "Remove “%@”";
 "settings.windows.addAppFailed" = "These apps have no bundle identifier and could not be added";
+
+/* Refused hspace:// links (L68) */
+"externalOpen.unsupportedAction" = "HSpace links can only open or reveal a location.";
+"externalOpen.invalidPath" = "This link does not contain a valid location.";
+"externalOpen.remotePath" = "HSpace links cannot open network locations.";
+"externalOpen.notFound" = "The requested location no longer exists.";
+"externalOpen.notADirectory" = "This link must point to a folder.";
+"externalOpen.timedOut" = "The requested location is not responding.";
+"reveal.notRestored" = "Could not restore Finder: Reveal is still set to %@.";

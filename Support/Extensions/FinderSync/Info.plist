@@ -12,6 +12,11 @@
 	<string>com.hoax017.hspace.FinderSync</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>fr</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>HSpaceFinderSync</string>
 	<key>CFBundlePackageType</key>
