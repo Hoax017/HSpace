@@ -278,7 +278,7 @@ Build step, no Xcode needed: each extension is a plain SwiftPM executable whose 
 
 - [x] **L60** (L) Finder Sync extension with badges
 - [x] **L61** (M) Share extension for the stash
-- [ ] **L62** (L) AppleScript support: windows, panes, selection, stash
+- [x] **L62** (L) AppleScript support: windows, panes, selection, stash
 - [ ] **L63** (S) More Services: hash, batch rename, add to stash
 - [ ] **L64** (M) Context menu customization
 - [ ] **L65** (M) Preferences export and import
@@ -575,6 +575,12 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Turn on HSpace Stash under Sharing in the extension settings. In Finder, select files and a folder, Share > HSpace Stash: the sheet names what will be stashed, Add puts them on the front window's shelf, and Cancel or Esc adds nothing
 - [ ] Share a file from another app, such as Preview: it lands on the shelf too. Sharing only text or a web page from Safari does not offer HSpace Stash, or says only files can be stashed
 - [ ] Before HSpace has ever run, Share > HSpace Stash > Add says to open HSpace first. The sheet reads well in light and dark mode and works with VoiceOver and the keyboard
+- [ ] Script Editor > File > Open Dictionary > HSpace: the Standard Suite and the HSpace Suite show, with browser windows, panes, stash items, add to stash and remove from stash
+- [ ] `tell application "HSpace" to get path of every pane of browser window 1`, `get selection of active pane of browser window 1` and `get name of browser windows` answer for the front window, in list, icon and column views
+- [ ] `set path of pane 1 of browser window 1 to POSIX file "/Users/<you>/nspace-test"` goes there, and a file path shows the file selected in its folder. `set selection of active pane of browser window 1 to {}` clears it
+- [ ] `set active of pane 2 of browser window 1 to true` in a two-pane layout focuses it; `get browser window id <n>` finds the same window again
+- [ ] `add to stash POSIX file "…"` and `remove from stash …` change the shelf of the front window, `get stash items` lists it, and the files themselves stay untouched
+- [ ] A missing path, an item from another folder in a selection, and pane 9 each give the script an error with a clear message, and nothing changes. The first script asks for automation permission once
 
 ### Overall feel
 

@@ -36,6 +36,10 @@ for EXT_DIR in Support/Extensions/*/; do
 done
 found="$(find "$APP/Contents/PlugIns" -maxdepth 1 -name '*.appex' 2>/dev/null | wc -l | tr -d ' ')"
 [ "$found" = "$expected" ] || fail "$found extensions in the app, $expected expected"
+# AppleScript dictionary (L62): present, and valid against the system's sdef DTD with the Standard Suite pulled in
+SDEF="$APP/Contents/Resources/$(plutil -extract OSAScriptingDefinition raw "$APP/Contents/Info.plist")"
+[ -f "$SDEF" ] || fail "the scripting dictionary is missing"
+xmllint --noout --xinclude --dtdvalid /System/Library/DTDs/sdef.dtd "$SDEF" || fail "the scripting dictionary does not validate"
 codesign --verify --strict --deep "$APP" || fail "the app's signature does not verify"
 
 [ $rc -eq 0 ] && echo "✓ check-bundle: $APP and $expected extensions are well formed"

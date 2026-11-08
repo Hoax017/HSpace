@@ -35,6 +35,8 @@ if [ ! -f Support/HSpace.icns ]; then
   ./scripts/make-icns.sh
 fi
 cp Support/HSpace.icns "$APP/Contents/Resources/HSpace.icns"
+# AppleScript dictionary (L62)
+cp Support/HSpace.sdef "$APP/Contents/Resources/HSpace.sdef"
 
 # App extensions (Lane 7). SwiftPM has no app extension target, so each extension is a plain executable product
 # (its main hands over to NSExtensionMain) and is wrapped here. One folder per extension under Support/Extensions:

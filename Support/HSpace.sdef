@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<!-- HSpace's scripting dictionary (L62). The Standard Suite comes from the system; the HSpace Suite is ours. -->
+<dictionary title="HSpace Terminology" xmlns:xi="http://www.w3.org/2001/XInclude">
+	<xi:include href="file:///System/Library/ScriptingDefinitions/CocoaStandard.sdef" xpointer="xpointer(/dictionary/suite)"/>
+
+	<suite name="HSpace Suite" code="HSpc" description="Browser windows, their panes and selections, and the stash shelf.">
+		<class-extension extends="application" description="HSpace.">
+			<element type="browser window" access="r" description="HSpace windows, front to back.">
+				<cocoa key="scriptBrowserWindows"/>
+			</element>
+			<property name="stash items" code="HSsi" access="r" description="The items on the stash shelf of the front browser window.">
+				<cocoa key="scriptStashItems"/>
+				<type type="file" list="yes"/>
+			</property>
+		</class-extension>
+
+		<class name="browser window" code="HSbw" plural="browser windows" description="An HSpace window and its panes.">
+			<cocoa class="HSpaceScriptBrowserWindow"/>
+			<property name="id" code="ID  " type="integer" access="r" description="Stays the same while the window is open.">
+				<cocoa key="uniqueID"/>
+			</property>
+			<property name="name" code="pnam" type="text" access="r" description="The name of the folder the active pane shows.">
+				<cocoa key="name"/>
+			</property>
+			<property name="active pane" code="HSap" type="pane" access="r" description="The pane that has the focus.">
+				<cocoa key="activePane"/>
+			</property>
+			<element type="pane" access="r" description="The panes of the current layout, in reading order.">
+				<cocoa key="panes"/>
+			</element>
+		</class>
+
+		<class name="pane" code="HSpn" plural="panes" description="One pane of a browser window.">
+			<cocoa class="HSpaceScriptPane"/>
+			<property name="index" code="pidx" type="integer" access="r" description="The pane's number in its window, from 1.">
+				<cocoa key="paneNumber"/>
+			</property>
+			<property name="path" code="HSpp" type="file" access="rw" description="The folder the pane shows. Set it to a folder to go there, or to a file to show that file selected in its folder.">
+				<cocoa key="location"/>
+			</property>
+			<property name="selection" code="sele" access="rw" description="The selected items. Set it to items of the folder the pane shows; an empty list selects nothing.">
+				<cocoa key="selectedItems"/>
+				<type type="file" list="yes"/>
+			</property>
+			<property name="active" code="HSac" type="boolean" access="rw" description="Whether the pane has the focus. Set it to true to focus the pane.">
+				<cocoa key="isActive"/>
+			</property>
+		</class>
+
+		<command name="add to stash" code="HSpcAdSt" description="Put files and folders on the stash shelf of the front browser window. Items already there are skipped.">
+			<cocoa class="HSpaceScriptAddToStash"/>
+			<direct-parameter description="The files and folders to add.">
+				<type type="file" list="yes"/>
+				<type type="file"/>
+			</direct-parameter>
+			<result type="integer" description="How many items were named."/>
+		</command>
+
+		<command name="remove from stash" code="HSpcRmSt" description="Take items off the stash shelf of the front browser window. The files themselves are not touched.">
+			<cocoa class="HSpaceScriptRemoveFromStash"/>
+			<direct-parameter description="The files and folders to take off the shelf.">
+				<type type="file" list="yes"/>
+				<type type="file"/>
+			</direct-parameter>
+			<result type="integer" description="How many items were taken off."/>
+		</command>
+	</suite>
+</dictionary>
