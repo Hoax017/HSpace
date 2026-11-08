@@ -360,6 +360,16 @@
 "extension.stash.invalid" = "This stash link does not name valid items.";
 "extension.stash.remote" = "Network locations cannot be added to the stash from a link.";
 "extension.stash.noSecret" = "HSpace could not check this stash link, so nothing was added.";
+/* L61 Share extension */
+"share.title" = "Add to HSpace Stash";
+"share.reading" = "Reading the shared items…";
+"share.one" = "“%@” will go on the stash shelf of the front HSpace window.";
+"share.many" = "%d items will go on the stash shelf of the front HSpace window.";
+"share.noFiles" = "Only files and folders can go on the stash shelf.";
+"share.tooMany" = "At most %d items can be stashed at once.";
+"share.openFirst" = "Open HSpace once, then share again.";
+"share.cancel" = "Cancel";
+"share.add" = "Add";
 "fda.prompt.title" = "Grant Full Disk Access?";
 "fda.prompt.body" = "HSpace does not yet have Full Disk Access, so some protected folders can't be browsed. Open System Settings to grant it now?";
 "fda.prompt.grant" = "Open Settings";

@@ -97,32 +97,59 @@ private let repository = URL(fileURLWithPath: #filePath)
     }
 }
 
-@Suite struct FinderExtensionBundleTests {
+/// One app extension: its folder under Support/Extensions, its executable target and the file holding its principal class
+struct ExtensionBundle: Sendable, CustomTestStringConvertible {
+    let folder: String
+    let executable: String
+    let point: String
+    let source: String
+    var testDescription: String { folder }
+
+    static let all = [
+        ExtensionBundle(folder: "FinderSync", executable: "HSpaceFinderSync", point: "com.apple.FinderSync",
+                        source: "FinderSyncExtension.swift"),
+        ExtensionBundle(folder: "Share", executable: "HSpaceShare", point: "com.apple.share-services",
+                        source: "ShareViewController.swift"),
+    ]
+}
+
+@Suite struct ExtensionBundleTests {
     private func plist(_ path: String) throws -> [String: Any] {
         let data = try Data(contentsOf: repository.appendingPathComponent(path))
         return try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
     }
 
-    @Test func infoPlistMatchesTheCode() throws {
-        let info = try plist("Support/Extensions/FinderSync/Info.plist")
+    private func source(_ bundle: ExtensionBundle) throws -> String {
+        try String(contentsOf: repository.appendingPathComponent("Sources/\(bundle.executable)/\(bundle.source)"), encoding: .utf8)
+    }
+
+    @Test(arguments: ExtensionBundle.all)
+    func infoPlistMatchesTheCode(_ bundle: ExtensionBundle) throws {
+        let info = try plist("Support/Extensions/\(bundle.folder)/Info.plist")
         let ext = try #require(info["NSExtension"] as? [String: Any])
-        #expect(ext["NSExtensionPointIdentifier"] as? String == "com.apple.FinderSync")
+        #expect(ext["NSExtensionPointIdentifier"] as? String == bundle.point)
         let principal = try #require(ext["NSExtensionPrincipalClass"] as? String)
-        let source = try String(contentsOf: repository.appendingPathComponent("Sources/HSpaceFinderSync/FinderSyncExtension.swift"),
-                                encoding: .utf8)
-        #expect(source.contains("@objc(\(principal))"))
-        #expect(info["CFBundleExecutable"] as? String == "HSpaceFinderSync")
+        #expect(try source(bundle).contains("@objc(\(principal))"))
+        #expect(info["CFBundleExecutable"] as? String == bundle.executable)
         #expect((info["CFBundleIdentifier"] as? String)?.hasPrefix("com.hoax017.hspace.") == true)
         #expect(info["CFBundlePackageType"] as? String == "XPC!")
     }
 
-    @Test func theSandboxCanReadExactlyTheBridgeFolder() throws {
-        let entitlements = try plist("Support/Extensions/FinderSync/FinderSync.entitlements")
+    @Test(arguments: ExtensionBundle.all)
+    func theSandboxCanReadExactlyTheBridgeFolder(_ bundle: ExtensionBundle) throws {
+        let entitlements = try plist("Support/Extensions/\(bundle.folder)/\(bundle.folder).entitlements")
         #expect(entitlements["com.apple.security.app-sandbox"] as? Bool == true)
         let readable = entitlements["com.apple.security.temporary-exception.files.home-relative-path.read-only"] as? [String]
-        let expected = "/" + BridgeLocation.directory(inSupport: URL(fileURLWithPath: "/Library/Application Support/HSpace")).path
-            .split(separator: "/").joined(separator: "/") + "/"
+        let expected = BridgeLocation.directory(inSupport: URL(fileURLWithPath: "/Library/Application Support/HSpace")).path + "/"
         #expect(readable == [expected])
-        #expect(entitlements.keys.allSatisfy { !$0.contains("read-write") })
+        #expect(entitlements.count == 2, "only the sandbox and the read exception")
+    }
+
+    @Test(arguments: ExtensionBundle.all)
+    func everyStringTheExtensionShowsExists(_ bundle: ExtensionBundle) throws {
+        let table = try #require(NSDictionary(contentsOf: repository.appendingPathComponent("Resources/en.lproj/Localizable.strings")))
+        let keys = try source(bundle).matches(of: /text\("([a-zA-Z.]+)"\)/).map { String($0.output.1) }
+        #expect(!keys.isEmpty)
+        for key in keys { #expect(table[key] != nil, "\(key)") }
     }
 }

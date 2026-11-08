@@ -165,3 +165,21 @@ private func link(_ query: String) -> URL {
         #expect(!support.contains("/Containers/"))
     }
 }
+
+@Suite struct ShareInputTests {
+    @Test func filesAreKeptOnceInOrder() {
+        let urls = [URL(fileURLWithPath: "/b"), URL(string: "https://example.com/a")!, URL(fileURLWithPath: "/a"),
+                    URL(fileURLWithPath: "/b/../b")]
+        #expect(ShareInput.paths(from: urls) == .success(["/b", "/a"]))
+    }
+
+    @Test func nothingButWebLinksIsRefused() {
+        #expect(ShareInput.paths(from: [URL(string: "https://example.com")!]) == .failure(.noFiles))
+        #expect(ShareInput.paths(from: []) == .failure(.noFiles))
+    }
+
+    @Test func moreThanALinkCanCarryIsRefused() {
+        let urls = (0...StashLink.maxItems).map { URL(fileURLWithPath: "/f\($0)") }
+        #expect(ShareInput.paths(from: urls) == .failure(.tooManyItems))
+    }
+}

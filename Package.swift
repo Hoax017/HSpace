@@ -21,6 +21,7 @@ let package = Package(
         .executable(name: "hspace-probe", targets: ["HSpaceProbe"]),
         // App extensions (Lane 7): plain executables that scripts/build-app.sh wraps into .appex bundles
         .executable(name: "HSpaceFinderSync", targets: ["HSpaceFinderSync"]),
+        .executable(name: "HSpaceShare", targets: ["HSpaceShare"]),
     ],
     targets: [
         .target(name: "HSpaceContracts"),
@@ -34,6 +35,7 @@ let package = Package(
             dependencies: ["HSpaceKernel", "HSpaceContracts"] + podDeps
         ),
         .executableTarget(name: "HSpaceFinderSync", dependencies: ["ExtensionBridge"]),
+        .executableTarget(name: "HSpaceShare", dependencies: ["ExtensionBridge"]),
         .target(name: "HSpaceTestSupport", path: "Tests/HSpaceTestSupport"),
         .testTarget(name: "HSpaceTestSupportTests", dependencies: ["HSpaceTestSupport"]),
         .testTarget(name: "HSpaceKernelTests", dependencies: ["HSpaceKernel", "HSpaceContracts"]),

@@ -233,3 +233,21 @@ public enum StashLink {
         return .success(paths)
     }
 }
+
+public enum ShareInputRejection: Error, Equatable, Sendable {
+    /// Nothing shared was a file: text, web links and images held only in memory cannot go on the shelf
+    case noFiles
+    case tooManyItems
+}
+
+/// Share extension (L61): which of the shared items can go on the stash shelf
+public enum ShareInput {
+    /// Files only, each once, in the order shared
+    public static func paths(from urls: [URL]) -> Result<[String], ShareInputRejection> {
+        var seen = Set<String>()
+        let paths = urls.filter(\.isFileURL).map(\.standardizedFileURL.path).filter { seen.insert($0).inserted }
+        guard !paths.isEmpty else { return .failure(.noFiles) }
+        guard paths.count <= StashLink.maxItems else { return .failure(.tooManyItems) }
+        return .success(paths)
+    }
+}

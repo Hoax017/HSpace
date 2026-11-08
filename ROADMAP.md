@@ -277,7 +277,7 @@ Owns new app extension targets. L60 and L61 need a proper Xcode target or an equ
 Build step, no Xcode needed: each extension is a plain SwiftPM executable whose main hands over to `NSExtensionMain`. `scripts/build-app.sh` wraps every folder under `Support/Extensions` (its Info.plist and sandbox entitlements) into `Contents/PlugIns/<name>.appex` and signs it before the app. `scripts/check-bundle.sh` checks the result in CI and in the release job. Extensions read what the app publishes in `Application Support/HSpace/Extensions` (ExtensionBridge pod) and ask for work only through `hspace://stash` links that carry its secret.
 
 - [x] **L60** (L) Finder Sync extension with badges
-- [ ] **L61** (M) Share extension for the stash
+- [x] **L61** (M) Share extension for the stash
 - [ ] **L62** (L) AppleScript support: windows, panes, selection, stash
 - [ ] **L63** (S) More Services: hash, batch rename, add to stash
 - [ ] **L64** (M) Context menu customization
@@ -572,6 +572,9 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Right-click a folder, a file and the background of a Finder window > Open in HSpace: the folder opens, the file shows selected in its folder. The HSpace toolbar button does the same, once added through View > Customize Toolbar
 - [ ] Open `hspace://stash?path=/tmp` from a browser: nothing is stashed, and a message says the link is not from HSpace
 - [ ] With the extension on, Finder's CPU stays at rest when nothing changes, and HSpace's idle CPU stays at 0.0%
+- [ ] Turn on HSpace Stash under Sharing in the extension settings. In Finder, select files and a folder, Share > HSpace Stash: the sheet names what will be stashed, Add puts them on the front window's shelf, and Cancel or Esc adds nothing
+- [ ] Share a file from another app, such as Preview: it lands on the shelf too. Sharing only text or a web page from Safari does not offer HSpace Stash, or says only files can be stashed
+- [ ] Before HSpace has ever run, Share > HSpace Stash > Add says to open HSpace first. The sheet reads well in light and dark mode and works with VoiceOver and the keyboard
 
 ### Overall feel
 
