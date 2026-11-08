@@ -13,6 +13,8 @@ enum MainMenu {
         appMenu.addItem(withTitle: L10n.t("menu.about"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: L10n.t("menu.settings"), action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
+        appMenu.addItem(withTitle: L10n.t("menu.exportPreferences"), action: #selector(AppDelegate.exportPreferences(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: L10n.t("menu.importPreferences"), action: #selector(AppDelegate.importPreferences(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: L10n.t("menu.hide"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: L10n.t("menu.hideOthers"), action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")

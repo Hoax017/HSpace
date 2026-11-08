@@ -279,7 +279,7 @@ Owns new app extension targets. L60 and L61 need a proper Xcode target or an equ
 - [ ] **L62** (L) AppleScript support: windows, panes, selection, stash
 - [ ] **L63** (S) More Services: hash, batch rename, add to stash
 - [x] **L64** (M) Context menu customization
-- [ ] **L65** (M) Preferences export and import
+- [x] **L65** (M) Preferences export and import
 - [ ] **L66** (M) Workspace and window management options, app exclusions
 - [ ] **L67** (M) Desktop mode, if it is still useful on macOS 26
 - [ ] **L68** (M) French localization
@@ -400,6 +400,9 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 
 - [ ] Settings, Context Menu: hide entries and reorder them in both menus. The next right-click in list, icon and column views matches, with no doubled separator. Restore Default Menu brings everything back
 - [ ] The Context Menu page works with VoiceOver: each up and down button names its entry
+- [ ] HSpace > Export Preferences, then change a few settings, then Import Preferences: it asks first, the settings come back, and `preferences-before-import.json` in the app data holds the changed ones
+- [ ] Import a damaged file and a file with one bad value: a clear message, and no setting changes
+- [ ] Open an exported file: no archive password, window position or session in it
 
 ### File metadata
 

@@ -948,3 +948,19 @@
 "settings.contextMenu.up" = "Move “%@” up";
 "settings.contextMenu.down" = "Move “%@” down";
 "settings.contextMenu.reset" = "Restore Default Menu";
+
+/* Preferences export and import (L65) */
+"menu.exportPreferences" = "Export Preferences…";
+"menu.importPreferences" = "Import Preferences…";
+"prefs.export.title" = "Export Preferences";
+"prefs.export.fileName" = "HSpace Preferences.json";
+"prefs.export.done" = "Preferences exported";
+"prefs.export.doneSkipped" = "Preferences exported. %d settings with unusable values were left out";
+"prefs.export.failed" = "The preferences could not be exported";
+"prefs.import.title" = "Import Preferences";
+"prefs.import.failed" = "The preferences could not be imported";
+"prefs.import.confirm" = "Replace your settings with the ones in “%@”?";
+"prefs.import.confirmDetail" = "The file sets %d settings. Every other setting goes back to its default. Your current settings are saved first. Archive passwords are never in a preferences file and stay as they are.";
+"prefs.import.replace" = "Replace Settings";
+"prefs.import.done" = "Preferences imported";
+"prefs.import.doneDetail" = "Your previous settings were saved to %@. New panes and windows use the imported settings; restart HSpace for the Settings window to show them.";
