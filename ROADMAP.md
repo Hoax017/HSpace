@@ -284,7 +284,7 @@ Build step, no Xcode needed: each extension is a plain SwiftPM executable whose 
 - [x] **L65** (M) Preferences export and import
 - [x] **L66** (M) Workspace and window management options, app exclusions
 - [x] ~~**L67** (M) Desktop mode, if it is still useful on macOS 26~~ **Dropped** (2026-11-08). A desktop mode means a borderless HSpace window at desktop level in place of Finder's desktop icons. On macOS 26 it would fight the system rather than help: hiding Finder's icons means writing Finder's own preferences and relaunching it; the window would cover desktop widgets; "Click wallpaper to reveal desktop" and Stage Manager move ordinary windows aside to show Finder's desktop, not ours; and each display and Space needs its own window, kept in step forever. What it offers is already here: Desktop is a sidebar place, the global hotkey and Bring to Active Space (L35) put a window in front from any Space, and the drag-shake summons the stash shelf for a drop. Revisit only if macOS gives apps a supported desktop layer.
-- [ ] **L68** (M) French localization
+- [x] **L68** (M) French localization
 
 **Gate 1:** all local items closed or explicitly dropped below.
 
@@ -600,6 +600,21 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Batch Rename on files from one folder: the rename sheet previews them, Rename renames, and Undo in HSpace puts the names back. Items in the Trash are refused with a message
 - [ ] Add to HSpace Stash: the items land on the front window's shelf. With HSpace quit, each service launches it and still acts once the window is up
 - [ ] With a sheet already open in HSpace, a hash or rename service says to close it first and opens nothing
+
+### French localization (lane 7c)
+
+Switch HSpace alone to French: System Settings > General > Language & Region > Applications > + > HSpace > Français, then quit and relaunch HSpace. Switch back to English the same way when done.
+
+- [ ] Every menu, including the app menu, File, Edit, View, Go and Window, reads in French, and AppKit's own items (Services, Start Dictation, Emoji & Symbols) follow
+- [ ] Each Settings page fits in French: no label cut off or overlapping, in light and dark mode. Longer texts such as Permissions and Open Mode wrap cleanly
+- [ ] The context menus in list, icon and column views, the conflict panel, the batch rename, hash, image, sync and history sheets, and the archive browser read in French and nothing is clipped
+- [ ] Toasts with counts and names, such as copying files and emptying the Trash, show the number and the name in the right place
+- [ ] The typography is right: a no-break space before : ; ! ? and inside « », the … character, and no line starts with a lone ? or :
+- [ ] Dates in lists, the inspector and the history follow French formats; sizes show "Go" and "Mo"
+- [ ] The Photos permission prompt and the Desktop, Documents and Downloads prompts show the French text (reset them first with `tccutil reset Photos com.hoax017.hspace` if they were already answered)
+- [ ] With the whole Mac in French: Finder's right-click > Services shows the four HSpace entries in French (after `/System/Library/CoreServices/pbs -update`), the Share menu says Réserve HSpace, and the Finder extension menu and badge tooltip are in French. Extensions follow the system language, not the per-app setting
+- [ ] Set HSpace to a language it does not have, such as Deutsch: it shows in English
+- [ ] VoiceOver reads the French labels with a French voice
 
 ### Overall feel
 
