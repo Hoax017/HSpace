@@ -281,7 +281,7 @@ Owns new app extension targets. L60 and L61 need a proper Xcode target or an equ
 - [x] **L64** (M) Context menu customization
 - [x] **L65** (M) Preferences export and import
 - [x] **L66** (M) Workspace and window management options, app exclusions
-- [ ] **L67** (M) Desktop mode, if it is still useful on macOS 26
+- [x] ~~**L67** (M) Desktop mode, if it is still useful on macOS 26~~ **Dropped** (2026-11-08). A desktop mode means a borderless HSpace window at desktop level in place of Finder's desktop icons. On macOS 26 it would fight the system rather than help: hiding Finder's icons means writing Finder's own preferences and relaunching it; the window would cover desktop widgets; "Click wallpaper to reveal desktop" and Stage Manager move ordinary windows aside to show Finder's desktop, not ours; and each display and Space needs its own window, kept in step forever. What it offers is already here: Desktop is a sidebar place, the global hotkey and Bring to Active Space (L35) put a window in front from any Space, and the drag-shake summons the stash shelf for a drop. Revisit only if macOS gives apps a supported desktop layer.
 - [ ] **L68** (M) French localization
 
 **Gate 1:** all local items closed or explicitly dropped below.
