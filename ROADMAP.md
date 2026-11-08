@@ -274,7 +274,9 @@ Suggested: option 1 now, and option 3 only if encrypted RAR or 7z turns out to b
 
 Owns new app extension targets. L60 and L61 need a proper Xcode target or an equivalent build step.
 
-- [ ] **L60** (L) Finder Sync extension with badges
+Build step, no Xcode needed: each extension is a plain SwiftPM executable whose main hands over to `NSExtensionMain`. `scripts/build-app.sh` wraps every folder under `Support/Extensions` (its Info.plist and sandbox entitlements) into `Contents/PlugIns/<name>.appex` and signs it before the app. `scripts/check-bundle.sh` checks the result in CI and in the release job. Extensions read what the app publishes in `Application Support/HSpace/Extensions` (ExtensionBridge pod) and ask for work only through `hspace://stash` links that carry its secret.
+
+- [x] **L60** (L) Finder Sync extension with badges
 - [ ] **L61** (M) Share extension for the stash
 - [ ] **L62** (L) AppleScript support: windows, panes, selection, stash
 - [ ] **L63** (S) More Services: hash, batch rename, add to stash
@@ -561,6 +563,15 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] Settings > Behavior, Shake the pointer: drag files from Finder and shake left and right a few times: HSpace comes to this Space with the sidebar open, and the files drop on the stash shelf
 - [ ] Shaking while dragging text or a window does nothing, and a slow drag does not trigger it. Check a shake during a drag started inside HSpace too
 - [ ] With the shake setting off, and with it on at rest, idle CPU stays at 0.0%
+
+### System integration (lane 7a)
+
+- [ ] Build with `scripts/build-app.sh`, open Settings > Permissions > Open Extension Settings, and turn on HSpace under Finder: after Re-check, the status line says it is on
+- [ ] Stash a file in HSpace: Finder shows the stash badge on it within a second, and the badge goes when you remove it from the shelf. Badges also follow Clear and Move Here
+- [ ] Right-click files in Finder > Add to HSpace Stash: they land on the shelf of the front window, and a toast counts them. With HSpace quit, HSpace opens and stashes them
+- [ ] Right-click a folder, a file and the background of a Finder window > Open in HSpace: the folder opens, the file shows selected in its folder. The HSpace toolbar button does the same, once added through View > Customize Toolbar
+- [ ] Open `hspace://stash?path=/tmp` from a browser: nothing is stashed, and a message says the link is not from HSpace
+- [ ] With the extension on, Finder's CPU stays at rest when nothing changes, and HSpace's idle CPU stays at 0.0%
 
 ### Overall feel
 

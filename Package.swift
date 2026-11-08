@@ -3,6 +3,7 @@ import PackageDescription
 
 // Pod list: adding a capability = append a name here + create a Sources/Pods/<name>/ directory (the single explicit point of BG-11 incremental addition)
 let pods: [String] = ["DirectoryReader", "Transfer", "PathComplete", "DirectoryWatch", "FolderSize", "IconThumb", "LocalOps", "VolumeInfo", "BookmarkStore", "SessionStore", "StashStore", "SearchEngine", "ArchiveEngine", "Frecency", "Eraser", "TrashLedger", "FileMetadata", "BatchRename", "FileHash", "ImageConvert", "Scheduler", "OperationHistory", "FolderSync", "FileTemplates", "ArchivePasswords", "SidePanel", "FileInspector", "ViewStyles", "HiddenRules", "KeyboardSelection", "PhotoLibrary", "TabNavigation", "QuickLocations", "QuickLauncher", "SidebarColors", "TabDrag", "DragShake"]
+    + ["ExtensionBridge"]   // Lane 7: shared by the app and its extensions
 
 let podTargets: [Target] = pods.map {
     .target(name: $0, dependencies: ["HSpaceContracts"], path: "Sources/Pods/\($0)")
@@ -18,6 +19,8 @@ let package = Package(
     products: [
         .executable(name: "HSpace", targets: ["HSpaceApp"]),
         .executable(name: "hspace-probe", targets: ["HSpaceProbe"]),
+        // App extensions (Lane 7): plain executables that scripts/build-app.sh wraps into .appex bundles
+        .executable(name: "HSpaceFinderSync", targets: ["HSpaceFinderSync"]),
     ],
     targets: [
         .target(name: "HSpaceContracts"),
@@ -30,6 +33,7 @@ let package = Package(
             name: "HSpaceProbe",
             dependencies: ["HSpaceKernel", "HSpaceContracts"] + podDeps
         ),
+        .executableTarget(name: "HSpaceFinderSync", dependencies: ["ExtensionBridge"]),
         .target(name: "HSpaceTestSupport", path: "Tests/HSpaceTestSupport"),
         .testTarget(name: "HSpaceTestSupportTests", dependencies: ["HSpaceTestSupport"]),
         .testTarget(name: "HSpaceKernelTests", dependencies: ["HSpaceKernel", "HSpaceContracts"]),

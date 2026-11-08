@@ -345,6 +345,21 @@
 "settings.perm.open" = "Open System Settings";
 "settings.perm.recheck" = "Re-check";
 "settings.perm.note" = "By macOS security design no app can flip this switch for you. HSpace already appears in the System Settings list — just find it and toggle it on (no “+” needed). Return here and tap “Re-check” afterwards. Re-toggle once if it resets after an update.";
+/* L60 Finder extension */
+"settings.perm.finderExtTitle" = "Finder Extension";
+"settings.perm.finderExtOn" = "The Finder extension is on";
+"settings.perm.finderExtOff" = "The Finder extension is off";
+"settings.perm.finderExtOpen" = "Open Extension Settings";
+"settings.perm.finderExtNote" = "With the extension on, Finder shows a badge on items in the HSpace stash, and its context menu offers Open in HSpace and Add to HSpace Stash. Turn it on under Finder in the list that opens.";
+"finderSync.badge.stashed" = "In HSpace Stash";
+"finderSync.toolbar.tooltip" = "Open in HSpace";
+"finderSync.menu.open" = "Open in HSpace";
+"finderSync.menu.stash" = "Add to HSpace Stash";
+"extension.stash.untrusted" = "This stash link did not come from an HSpace extension, so nothing was added.";
+"extension.stash.tooMany" = "A stash link can add at most %d items.";
+"extension.stash.invalid" = "This stash link does not name valid items.";
+"extension.stash.remote" = "Network locations cannot be added to the stash from a link.";
+"extension.stash.noSecret" = "HSpace could not check this stash link, so nothing was added.";
 "fda.prompt.title" = "Grant Full Disk Access?";
 "fda.prompt.body" = "HSpace does not yet have Full Disk Access, so some protected folders can't be browsed. Open System Settings to grant it now?";
 "fda.prompt.grant" = "Open Settings";

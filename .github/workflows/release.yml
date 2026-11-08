@@ -24,6 +24,7 @@ jobs:
       - name: Build and package .app (version from VERSION, build number from the git count)
         run: |
           ./scripts/build-app.sh
+          ./scripts/check-bundle.sh
           ditto -c -k --keepParent build/HSpace.app "HSpace-${GITHUB_REF_NAME}.zip"
           shasum -a 256 "HSpace-${GITHUB_REF_NAME}.zip" | tee checksums.txt
 

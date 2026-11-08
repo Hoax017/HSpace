@@ -35,6 +35,8 @@ final class StashShelfController {
 
     /// Content changed → rebuild the sidebar
     var onChange: (() -> Void)?
+    /// Content changed → tell the app extensions (L60 Finder badges), set by AppDelegate
+    var onItemsChanged: (([StashItem], StashStore) -> Void)?
     /// In-place error presentation (banner at the bottom of the sidebar; no modal alerts)
     var onError: ((String) -> Void)?
     /// File-operation bridge and pane grid (source of the "current pane" destination), injected by MainWindowController
@@ -120,5 +122,6 @@ final class StashShelfController {
     private func refresh() async {
         items = await store.all()
         onChange?()
+        onItemsChanged?(items, store)
     }
 }

@@ -36,6 +36,25 @@ if [ ! -f Support/HSpace.icns ]; then
 fi
 cp Support/HSpace.icns "$APP/Contents/Resources/HSpace.icns"
 
+# App extensions (Lane 7). SwiftPM has no app extension target, so each extension is a plain executable product
+# (its main hands over to NSExtensionMain) and is wrapped here. One folder per extension under Support/Extensions:
+# Info.plist names the executable, and the one *.entitlements file holds its sandbox. Nested code is signed first.
+for EXT_DIR in Support/Extensions/*/; do
+  [ -f "$EXT_DIR/Info.plist" ] || continue
+  EXT_BIN="$(plutil -extract CFBundleExecutable raw "$EXT_DIR/Info.plist")"
+  EXT_ID="$(plutil -extract CFBundleIdentifier raw "$EXT_DIR/Info.plist")"
+  EXT_ENT="$(ls "$EXT_DIR"*.entitlements)"
+  EXT="$APP/Contents/PlugIns/$EXT_BIN.appex"
+  mkdir -p "$EXT/Contents/MacOS" "$EXT/Contents/Resources"
+  cp ".build/$CONF/$EXT_BIN" "$EXT/Contents/MacOS/$EXT_BIN"
+  cp "$EXT_DIR/Info.plist" "$EXT/Contents/Info.plist"
+  plutil -replace CFBundleShortVersionString -string "$VERSION" "$EXT/Contents/Info.plist"
+  plutil -replace CFBundleVersion -string "$BUILD_NUM" "$EXT/Contents/Info.plist"
+  plutil -lint "$EXT/Contents/Info.plist" >/dev/null
+  cp -R Resources/en.lproj "$EXT/Contents/Resources/"
+  codesign --force --sign "${SIGN_IDENTITY:--}" --identifier "$EXT_ID" --entitlements "$EXT_ENT" "$EXT"
+done
+
 codesign --force --sign "${SIGN_IDENTITY:--}" --identifier com.hoax017.hspace "$APP"
 echo "✓ Built and signed $APP (v$VERSION build $BUILD_NUM, sign=${SIGN_IDENTITY:-ad-hoc})"
 
