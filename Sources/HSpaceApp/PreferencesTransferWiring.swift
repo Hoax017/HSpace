@@ -2,6 +2,7 @@ import AppKit
 import FolderSize
 import PreferencesTransfer
 import ViewStyles
+import WindowRules
 
 /// The settings that travel in a preferences file (L65), and what each may hold. Window places, session state, the
 /// Full Disk Access prompt flag and recent tags stay with this Mac. Archive passwords live in the Keychain and never travel:
@@ -62,6 +63,11 @@ enum PreferencesCatalog {
             // "modifiers|key code|label"
             GlobalHotkey.prefKey: .text(pattern: "[0-9]{1,20}\\|[0-9]{1,10}\\|.{1,32}"),
         ]
+        kinds[WindowSettings.launchKey] = choices(LaunchWindows.allCases.map(\.rawValue))
+        kinds[WindowSettings.newWindowKey] = choices(NewWindowFolder.allCases.map(\.rawValue))
+        kinds[WindowSettings.lastTabKey] = choices(LastTabClose.allCases.map(\.rawValue))
+        kinds[WindowSettings.quitKey] = .bool
+        kinds[WindowSettings.exclusionsKey] = .list(maxCount: 256, pattern: "[A-Za-z0-9.-]{1,255}")
         // "modifiers|key"
         for entry in KeyBindings.registry { kinds["kb.\(entry.id)"] = .text(pattern: "[0-9]{1,20}\\|.{0,4}") }
         for kind in ContextMenuKind.allCases {

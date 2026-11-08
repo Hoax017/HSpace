@@ -280,7 +280,7 @@ Owns new app extension targets. L60 and L61 need a proper Xcode target or an equ
 - [ ] **L63** (S) More Services: hash, batch rename, add to stash
 - [x] **L64** (M) Context menu customization
 - [x] **L65** (M) Preferences export and import
-- [ ] **L66** (M) Workspace and window management options, app exclusions
+- [x] **L66** (M) Workspace and window management options, app exclusions
 - [ ] **L67** (M) Desktop mode, if it is still useful on macOS 26
 - [ ] **L68** (M) French localization
 
@@ -403,6 +403,12 @@ Things only a person can judge in the running app. Use `~/nspace-test` files onl
 - [ ] HSpace > Export Preferences, then change a few settings, then Import Preferences: it asks first, the settings come back, and `preferences-before-import.json` in the app data holds the changed ones
 - [ ] Import a damaged file and a file with one bad value: a clear message, and no setting changes
 - [ ] Open an exported file: no archive password, window position or session in it
+- [ ] Settings, Windows, At launch: Open one window at Home, then quit and relaunch: one window at Home. Switch back: the last windows and tabs return
+- [ ] New windows open at the current folder: File > New Window shows the front pane's folder, and Home when that folder was deleted
+- [ ] Closing the last tab keeps the window: ⌘W on the last tab sends it Home and the window stays; the red close button still closes it
+- [ ] Quit when the last window closes: closing the last window quits, and the session reopens next launch
+- [ ] Exclude an app, set a global hotkey, bring that app to the front: the combo reaches the app. Switch to another app: the hotkey summons HSpace again
+- [ ] With drag-shake on, shake a file drag in an excluded app: nothing happens. In Finder: the stash shelf appears
 
 ### File metadata
 

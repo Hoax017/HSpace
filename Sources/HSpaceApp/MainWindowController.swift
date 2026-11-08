@@ -453,6 +453,10 @@ final class MainWindowController: NSWindowController, @preconcurrency NSMenuItem
             focusActivePane()
             syncDeck()
             (NSApp.delegate as? AppDelegate)?.noteStateChanged()
+        } else if WindowSettings.options().lastTab == .keepWindow {
+            // Last workspace, kept window (L66): the tab goes home instead
+            grid.activePane.navigate(to: FileManager.default.homeDirectoryForCurrentUser)
+            (NSApp.delegate as? AppDelegate)?.noteStateChanged()
         } else {
             // Last workspace -> close the window (⌘W semantics)
             window?.performClose(nil)

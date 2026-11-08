@@ -964,3 +964,22 @@
 "prefs.import.replace" = "Replace Settings";
 "prefs.import.done" = "Preferences imported";
 "prefs.import.doneDetail" = "Your previous settings were saved to %@. New panes and windows use the imported settings; restart HSpace for the Settings window to show them.";
+
+/* Window and workspace options, app exclusions (L66) */
+"settings.tab.windows" = "Windows";
+"settings.windows.launch" = "At launch:";
+"settings.windows.launch.restore" = "Reopen the last windows and tabs";
+"settings.windows.launch.home" = "Open one window at Home";
+"settings.windows.newWindow" = "New windows open at:";
+"settings.windows.newWindow.home" = "Home";
+"settings.windows.newWindow.current" = "The current folder";
+"settings.windows.lastTab" = "Closing the last tab:";
+"settings.windows.lastTab.closeWindow" = "Closes the window";
+"settings.windows.lastTab.keepWindow" = "Keeps the window, at Home";
+"settings.windows.quit" = "Quit HSpace when its last window closes";
+"settings.windows.excluded" = "Excluded apps";
+"settings.windows.excludedNote" = "While one of these apps is in front, the global hotkey goes to that app and shaking a drag does not summon HSpace.";
+"settings.windows.excludedNone" = "No apps excluded";
+"settings.windows.addApp" = "Add App…";
+"settings.windows.removeApp" = "Remove “%@”";
+"settings.windows.addAppFailed" = "These apps have no bundle identifier and could not be added";

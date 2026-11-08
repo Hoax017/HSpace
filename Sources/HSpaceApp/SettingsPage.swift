@@ -20,5 +20,6 @@ enum SettingsPages {
         SidePanelSettingsPage(),
         HiddenItemsSettingsPage(),
         ContextMenuSettingsPage(),
+        WindowsSettingsPage(),
     ]
 }

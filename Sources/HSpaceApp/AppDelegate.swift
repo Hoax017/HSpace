@@ -24,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowControllers: [MainWindowController] = []
     /// Shake gesture during file drags (L35); inert unless the setting is on
     let dragShake = DragShakeMonitor()
+    /// Apps in front of which the hotkey and the drag-shake stay quiet (L66)
+    let exclusionMonitor = AppExclusionMonitor()
     /// Sole commit owner of session snapshots (M11)
     let sessionStore = SessionStore(directory: AppDelegate.supportDirectory)
     /// Usage learning (M28): app-wide open/enter accounting feeds frecency ranking in focused search. Single instance, injected into each window's coordinator and the search panel.
@@ -83,8 +85,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSUpdateDynamicServices()
         // M24: global show/hide hotkey (Carbon, no AX needed; the preference is externalized and recordable in Settings > General)
         GlobalHotkey.apply()
-        dragShake.onShake = { [weak self] in self?.summonForDrop() }
+        dragShake.onShake = { [weak self] in
+            guard let self, !exclusionMonitor.isSilenced else { return }
+            summonForDrop()
+        }
         dragShake.setEnabled(Preferences.dragShake)
+        startAppExclusions()
         // Composition root (BG-2): declaratively inject the What: pod nodes + conflict arbiter + progress subscription
         Task { @MainActor in
             await kernel.register(TransferNode(pauseGate: { [scheduler] in scheduler.waitWhilePaused($0) }),
@@ -197,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        false
+        WindowSettings.options().quitAfterLastWindow
     }
 
     /// Dock click or reactivation with no visible window -> open a new window (I-21: there must be a way back after ⌘W closes the last window)
@@ -368,7 +374,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func newWindow(_ sender: Any?) {
-        openWindow(at: FileManager.default.homeDirectoryForCurrentUser)
+        openWindow(at: newWindowFolder())
     }
 
     // MARK: Session restore and save (M11: reopening returns you to where you were)
@@ -382,7 +388,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         #endif
-        guard let snapshot = await sessionStore.load(), !snapshot.windows.isEmpty else {
+        // Launch option (L66): a fresh window at home leaves the saved session unread, and the first change replaces it
+        guard WindowSettings.options().launch == .restore,
+              let snapshot = await sessionStore.load(), !snapshot.windows.isEmpty else {
             openWindow(at: FileManager.default.homeDirectoryForCurrentUser)
             return
         }
